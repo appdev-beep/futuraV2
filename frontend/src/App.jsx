@@ -1,35 +1,38 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+// src/App.jsx
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import LoginPageSeparate from './pages/LoginPage';
+import AdminCreateUserPage from './pages/AdminPage';
+import SupervisorDashboard from './pages/SupervisorDashboard';
+import StartCLPage from './pages/StartCLPage';
+import ManagerDashboard from './pages/ManagerDashboard';
+import ManagerReviewCLPage from './pages/ManagerReviewCLPage';
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <BrowserRouter>
+      <Routes>
+        {/* default → login */}
+        <Route path="/" element={<Navigate to="/login" />} />
+
+        {/* Auth */}
+        <Route path="/login" element={<LoginPageSeparate />} />
+
+        {/* Admin pages */}
+        <Route path="/admin/users/create" element={<AdminCreateUserPage />} />
+
+        {/* Supervisor pages */}
+        <Route path="/supervisor" element={<SupervisorDashboard />} />
+        <Route path="/cl/start" element={<StartCLPage />} />
+
+        {/* Manager pages */}
+        <Route path="/manager" element={<ManagerDashboard />} />
+        <Route path="/cl/submissions/:id" element={<ManagerReviewCLPage />} />
+
+        {/* catch-all → login */}
+        <Route path="*" element={<Navigate to="/login" />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
 
-export default App
+export default App;
