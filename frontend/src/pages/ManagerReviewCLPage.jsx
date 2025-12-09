@@ -9,7 +9,8 @@ function ManagerReviewCLPage() {
   const [cl, setCl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [actionLoading, setActionLoading] = useState(false); // 👈 for approve/return buttons
+  const [actionLoading, setActionLoading] = useState(false); // for approve/return buttons
+  const [remarks, setRemarks] = useState(''); // manager remarks
 
   const managerRoles = ['Manager', 'HR', 'Admin'];
 
@@ -68,6 +69,7 @@ function ManagerReviewCLPage() {
       setActionLoading(true);
       await apiRequest(`/api/cl/${id}/manager/approve`, {
         method: 'POST',
+        body: JSON.stringify({ remarks }), // send manager remarks (optional)
       });
       alert('CL approved successfully.');
       window.location.href = '/manager';
@@ -80,12 +82,18 @@ function ManagerReviewCLPage() {
   }
 
   async function handleReturn() {
+    if (!remarks.trim()) {
+      alert('Please provide remarks before returning.');
+      return;
+    }
+
     if (!window.confirm('Return this CL to the supervisor?')) return;
 
     try {
       setActionLoading(true);
       await apiRequest(`/api/cl/${id}/manager/return`, {
         method: 'POST',
+        body: JSON.stringify({ remarks }), // send manager remarks when returning
       });
       alert('CL returned to supervisor.');
       window.location.href = '/manager';
@@ -123,7 +131,8 @@ function ManagerReviewCLPage() {
     );
   }
 
-  const { header, items } = cl;
+  // 👇 include supervisor_remarks from backend
+  const { id: clId, status, items, supervisor_remarks } = cl;
 
   // ==========================
   // COMPUTE TOTAL SCORE
@@ -142,18 +151,26 @@ function ManagerReviewCLPage() {
         ← Back to Manager Dashboard
       </button>
 
-      <h1 className="text-2xl font-bold mb-2">
-        CL Review – #{header.id}
-      </h1>
+      <h1 className="text-2xl font-bold mb-2">CL Review – #{clId}</h1>
 
       <p className="text-sm text-gray-600 mb-4">
-        Status: <strong>{header.status}</strong>
+        Status: <strong>{status}</strong>
       </p>
+
+      {/* SUPERVISOR REMARKS (READ-ONLY) */}
+      {supervisor_remarks && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded p-4 mb-6 text-sm">
+          <h2 className="font-semibold text-yellow-800 mb-1">Supervisor Remarks</h2>
+          <p className="text-yellow-900 whitespace-pre-wrap">
+            {supervisor_remarks}
+          </p>
+        </div>
+      )}
 
       {/* COMPETENCY TABLE */}
       <div className="bg-white shadow rounded p-4 mb-6 overflow-x-auto">
         <h2 className="text-lg font-semibold mb-3">Competencies</h2>
-        
+
         <table className="min-w-full text-sm">
           <thead className="bg-gray-100 uppercase text-xs">
             <tr>
@@ -171,9 +188,9 @@ function ManagerReviewCLPage() {
             {items.map((it) => (
               <tr key={it.id} className="border-t">
                 <td className="px-3 py-2">{it.competency_name}</td>
-                <td className="px-3 py-2">{it.mplr_level}</td>
+                <td className="px-3 py-2">{it.required_level}</td>
                 <td className="px-3 py-2">{it.assigned_level}</td>
-                <td className="px-3 py-2">{it.weight}</td>
+                <td className="px-3 py-2">{Number(it.weight || 0).toFixed(2)}</td>
                 <td className="px-3 py-2">{Number(it.score || 0).toFixed(2)}</td>
                 <td className="px-3 py-2">{it.justification}</td>
 
@@ -232,6 +249,20 @@ function ManagerReviewCLPage() {
         </table>
       </div>
 
+      {/* MANAGER REMARKS SECTION */}
+      <div className="bg-white shadow rounded p-4 mb-6">
+        <label className="block text-sm font-semibold mb-2">
+          Manager Remarks <span className="text-red-600">*</span>
+        </label>
+        <textarea
+          className="w-full border rounded p-3 text-sm"
+          rows="4"
+          value={remarks}
+          onChange={(e) => setRemarks(e.target.value)}
+          placeholder="Enter your remarks before approving or returning..."
+        ></textarea>
+      </div>
+
       {/* ACTION BUTTONS */}
       <div className="flex gap-3">
         <button
@@ -247,7 +278,7 @@ function ManagerReviewCLPage() {
           onClick={handleReturn}
           disabled={actionLoading}
         >
-          Return to Supervisor
+          {actionLoading ? 'Processing...' : 'Return to Supervisor'}
         </button>
       </div>
     </div>

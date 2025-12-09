@@ -14,9 +14,10 @@ function SupervisorDashboard() {
   const [summary, setSummary] = useState({
     clPending: 0,
     clInProgress: 0,
-    clApproved: 0
+    clApproved: 0,
+    idpCount: 0,          // 👈 now for IDP count
   });
-  const [pendingCL, setPendingCL] = useState([]);
+  const [clByStatus, setClByStatus] = useState({});
 
   const supervisorRoles = ['Supervisor', 'AM', 'Manager', 'HR'];
 
@@ -42,18 +43,19 @@ function SupervisorDashboard() {
 
     async function loadDashboard() {
       try {
-        const [clSummary, clPending] = await Promise.all([
+        const [clSummary, clGrouped] = await Promise.all([
           apiRequest('/api/cl/supervisor/summary'),
-          apiRequest('/api/cl/supervisor/pending')
+          apiRequest('/api/cl/supervisor/all')
         ]);
 
         setSummary({
           clPending: clSummary.clPending || 0,
           clInProgress: clSummary.clInProgress || 0,
-          clApproved: clSummary.clApproved || 0
+          clApproved: clSummary.clApproved || 0,
+          idpCount: clSummary.idpCount || 0,   // 👈 read IDP count from backend
         });
 
-        setPendingCL(clPending || []);
+        setClByStatus(clGrouped || {});
       } catch (err) {
         console.error(err);
         setError('Failed to load Supervisor dashboard data.');
@@ -74,10 +76,26 @@ function SupervisorDashboard() {
     window.location.href = url;
   }
 
+  async function handleDeleteCL(clId, clStatus) {
+    if (!window.confirm('Are you sure you want to delete this CL? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      await apiRequest(`/api/cl/${clId}`, { method: 'DELETE' });
+      alert('CL deleted successfully');
+      // Reload the dashboard
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Failed to delete CL');
+    }
+  }
+
   if (!user) return null;
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-screen bg-white">
 
       {/* CLEAN SOFT SIDEBAR */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
@@ -142,45 +160,48 @@ function SupervisorDashboard() {
                        bg-gradient-to-r from-blue-500 to-blue-700 
                        hover:from-blue-600 hover:to-blue-800"
             onClick={() => goTo('/cl/start')}
-
           >
             Start Competency Leveling
-          </button>
-
-          <button
-            className="px-4 py-2 rounded text-white 
-                       bg-gradient-to-r from-blue-400 to-blue-600 
-                       hover:from-blue-500 hover:to-blue-700"
-            onClick={() => goTo('/cl/my-submissions')}
-          >
-            View My CL Submissions
-          </button>
-
-          <button
-            className="px-4 py-2 rounded text-white 
-                       bg-gradient-to-r from-purple-500 to-purple-700 
-                       hover:from-purple-600 hover:to-purple-800"
-            onClick={() => goTo('/supervisor')}
-          >
-            Pending CL Approvals
           </button>
         </section>
 
         {/* SUMMARY CARDS */}
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <SummaryCard label="CL – Pending" value={summary.clPending} />
-          <SummaryCard label="CL – In Progress" value={summary.clInProgress} />
-          <SummaryCard label="CL – Approved" value={summary.clApproved} />
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <SummaryCard
+            label="CL – Pending"
+            value={summary.clPending}
+            gradientClass="from-yellow-400 to-orange-500"
+          />
+          <SummaryCard
+            label="CL – In Progress"
+            value={summary.clInProgress}
+            gradientClass="from-blue-400 to-blue-700"
+          />
+          <SummaryCard
+            label="CL – Approved"
+            value={summary.clApproved}
+            gradientClass="from-emerald-400 to-emerald-700"
+          />
+          <SummaryCard
+            label="IDP – Count"
+            value={summary.idpCount}
+            gradientClass="from-purple-400 to-purple-700"
+          />
         </section>
 
         {/* PENDING CL TABLE */}
         <section>
-          <h2 className="text-xl font-semibold mb-3">Pending CL Approvals</h2>
+          <h2 className="text-xl font-semibold mb-3">All Competency Levelings</h2>
 
-          {pendingCL.length === 0 ? (
-            <p className="text-gray-500">No pending CL approvals.</p>
+          {Object.keys(clByStatus).length === 0 ? (
+            <p className="text-gray-500">No CLs found.</p>
           ) : (
-            <PendingTable data={pendingCL} goTo={goTo} />
+            Object.entries(clByStatus).map(([status, items]) => (
+              <div key={status} className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">{status}</h3>
+                <CLTable data={items} goTo={goTo} onDelete={handleDeleteCL} />
+              </div>
+            ))
           )}
         </section>
       </main>
@@ -190,16 +211,18 @@ function SupervisorDashboard() {
 
 /* COMPONENTS BELOW ---------------------------------------------------- */
 
-function SummaryCard({ label, value }) {
+function SummaryCard({ label, value, gradientClass }) {
   return (
-    <div className="bg-white p-4 rounded shadow-md">
-      <h3 className="text-sm text-gray-500">{label}</h3>
-      <p className="text-3xl font-semibold text-gray-900 mt-1">{value}</p>
+    <div
+      className={`p-4 rounded shadow-md bg-gradient-to-r ${gradientClass}`}
+    >
+      <h3 className="text-sm text-white/80">{label}</h3>
+      <p className="text-3xl font-semibold text-white mt-1">{value}</p>
     </div>
   );
 }
 
-function PendingTable({ data, goTo }) {
+function CLTable({ data, goTo, onDelete }) {
   return (
     <div className="bg-white shadow rounded overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -226,14 +249,78 @@ function PendingTable({ data, goTo }) {
               <Td>{new Date(item.submitted_at).toLocaleString()}</Td>
 
               <Td>
-                <button
-                  onClick={() => goTo(`/cl/submissions/${item.id}`)}
-                  className="px-3 py-1 rounded text-white text-xs
-                             bg-gradient-to-r from-blue-500 to-blue-700
-                             hover:from-blue-600 hover:to-blue-800"
-                >
-                  Review
-                </button>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => goTo(`/cl/supervisor/review/${item.id}`)}
+                    className="px-3 py-1 rounded text-white text-xs
+                               bg-gradient-to-r from-blue-500 to-blue-700
+                               hover:from-blue-600 hover:to-blue-800"
+                  >
+                    Review
+                  </button>
+                  <button
+                    onClick={() => onDelete(item.id, item.status)}
+                    className="px-3 py-1 rounded text-white text-xs
+                               bg-gradient-to-r from-red-500 to-red-700
+                               hover:from-red-600 hover:to-red-800"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PendingTable({ data, goTo, onDelete }) {
+  return (
+    <div className="bg-white shadow rounded overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <Th>Employee</Th>
+            <Th>Employee ID</Th>
+            <Th>Department</Th>
+            <Th>Position</Th>
+            <Th>Status</Th>
+            <Th>Submitted At</Th>
+            <Th>Actions</Th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-gray-200">
+          {data.map((item) => (
+            <tr key={item.id} className="hover:bg-gray-50">
+              <Td>{item.employee_name}</Td>
+              <Td>{item.employee_code || item.employee_id}</Td>
+              <Td>{item.department_name}</Td>
+              <Td>{item.position_title}</Td>
+              <Td>{item.status}</Td>
+              <Td>{new Date(item.submitted_at).toLocaleString()}</Td>
+
+              <Td>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => goTo(`/cl/submissions/${item.id}`)}
+                    className="px-3 py-1 rounded text-white text-xs
+                               bg-gradient-to-r from-blue-500 to-blue-700
+                               hover:from-blue-600 hover:to-blue-800"
+                  >
+                    Review
+                  </button>
+                  <button
+                    onClick={() => onDelete(item.id, item.status)}
+                    className="px-3 py-1 rounded text-white text-xs
+                               bg-gradient-to-r from-red-500 to-red-700
+                               hover:from-red-600 hover:to-red-800"
+                  >
+                    Delete
+                  </button>
+                </div>
               </Td>
             </tr>
           ))}

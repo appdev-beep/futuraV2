@@ -83,8 +83,10 @@ const SQL_STATEMENTS = [
     supervisor_id INT NOT NULL,
     department_id INT NOT NULL,
     cycle_id INT NOT NULL,
-    status ENUM('DRAFT', 'IN_PROGRESS', 'PENDING_AM', 'APPROVED', 'REJECTED') DEFAULT 'DRAFT',
-    has_assistant_manager TINYINT(1) DEFAULT 0,
+    status ENUM('DRAFT', 'PENDING_AM', 'PENDING_EMPLOYEE', 'PENDING_HR', 'PENDING_MANAGER', 'APPROVED', 'REJECTED') DEFAULT 'DRAFT',
+    awaiting_approval_from VARCHAR(50),
+    current_approver_role VARCHAR(50),
+    current_approver_id INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES users(id),
@@ -105,10 +107,27 @@ const SQL_STATEMENTS = [
     weight DECIMAL(5, 2) DEFAULT 0,
     justification TEXT,
     score DECIMAL(10, 2),
+    pdf_path VARCHAR(500),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (cl_header_id) REFERENCES cl_headers(id) ON DELETE CASCADE,
     FOREIGN KEY (competency_id) REFERENCES competencies(id)
+  )`,
+
+  // CL Approvals table - track all approvals in the workflow
+  `CREATE TABLE IF NOT EXISTS cl_approvals (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    cl_header_id INT NOT NULL,
+    approver_id INT NOT NULL,
+    role ENUM('AM', 'Employee', 'HR') NOT NULL,
+    action ENUM('Pending', 'Approved', 'Returned') DEFAULT 'Pending',
+    remarks TEXT,
+    reviewed_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (cl_header_id) REFERENCES cl_headers(id) ON DELETE CASCADE,
+    FOREIGN KEY (approver_id) REFERENCES users(id),
+    UNIQUE KEY (cl_header_id, approver_id, role)
   )`,
 
   // IDP Headers table
@@ -143,6 +162,11 @@ const SQL_STATEMENTS = [
   )`
 ];
 
+const ALTER_STATEMENTS = [
+  `ALTER TABLE cl_headers ADD COLUMN awaiting_approval_from VARCHAR(50)`,
+  `ALTER TABLE departments ADD COLUMN has_am TINYINT(1) DEFAULT 0`
+];
+
 (async () => {
   let conn;
   try {
@@ -163,6 +187,18 @@ const SQL_STATEMENTS = [
       } catch (err) {
         if (!err.message.includes('already exists')) {
           throw err;
+        }
+      }
+    }
+
+    console.log('📝 Altering tables...');
+    for (const sql of ALTER_STATEMENTS) {
+      try {
+        await conn.query(sql);
+        console.log('✅ Altered table');
+      } catch (err) {
+        if (!err.message.includes('Duplicate column')) {
+          console.warn('⚠️  ALTER statement warning:', err.message);
         }
       }
     }

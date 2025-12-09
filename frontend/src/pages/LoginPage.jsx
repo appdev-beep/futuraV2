@@ -5,10 +5,10 @@ import { useState } from 'react';
 const ROLE_REDIRECTS = {
   Admin: '/admin/users/create',
   Supervisor: '/supervisor',
-  AM: '/supervisor',        // Assistant Manager
-  Manager: '/manager',      // ⬅️ go to Manager dashboard
-  HR: '/manager',           // ⬅️ HR shares Manager dashboard
-  Employee: '/',            // regular employees (adjust if you add an Employee dashboard)
+  AM: '/am',                // Assistant Manager
+  Manager: '/manager',
+  HR: '/hr',
+  Employee: '/employee',
 };
 
 function LoginPage() {

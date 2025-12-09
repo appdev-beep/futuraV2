@@ -90,17 +90,28 @@ async function update(req, res, next) {
 // SUBMIT CL (for next workflow step)
 // (currently thin wrapper around clService.submit)
 // =====================================
+// =====================================
+// SUBMIT CL (for next workflow step)
+// Save supervisor remarks, then let service handle status logic
+// =====================================
 async function submit(req, res, next) {
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: 'Invalid CL id' });
 
-    const result = await clService.submit(id);
+    const { remarks } = req.body || {};
+
+    console.log('CL SUBMIT body:', { id, remarks });
+
+    // 👉 pass remarks into the service
+    const result = await clService.submit(id, remarks || null);
+
     res.json(result);
   } catch (err) {
     next(err);
   }
 }
+
 
 // =====================================
 // SUPERVISOR DASHBOARD
@@ -109,6 +120,15 @@ async function getSupervisorSummary(req, res, next) {
   try {
     const summary = await clService.getSupervisorSummary(req.user.id);
     res.json(summary);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getSupervisorAllCL(req, res, next) {
+  try {
+    const grouped = await clService.getSupervisorAllCL(req.user.id);
+    res.json(grouped);
   } catch (err) {
     next(err);
   }
@@ -184,6 +204,40 @@ async function uploadJustificationFile(req, res, next) {
 }
 
 // =====================================
+// DELETE CL (Supervisor can delete their own CLs)
+// =====================================
+async function deleteCL(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid CL id' });
+
+    // Get CL to check ownership
+    const [rows] = await db.query(
+      `SELECT id, supervisor_id, status FROM cl_headers WHERE id = ?`,
+      [id]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ message: 'CL not found' });
+    }
+
+    const cl = rows[0];
+
+    // Only allow supervisor to delete their own CLs
+    if (cl.supervisor_id !== req.user.id) {
+      return res.status(403).json({ message: 'You can only delete your own CLs' });
+    }
+
+    // Delete the CL (will cascade delete cl_items due to FK constraint)
+    await db.query(`DELETE FROM cl_headers WHERE id = ?`, [id]);
+
+    res.json({ message: 'CL deleted successfully', id });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// =====================================
 // MANAGER ACTIONS: APPROVE / RETURN
 // =====================================
 async function managerApprove(req, res, next) {
@@ -191,7 +245,14 @@ async function managerApprove(req, res, next) {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: 'Invalid CL id' });
 
-    const result = await clService.managerApprove(id);
+    const { remarks } = req.body || {};
+
+    const result = await clService.managerApprove(
+      id,
+      req.user.id,
+      remarks || null      // 👈 pass through
+    );
+
     res.json(result);
   } catch (err) {
     next(err);
@@ -203,24 +264,206 @@ async function managerReturn(req, res, next) {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: 'Invalid CL id' });
 
-    const result = await clService.managerReturn(id);
+    const { remarks } = req.body;
+    if (!remarks) return res.status(400).json({ message: 'Remarks are required' });
+
+    const result = await clService.managerReturn(id, req.user.id, remarks);
     res.json(result);
   } catch (err) {
     next(err);
   }
 }
 
+// =====================================
+// EMPLOYEE DASHBOARD
+// =====================================
+async function getEmployeePending(req, res, next) {
+  try {
+    const rows = await clService.getEmployeePending(req.user.id);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// =====================================
+// AM DASHBOARD
+// =====================================
+async function getAMSummary(req, res, next) {
+  try {
+    const summary = await clService.getAMSummary(req.user.id);
+    res.json(summary);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getAMPending(req, res, next) {
+  try {
+    const rows = await clService.getAMPending(req.user.id);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// =====================================
+// HR DASHBOARD
+// =====================================
+async function getHRSummary(req, res, next) {
+  try {
+    const summary = await clService.getHRSummary(req.user.id);
+    res.json(summary);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getHRPending(req, res, next) {
+  try {
+    const rows = await clService.getHRPending(req.user.id);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// =====================================
+// AM APPROVAL ACTIONS
+// =====================================
+async function amApprove(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid CL id' });
+
+    const result = await clService.amApprove(id, req.user.id, '');
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function amReturn(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid CL id' });
+
+    const { remarks } = req.body;
+    if (!remarks) return res.status(400).json({ message: 'Remarks are required' });
+
+    const result = await clService.amReturn(id, req.user.id, remarks);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// =====================================
+// EMPLOYEE APPROVAL ACTIONS
+// =====================================
+// controller: employeeApprove
+// =====================================
+// EMPLOYEE APPROVAL ACTIONS
+// =====================================
+async function employeeApprove(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid CL id' });
+
+    const { remarks } = req.body || {};
+
+    const result = await clService.employeeApprove(
+      id,
+      req.user.id,
+      remarks || null   // 👈 pass remarks
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function employeeReturn(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid CL id' });
+
+    const { remarks } = req.body || {};
+    if (!remarks) {
+      return res.status(400).json({ message: 'Remarks are required' });
+    }
+
+    const result = await clService.employeeReturn(
+      id,
+      req.user.id,
+      remarks        // 👈 pass remarks
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+
+// =====================================
+// HR APPROVAL ACTIONS
+// =====================================
+// controllers/cl.controller.js
+
+async function hrApprove(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid CL id' });
+
+    const { remarks } = req.body || {};
+
+    const result = await clService.hrApprove(id, req.user.id, remarks || null);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function hrReturn(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid CL id' });
+
+    const { remarks } = req.body || {};
+    if (!remarks) return res.status(400).json({ message: 'Remarks are required' });
+
+    const result = await clService.hrReturn(id, req.user.id, remarks);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+
 module.exports = {
   getById,
   create,
   update,
   submit,
+  deleteCL,
   getSupervisorSummary,
+  getSupervisorAllCL,
   getSupervisorPending,
   getManagerSummary,
   getManagerPending,
+  getEmployeePending,
+  getAMSummary,
+  getAMPending,
+  getHRSummary,
+  getHRPending,
   getCompetenciesForEmployee,
-  uploadJustificationFile, // 👈 export this
-  managerApprove,        // 👈 add
-  managerReturn,         // 👈 add
+  uploadJustificationFile,
+  managerApprove,
+  managerReturn,
+  amApprove,
+  amReturn,
+  employeeApprove,
+  employeeReturn,
+  hrApprove,
+  hrReturn,
 };

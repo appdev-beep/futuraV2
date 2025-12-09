@@ -8,6 +8,7 @@ function StartCLPage() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [employeeInfo, setEmployeeInfo] = useState(null);
   const [competencies, setCompetencies] = useState([]);
+  const [remarks, setRemarks] = useState("");        // 👈 global remarks
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -125,7 +126,6 @@ function StartCLPage() {
   // ===============================
   async function handleStartCL() {
     if (!selectedEmployeeId) return setError("Please select an employee.");
-
     if (!employeeInfo) return setError("Employee data not loaded.");
 
     setLoading(true);
@@ -190,8 +190,11 @@ function StartCLPage() {
         body: JSON.stringify({ items: itemsPayload }),
       });
 
-      // STEP 6 — SUBMIT CL
-      await apiRequest(`/api/cl/${clId}/submit`, { method: "POST" });
+      // STEP 6 — SUBMIT CL WITH REMARKS
+      await apiRequest(`/api/cl/${clId}/submit`, {
+        method: "POST",
+        body: JSON.stringify({ remarks }),    // 👈 send remarks to backend
+      });
 
       alert(`CL Created + Saved + Submitted.\nCL ID: ${clId}`);
       window.location.href = "/supervisor";
@@ -242,9 +245,15 @@ function StartCLPage() {
       {employeeInfo && (
         <div className="bg-white shadow rounded p-4 mb-6">
           <h2 className="text-lg font-semibold mb-2">Employee Information</h2>
-          <p><strong>Name:</strong> {employeeInfo.name}</p>
-          <p><strong>Position:</strong> {employeeInfo.position_title}</p>
-          <p><strong>Department:</strong> {employeeInfo.department_name}</p>
+          <p>
+            <strong>Name:</strong> {employeeInfo.name}
+          </p>
+          <p>
+            <strong>Position:</strong> {employeeInfo.position_title}
+          </p>
+          <p>
+            <strong>Department:</strong> {employeeInfo.department_name}
+          </p>
         </div>
       )}
 
@@ -332,9 +341,24 @@ function StartCLPage() {
           </table>
 
           <p className="mt-4 text-gray-700">
-            <strong>Total Final Score:</strong>{" "}
-            {totalFinalScore.toFixed(2)}
+            <strong>Total Final Score:</strong> {totalFinalScore.toFixed(2)}
           </p>
+        </div>
+      )}
+
+      {/* Remarks for next reviewer (separate from table) */}
+      {competencies.length > 0 && (
+        <div className="bg-white shadow rounded p-4 mb-6">
+          <label className="block text-sm font-medium mb-2">
+            Remarks for Next Reviewer
+          </label>
+          <textarea
+            className="w-full border rounded px-3 py-2 text-sm"
+            rows="4"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Add any notes or context for the next reviewer..."
+          />
         </div>
       )}
 

@@ -20,6 +20,13 @@ router.get(
   clController.getSupervisorSummary
 );
 
+// GET /api/cl/supervisor/all
+router.get(
+  '/supervisor/all',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  clController.getSupervisorAllCL
+);
+
 // GET /api/cl/supervisor/pending
 router.get(
   '/supervisor/pending',
@@ -43,6 +50,53 @@ router.get(
   '/manager/pending',
   requireRole('Manager', 'HR', 'Admin'),
   clController.getManagerPending
+);
+
+// =====================================
+// EMPLOYEE DASHBOARD ROUTES
+// =====================================
+
+// GET /api/cl/employee/pending
+router.get(
+  '/employee/pending',
+  requireRole('Employee'),
+  clController.getEmployeePending
+);
+
+// =====================================
+// AM DASHBOARD ROUTES
+// =====================================
+
+// GET /api/cl/am/summary
+router.get(
+  '/am/summary',
+  requireRole('AM'),
+  clController.getAMSummary
+);
+
+// GET /api/cl/am/pending
+router.get(
+  '/am/pending',
+  requireRole('AM'),
+  clController.getAMPending
+);
+
+// =====================================
+// HR DASHBOARD ROUTES
+// =====================================
+
+// GET /api/cl/hr/summary
+router.get(
+  '/hr/summary',
+  requireRole('HR', 'Admin'),
+  clController.getHRSummary
+);
+
+// GET /api/cl/hr/pending
+router.get(
+  '/hr/pending',
+  requireRole('HR', 'Admin'),
+  clController.getHRPending
 );
 
 // =====================================
@@ -86,6 +140,13 @@ router.put(
   clController.update
 );
 
+// DELETE CL (Supervisor can delete DRAFT CLs)
+router.delete(
+  '/:id',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  clController.deleteCL
+);
+
 // SUBMIT CL (Supervisor → AM/Manager workflow)
 router.post(
   '/:id/submit',
@@ -109,6 +170,60 @@ router.post(
   '/:id/manager/return',
   requireRole('Manager', 'HR', 'Admin'),
   clController.managerReturn
+);
+
+// =====================================
+// AM ACTION ROUTES (APPROVE / RETURN)
+// =====================================
+
+// POST /api/cl/:id/am/approve
+router.post(
+  '/:id/am/approve',
+  requireRole('AM', 'HR', 'Admin'),
+  clController.amApprove
+);
+
+// POST /api/cl/:id/am/return
+router.post(
+  '/:id/am/return',
+  requireRole('AM', 'HR', 'Admin'),
+  clController.amReturn
+);
+
+// =====================================
+// EMPLOYEE ACTION ROUTES (APPROVE / RETURN)
+// =====================================
+
+// POST /api/cl/:id/employee/approve
+router.post(
+  '/:id/employee/approve',
+  requireRole('Employee', 'HR', 'Admin'),
+  clController.employeeApprove
+);
+
+// POST /api/cl/:id/employee/return
+router.post(
+  '/:id/employee/return',
+  requireRole('Employee', 'HR', 'Admin'),
+  clController.employeeReturn
+);
+
+// =====================================
+// HR ACTION ROUTES (APPROVE / RETURN)
+// =====================================
+
+// POST /api/cl/:id/hr/approve
+router.post(
+  '/:id/hr/approve',
+  requireRole('HR', 'Admin'),
+  clController.hrApprove
+);
+
+// POST /api/cl/:id/hr/return
+router.post(
+  '/:id/hr/return',
+  requireRole('HR', 'Admin'),
+  clController.hrReturn
 );
 
 // =====================================
