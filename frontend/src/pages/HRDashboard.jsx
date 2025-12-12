@@ -7,6 +7,7 @@ function HRDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pendingCL, setPendingCL] = useState([]);
+  const [allCL, setAllCL] = useState([]); // one row per HR action
   const [summary, setSummary] = useState({
     clPending: 0,
     clApproved: 0,
@@ -32,7 +33,7 @@ function HRDashboard() {
     setUser(parsed);
   }, []);
 
-  // Load pending CLs for HR review
+  // Load dashboard (summary, pending list, and activity log)
   useEffect(() => {
     if (!user) return;
 
@@ -41,9 +42,10 @@ function HRDashboard() {
       setError('');
 
       try {
-        const [clSummary, clPending] = await Promise.all([
+        const [clSummary, clPending, clAll] = await Promise.all([
           apiRequest('/api/cl/hr/summary', { method: 'GET' }),
-          apiRequest('/api/cl/hr/pending', { method: 'GET' })
+          apiRequest('/api/cl/hr/pending', { method: 'GET' }),
+          apiRequest('/api/cl/hr/all', { method: 'GET' }) // activity log
         ]);
 
         setSummary({
@@ -53,11 +55,10 @@ function HRDashboard() {
         });
 
         setPendingCL(clPending || []);
+        setAllCL(clAll || []);
       } catch (err) {
         console.error(err);
-        setError(
-          'Failed to load HR dashboard data.'
-        );
+        setError('Failed to load HR dashboard data.');
       } finally {
         setLoading(false);
       }
@@ -78,6 +79,9 @@ function HRDashboard() {
   if (!user) {
     return null;
   }
+
+  // Activity log: every APPROVED / RETURNED done by this HR
+  const hrActivity = allCL;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
@@ -159,6 +163,61 @@ function HRDashboard() {
                         className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
                       >
                         Review
+                      </button>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* HR Activity Log – APPROVED & RETURNED, one row per action */}
+      <section className="mb-8">
+        <h2 className="mb-3 text-lg font-semibold text-gray-900">
+          HR Activity Log (Approvals & Returns)
+        </h2>
+
+        {hrActivity.length === 0 ? (
+          <p className="text-sm text-gray-600">
+            No HR actions recorded yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <Th>Employee</Th>
+                  <Th>Supervisor</Th>
+                  <Th>Department</Th>
+                  <Th>HR Decision</Th>
+                  <Th>HR Decided At</Th>
+                  <Th>Actions</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {hrActivity.map((item) => (
+                  <tr
+                    key={`${item.id}-${item.hr_decided_at || ''}`}
+                    className="hover:bg-gray-50"
+                  >
+                    <Td>{item.employee_name}</Td>
+                    <Td>{item.supervisor_name}</Td>
+                    <Td>{item.department_name}</Td>
+                    <Td>{item.hr_decision || '-'}</Td>
+                    <Td>
+                      {item.hr_decided_at
+                        ? new Date(item.hr_decided_at).toLocaleString()
+                        : '-'}
+                    </Td>
+                    <Td>
+                      <button
+                        type="button"
+                        onClick={() => goTo(`/cl/hr/review/${item.id}`)}
+                        className="inline-flex items-center rounded-md bg-gray-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700"
+                      >
+                        View Details
                       </button>
                     </Td>
                   </tr>

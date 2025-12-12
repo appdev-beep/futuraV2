@@ -13,6 +13,8 @@ import AMDashboard from './pages/AMDashboard';
 import AMReviewCLPage from './pages/AMReviewCLPage';
 import HRDashboard from './pages/HRDashboard';
 import HRReviewCLPage from './pages/HRReviewCLPage';
+import './index.css';
+import './App.css';
 
 function App() {
   return (

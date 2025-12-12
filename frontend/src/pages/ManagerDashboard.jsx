@@ -18,6 +18,7 @@ function ManagerDashboard() {
     clApproved: 0
   });
   const [pendingCL, setPendingCL] = useState([]);
+  const [allCL, setAllCL] = useState([]); // <-- all CLs (we'll filter for history)
 
   // Only these roles can access Manager dashboard
   const managerRoles = ['Manager', 'HR', 'Admin'];
@@ -50,12 +51,13 @@ function ManagerDashboard() {
 
     async function loadDashboard() {
       try {
-        // You will implement these endpoints on the backend:
         // GET /api/cl/manager/summary
         // GET /api/cl/manager/pending
-        const [clSummary, clPending] = await Promise.all([
+        // GET /api/cl/manager/all        <-- includes manager_decision for history
+        const [clSummary, clPending, clAll] = await Promise.all([
           apiRequest('/api/cl/manager/summary'),
-          apiRequest('/api/cl/manager/pending')
+          apiRequest('/api/cl/manager/pending'),
+          apiRequest('/api/cl/manager/all')
         ]);
 
         setSummary({
@@ -65,6 +67,7 @@ function ManagerDashboard() {
         });
 
         setPendingCL(clPending || []);
+        setAllCL(clAll || []);
       } catch (err) {
         console.error(err);
         setError('Failed to load Manager dashboard data.');
@@ -89,6 +92,12 @@ function ManagerDashboard() {
   }
 
   if (!user) return null;
+
+  // HISTORY:
+  // Show ALL CLs where this manager already acted (APPROVED or RETURNED)
+  const managerHistory = allCL.filter(
+    (item) => item.manager_decision != null && item.manager_decision !== ''
+  );
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -162,7 +171,7 @@ function ManagerDashboard() {
         </section>
 
         {/* PENDING CL TABLE */}
-        <section>
+        <section className="mb-10">
           <h2 className="text-xl font-semibold mb-3">
             Competency Leveling – Pending Manager Approval
           </h2>
@@ -173,6 +182,21 @@ function ManagerDashboard() {
             </p>
           ) : (
             <PendingTable data={pendingCL} goTo={goTo} />
+          )}
+        </section>
+
+        {/* HISTORY TABLE – MANAGER ACTIVITY LOG */}
+        <section>
+          <h2 className="text-xl font-semibold mb-3">
+            Manager Activity Log (Approvals & Returns)
+          </h2>
+
+          {managerHistory.length === 0 ? (
+            <p className="text-gray-500">
+              No CL actions recorded for this manager yet.
+            </p>
+          ) : (
+            <HistoryTable data={managerHistory} goTo={goTo} />
           )}
         </section>
       </main>
@@ -230,6 +254,54 @@ function PendingTable({ data, goTo }) {
                              hover:from-blue-600 hover:to-blue-800"
                 >
                   Review & Decide
+                </button>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// History table – MANAGER ACTIVITY LOG (APPROVED / RETURNED)
+function HistoryTable({ data, goTo }) {
+  return (
+    <div className="bg-white shadow rounded overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <Th>Employee</Th>
+            <Th>Employee ID</Th>
+            <Th>Department</Th>
+            <Th>Position</Th>
+            <Th>Manager Decision</Th>
+            <Th>Manager Decided At</Th>
+            <Th>Actions</Th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-gray-200">
+          {data.map((item) => (
+            <tr key={item.id} className="hover:bg-gray-50">
+              <Td>{item.employee_name}</Td>
+              <Td>{item.employee_code || item.employee_id}</Td>
+              <Td>{item.department_name}</Td>
+              <Td>{item.position_title}</Td>
+              <Td>{item.manager_decision || '-'}</Td>
+              <Td>
+                {item.manager_decided_at
+                  ? new Date(item.manager_decided_at).toLocaleString()
+                  : '-'}
+              </Td>
+              <Td>
+                <button
+                  onClick={() => goTo(`/cl/submissions/${item.id}`)}
+                  className="px-3 py-1 rounded text-white text-xs
+                             bg-gradient-to-r from-gray-500 to-gray-700
+                             hover:from-gray-600 hover:to-gray-800"
+                >
+                  View Details
                 </button>
               </Td>
             </tr>

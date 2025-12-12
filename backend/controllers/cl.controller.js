@@ -1,6 +1,6 @@
 const clService = require('../services/cl.service');
 const { db } = require('../config/db'); // Needed to check department has_am
-const path = require('path');           // 👈 NEW for building file path
+const path = require('path');           // for building file path
 
 // =====================================
 // GET CL BY ID
@@ -88,10 +88,6 @@ async function update(req, res, next) {
 
 // =====================================
 // SUBMIT CL (for next workflow step)
-// (currently thin wrapper around clService.submit)
-// =====================================
-// =====================================
-// SUBMIT CL (for next workflow step)
 // Save supervisor remarks, then let service handle status logic
 // =====================================
 async function submit(req, res, next) {
@@ -103,7 +99,6 @@ async function submit(req, res, next) {
 
     console.log('CL SUBMIT body:', { id, remarks });
 
-    // 👉 pass remarks into the service
     const result = await clService.submit(id, remarks || null);
 
     res.json(result);
@@ -111,7 +106,6 @@ async function submit(req, res, next) {
     next(err);
   }
 }
-
 
 // =====================================
 // SUPERVISOR DASHBOARD
@@ -164,6 +158,16 @@ async function getManagerPending(req, res, next) {
   }
 }
 
+// MANAGER ALL / HISTORY
+async function getManagerAllCL(req, res, next) {
+  try {
+    const rows = await clService.getManagerAllCL(req.user.id);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // =====================================
 // EMPLOYEE COMPETENCIES (used by StartCLPage)
 // =====================================
@@ -196,7 +200,7 @@ async function uploadJustificationFile(req, res, next) {
     const relativePath = path.posix.join('uploads', req.file.filename);
 
     return res.json({
-      filePath: relativePath, // 👈 this is what FE stores as pdf_path
+      filePath: relativePath, // this is what FE stores as pdf_path
     });
   } catch (err) {
     next(err);
@@ -206,12 +210,16 @@ async function uploadJustificationFile(req, res, next) {
 // =====================================
 // DELETE CL (Supervisor can delete their own CLs)
 // =====================================
+// =====================================
+// DELETE CL (Supervisor can delete their own CLs)
+// but ONLY if there is no manager history
+// =====================================
 async function deleteCL(req, res, next) {
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: 'Invalid CL id' });
 
-    // Get CL to check ownership
+    // Get CL to check ownership + status
     const [rows] = await db.query(
       `SELECT id, supervisor_id, status FROM cl_headers WHERE id = ?`,
       [id]
@@ -225,10 +233,32 @@ async function deleteCL(req, res, next) {
 
     // Only allow supervisor to delete their own CLs
     if (cl.supervisor_id !== req.user.id) {
-      return res.status(403).json({ message: 'You can only delete your own CLs' });
+      return res
+        .status(403)
+        .json({ message: 'You can only delete your own CLs' });
     }
 
-    // Delete the CL (will cascade delete cl_items due to FK constraint)
+    // Only allow deleting DRAFT CLs (still on supervisor’s side)
+    if (cl.status !== 'DRAFT') {
+      return res.status(400).json({
+        message: 'You can only delete CLs that are still in DRAFT status.'
+      });
+    }
+
+    // Check if there is any manager history for this CL
+    const [logRows] = await db.query(
+      `SELECT 1 FROM cl_manager_logs WHERE cl_id = ? LIMIT 1`,
+      [id]
+    );
+
+    if (logRows.length > 0) {
+      return res.status(400).json({
+        message:
+          'This CL already has Manager actions (approve/return). It cannot be deleted because there is history attached.'
+      });
+    }
+
+    // No manager logs, OK to delete header (and cl_items will cascade via FK)
     await db.query(`DELETE FROM cl_headers WHERE id = ?`, [id]);
 
     res.json({ message: 'CL deleted successfully', id });
@@ -250,7 +280,7 @@ async function managerApprove(req, res, next) {
     const result = await clService.managerApprove(
       id,
       req.user.id,
-      remarks || null      // 👈 pass through
+      remarks || null
     );
 
     res.json(result);
@@ -328,6 +358,16 @@ async function getHRPending(req, res, next) {
   }
 }
 
+// HR ALL / HISTORY
+async function getHRAllCL(req, res, next) {
+  try {
+    const rows = await clService.getHRAllCL(req.user.id);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // =====================================
 // AM APPROVAL ACTIONS
 // =====================================
@@ -361,10 +401,6 @@ async function amReturn(req, res, next) {
 // =====================================
 // EMPLOYEE APPROVAL ACTIONS
 // =====================================
-// controller: employeeApprove
-// =====================================
-// EMPLOYEE APPROVAL ACTIONS
-// =====================================
 async function employeeApprove(req, res, next) {
   try {
     const id = Number(req.params.id);
@@ -375,7 +411,7 @@ async function employeeApprove(req, res, next) {
     const result = await clService.employeeApprove(
       id,
       req.user.id,
-      remarks || null   // 👈 pass remarks
+      remarks || null
     );
     res.json(result);
   } catch (err) {
@@ -396,7 +432,7 @@ async function employeeReturn(req, res, next) {
     const result = await clService.employeeReturn(
       id,
       req.user.id,
-      remarks        // 👈 pass remarks
+      remarks
     );
     res.json(result);
   } catch (err) {
@@ -404,12 +440,9 @@ async function employeeReturn(req, res, next) {
   }
 }
 
-
 // =====================================
 // HR APPROVAL ACTIONS
 // =====================================
-// controllers/cl.controller.js
-
 async function hrApprove(req, res, next) {
   try {
     const id = Number(req.params.id);
@@ -417,7 +450,12 @@ async function hrApprove(req, res, next) {
 
     const { remarks } = req.body || {};
 
-    const result = await clService.hrApprove(id, req.user.id, remarks || null);
+    const result = await clService.hrApprove(
+      id,
+      req.user.id,        // approverId
+      remarks || null
+    );
+
     res.json(result);
   } catch (err) {
     next(err);
@@ -430,15 +468,53 @@ async function hrReturn(req, res, next) {
     if (!id) return res.status(400).json({ message: 'Invalid CL id' });
 
     const { remarks } = req.body || {};
-    if (!remarks) return res.status(400).json({ message: 'Remarks are required' });
+    if (!remarks) {
+      return res.status(400).json({ message: 'Remarks are required' });
+    }
 
-    const result = await clService.hrReturn(id, req.user.id, remarks);
+    const result = await clService.hrReturn(
+      id,
+      req.user.id,        // approverId
+      remarks
+    );
+
     res.json(result);
   } catch (err) {
     next(err);
   }
 }
 
+// =====================================
+// EMPLOYEE CL HISTORY (used by StartCLPage & others)
+// GET /api/cl/employee/:id/history
+// =====================================
+async function getEmployeeHistory(req, res, next) {
+  try {
+    const employeeId = Number(req.params.id);
+    if (!employeeId) {
+      return res.status(400).json({ message: 'Invalid employee id' });
+    }
+
+    const rows = await clService.getEmployeeHistory(employeeId);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// =====================================
+// MY CL HISTORY (for logged-in Employee)
+// GET /api/cl/employee/my/history
+// =====================================
+async function getMyHistory(req, res, next) {
+  try {
+    const employeeId = req.user.id; // logged-in user
+    const rows = await clService.getEmployeeHistory(employeeId);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
 
 module.exports = {
   getById,
@@ -446,18 +522,38 @@ module.exports = {
   update,
   submit,
   deleteCL,
+
+  // Supervisor
   getSupervisorSummary,
   getSupervisorAllCL,
   getSupervisorPending,
+
+  // Employee history
+  getEmployeeHistory,
+  getMyHistory,
+
+  // Manager
   getManagerSummary,
   getManagerPending,
+  getManagerAllCL,
+
+  // Employee dashboard
   getEmployeePending,
+
+  // AM
   getAMSummary,
   getAMPending,
+
+  // HR
   getHRSummary,
   getHRPending,
+  getHRAllCL,
+
+  // Misc
   getCompetenciesForEmployee,
   uploadJustificationFile,
+
+  // Actions
   managerApprove,
   managerReturn,
   amApprove,

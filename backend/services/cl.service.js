@@ -4,6 +4,8 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 const { logInfo } = require('../utils/logger');
+const { logRecentAction } = require('./recentActions.service');
+
 
 // =====================
 // GET CL BY ID
@@ -205,7 +207,7 @@ async function submit(id, supervisorRemarks = null) {
         ch.cycle_id,
         ch.status,
         ch.awaiting_approval_from,
-        ch.supervisor_remarks,     -- existing remarks
+        ch.supervisor_remarks,
         d.has_am
      FROM cl_headers ch
      JOIN departments d ON d.id = ch.department_id
@@ -221,14 +223,22 @@ async function submit(id, supervisorRemarks = null) {
 
   const clHeader = rows[0];
 
+  // ✅ detect if this is resubmission BEFORE we clear awaiting_approval_from
+  const isResubmission = !!clHeader.awaiting_approval_from;
+
+  // ✅ get employee name for the action title
+  const [empRows] = await db.query(
+    `SELECT name FROM users WHERE id = ?`,
+    [clHeader.employee_id]
+  );
+  const employeeName = empRows[0]?.name || 'Employee';
+
   // 2) Determine next status
   let nextStatus;
 
-  // If this is a resubmission (has awaiting_approval_from set), route back to that approver
   if (clHeader.awaiting_approval_from) {
     nextStatus = clHeader.awaiting_approval_from;
   } else {
-    // First submission - route based on department
     const hasAM = !!clHeader.has_am;
     nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
   }
@@ -237,14 +247,11 @@ async function submit(id, supervisorRemarks = null) {
   const pdfPath = await generateCLPDF(id, clHeader);
 
   // 4) Decide what to store in supervisor_remarks
-  //    RULES:
-  //    - If DB already has a remark -> KEEP IT (never overwrite)
-  //    - If it's empty AND we got a new remark -> set it
   let newSupervisorRemarks = clHeader.supervisor_remarks;
 
   if (
-    (!newSupervisorRemarks || newSupervisorRemarks.trim() === '') && // only if empty in DB
-    supervisorRemarks &&                                             // FE sent something
+    (!newSupervisorRemarks || newSupervisorRemarks.trim() === '') &&
+    supervisorRemarks &&
     supervisorRemarks.trim() !== ''
   ) {
     newSupervisorRemarks = supervisorRemarks;
@@ -259,7 +266,7 @@ async function submit(id, supervisorRemarks = null) {
       `UPDATE cl_headers 
          SET status = ?, 
              awaiting_approval_from = NULL,
-             supervisor_remarks = ?,      -- use computed value, never clears existing text
+             supervisor_remarks = ?,
              updated_at = NOW() 
        WHERE id = ?`,
       [nextStatus, newSupervisorRemarks, id]
@@ -281,10 +288,23 @@ async function submit(id, supervisorRemarks = null) {
     conn.release();
   }
 
-  // 6) Return latest CL data
+  // ✅ 6) LOG RECENT ACTION (after commit so it won't log on failure)
+  await logRecentAction({
+    actor_id: clHeader.supervisor_id,
+    module: 'CL',
+    action_type: isResubmission ? 'CL_RESUBMITTED' : 'CL_SUBMITTED',
+    cl_id: id,
+    employee_id: clHeader.employee_id,
+    title: isResubmission
+      ? `Resubmitted form for ${employeeName}`
+      : `Created form for ${employeeName}`,
+    description: `CL #${id}`,
+    url: `/cl/supervisor/review/${id}`,
+  });
+
+  // 7) Return latest CL data
   return await getById(id);
 }
-
 
 
 // =====================
@@ -428,9 +448,21 @@ async function getSupervisorSummary(supervisorId) {
   const [rows] = await db.query(
     `
     SELECT
-      SUM(ch.status = 'DRAFT')       AS clPending,
-      SUM(ch.status = 'IN_PROGRESS') AS clInProgress,
-      SUM(ch.status = 'APPROVED')    AS clApproved
+      -- Pending: anything waiting on someone in the CL workflow
+      SUM(
+        ch.status IN (
+          'PENDING_AM',
+          'PENDING_MANAGER',
+          'PENDING_EMPLOYEE',
+          'PENDING_HR'
+        )
+      ) AS clPending,
+
+      -- In Progress: still being edited by supervisor (DRAFT)
+      SUM(ch.status = 'DRAFT') AS clInProgress,
+
+      -- Approved
+      SUM(ch.status = 'APPROVED') AS clApproved
     FROM cl_headers ch
       JOIN users e ON ch.employee_id   = e.id
       JOIN users s ON ch.supervisor_id = s.id
@@ -441,9 +473,18 @@ async function getSupervisorSummary(supervisorId) {
     [supervisorId]
   );
 
-  // Fallback to zeroes if no rows
-  return rows[0] || { clPending: 0, clInProgress: 0, clApproved: 0 };
+  const row = rows[0] || {};
+
+  return {
+    clPending: Number(row.clPending || 0),
+    clInProgress: Number(row.clInProgress || 0),
+    clApproved: Number(row.clApproved || 0),
+    // if you don’t have an IDP summary yet, just keep 0 here
+    idpCount: Number(row.idpCount || 0),
+  };
 }
+
+
 
 // =====================
 // SUPERVISOR ALL CLs
@@ -626,21 +667,27 @@ async function managerApprove(id, approverId, remarks) {
   try {
     await conn.beginTransaction();
 
+    // Insert audit log
+    await conn.query(
+      `INSERT INTO cl_manager_logs (cl_id, manager_id, action, remarks)
+       VALUES (?, ?, 'APPROVED', ?)`,
+      [id, approverId, remarks || null]
+    );
+
+    // Move CL to next stage
     await conn.query(
       `UPDATE cl_headers 
-       SET 
-         status = 'PENDING_EMPLOYEE',
-         manager_remarks = COALESCE(?, manager_remarks),
-         updated_at = NOW()
+       SET status = 'PENDING_EMPLOYEE',
+           updated_at = NOW()
        WHERE id = ?`,
-      [remarks || null, id]
+      [id]
     );
 
     await conn.commit();
     return { success: true, message: 'Manager approved CL, moved to Employee' };
+
   } catch (err) {
     await conn.rollback();
-    logInfo('Error in managerApprove', { id, approverId, error: err.message });
     throw err;
   } finally {
     conn.release();
@@ -657,24 +704,35 @@ async function managerReturn(id, approverId, remarks) {
   try {
     await conn.beginTransaction();
 
-    // Update CL status back to DRAFT and mark where it should go on resubmit
+    // Insert audit log
+    await conn.query(
+      `INSERT INTO cl_manager_logs (cl_id, manager_id, action, remarks)
+       VALUES (?, ?, 'RETURNED', ?)`,
+      [id, approverId, remarks]
+    );
+
+    // Move CL back to supervisor
     await conn.query(
       `UPDATE cl_headers 
-       SET status = 'DRAFT', awaiting_approval_from = 'PENDING_MANAGER', updated_at = NOW()
+       SET status = 'DRAFT',
+           awaiting_approval_from = 'PENDING_MANAGER',
+           updated_at = NOW()
        WHERE id = ?`,
       [id]
     );
 
     await conn.commit();
     return { success: true, message: 'Manager returned CL to Supervisor' };
+
   } catch (err) {
     await conn.rollback();
-    logInfo('Error in managerReturn', { id, approverId, error: err.message });
     throw err;
   } finally {
     conn.release();
   }
 }
+
+
 
 // =====================
 // EMPLOYEE DASHBOARD
@@ -864,19 +922,30 @@ async function amReturn(id, approverId, remarks) {
 // =====================
 // EMPLOYEE APPROVE
 // =====================
+// =====================
+// EMPLOYEE APPROVE
+// =====================
 async function employeeApprove(id, approverId, remarks) {
   const conn = await db.getConnection();
 
   try {
     await conn.beginTransaction();
 
+    // 1) Insert into EMPLOYEE LOGS (activity history)
+    await conn.query(
+      `INSERT INTO cl_employee_logs (cl_id, employee_id, action, remarks)
+       VALUES (?, ?, 'APPROVED', ?)`,
+      [id, approverId, remarks || null]
+    );
+
+    // 2) Update the header (latest state)
     await conn.query(
       `UPDATE cl_headers 
        SET status = 'PENDING_HR',
            employee_remarks = COALESCE(?, employee_remarks),
            updated_at = NOW()
        WHERE id = ?`,
-      [remarks, id]        // 👈 save employee remarks (if any)
+      [remarks, id]
     );
 
     await conn.commit();
@@ -899,6 +968,14 @@ async function employeeReturn(id, approverId, remarks) {
   try {
     await conn.beginTransaction();
 
+    // 1) Insert into EMPLOYEE LOGS (activity history)
+    await conn.query(
+      `INSERT INTO cl_employee_logs (cl_id, employee_id, action, remarks)
+       VALUES (?, ?, 'RETURNED', ?)`,
+      [id, approverId, remarks || null]
+    );
+
+    // 2) Update the header (latest state)
     await conn.query(
       `UPDATE cl_headers 
        SET status = 'DRAFT',
@@ -906,7 +983,7 @@ async function employeeReturn(id, approverId, remarks) {
            employee_remarks = COALESCE(?, employee_remarks),
            updated_at = NOW()
        WHERE id = ?`,
-      [remarks, id]        // 👈 save employee remarks
+      [remarks, id]
     );
 
     await conn.commit();
@@ -920,21 +997,35 @@ async function employeeReturn(id, approverId, remarks) {
   }
 }
 
-// services/cl.service.js
 
+
+// =====================
+// HR APPROVAL ACTIONS
+// =====================
 async function hrApprove(id, approverId, remarks) {
   const conn = await db.getConnection();
 
   try {
     await conn.beginTransaction();
 
+    // 1) Log the HR action
+    await conn.query(
+      `INSERT INTO cl_hr_logs (cl_id, hr_id, action, remarks)
+       VALUES (?, ?, 'APPROVED', ?)`,
+      [id, approverId, remarks || null]
+    );
+
+    // 2) Update the header (latest state)
     await conn.query(
       `UPDATE cl_headers 
-       SET status = 'APPROVED',
-           hr_remarks = COALESCE(?, hr_remarks),
-           updated_at = NOW()
+       SET status         = 'APPROVED',
+           hr_id          = ?,                     -- who approved
+           hr_decision    = 'APPROVED',            -- latest decision
+           hr_decided_at  = NOW(),                 -- when
+           hr_remarks     = COALESCE(?, hr_remarks),
+           updated_at     = NOW()
        WHERE id = ?`,
-      [remarks, id]
+      [approverId, remarks, id]
     );
 
     await conn.commit();
@@ -954,14 +1045,25 @@ async function hrReturn(id, approverId, remarks) {
   try {
     await conn.beginTransaction();
 
+    // 1) Log the HR action
+    await conn.query(
+      `INSERT INTO cl_hr_logs (cl_id, hr_id, action, remarks)
+       VALUES (?, ?, 'RETURNED', ?)`,
+      [id, approverId, remarks || null]
+    );
+
+    // 2) Update the header (latest state)
     await conn.query(
       `UPDATE cl_headers 
-       SET status = 'DRAFT',
+       SET status                 = 'DRAFT',
            awaiting_approval_from = 'PENDING_HR',
-           hr_remarks = COALESCE(?, hr_remarks),
-           updated_at = NOW()
+           hr_id                  = ?,                     -- who returned
+           hr_decision            = 'RETURNED',            -- latest decision
+           hr_decided_at          = NOW(),                 -- when
+           hr_remarks             = COALESCE(?, hr_remarks),
+           updated_at             = NOW()
        WHERE id = ?`,
-      [remarks, id]
+      [approverId, remarks, id]
     );
 
     await conn.commit();
@@ -976,14 +1078,152 @@ async function hrReturn(id, approverId, remarks) {
 }
 
 
+
+// =====================
+// EMPLOYEE CL HISTORY
+// All CLs for a given employee (any status)
+// =====================
+// =====================
+// services/cl.service.js
+async function getEmployeeHistory(employeeId) {
+  const [rows] = await db.query(
+    `
+    SELECT
+      ch.id,
+      ch.cycle_id,
+      ch.status,
+      ch.created_at,
+      COALESCE(ci.total_score, 0) AS total_score,
+
+      -- latest employee action (if any)
+      el.action     AS employee_decision,
+      el.created_at AS employee_decided_at,
+      el.remarks    AS employee_decision_remarks
+
+    FROM cl_headers ch
+
+    -- aggregate cl_items score per CL (no GROUP BY in main query needed)
+    LEFT JOIN (
+      SELECT
+        cl_header_id,
+        SUM(score) AS total_score
+      FROM cl_items
+      GROUP BY cl_header_id
+    ) ci ON ci.cl_header_id = ch.id
+
+    -- latest employee log per CL (for this employee)
+    LEFT JOIN (
+      SELECT x.*
+      FROM cl_employee_logs x
+      JOIN (
+        SELECT cl_id, MAX(created_at) AS max_created_at
+        FROM cl_employee_logs
+        WHERE employee_id = ?
+        GROUP BY cl_id
+      ) last
+        ON last.cl_id = x.cl_id AND last.max_created_at = x.created_at
+      WHERE x.employee_id = ?
+    ) el ON el.cl_id = ch.id
+
+    WHERE ch.employee_id = ?
+    ORDER BY ch.created_at DESC
+    `,
+    [employeeId, employeeId, employeeId]
+  );
+
+  return rows || [];
+}
+
+// =====================
+// MANAGER ALL CLs (HISTORY)
+// All CLs for employees in this manager's department
+// =====================
+async function getManagerAllCL(managerId) {
+  const [rows] = await db.query(
+    `
+    SELECT 
+      ch.id,
+      e.name AS employee_name,
+      e.employee_id AS employee_code,
+      d.name AS department_name,
+      p.title AS position_title,
+
+      -- log fields
+      ml.action AS manager_decision,
+      ml.remarks AS manager_remarks,
+      ml.created_at AS manager_decided_at
+
+    FROM cl_headers ch
+    JOIN users e ON ch.employee_id = e.id
+    JOIN users m ON e.department_id = m.department_id
+    JOIN departments d ON e.department_id = d.id
+    JOIN positions p ON e.position_id = p.id
+
+    LEFT JOIN cl_manager_logs ml ON ml.cl_id = ch.id AND ml.manager_id = ?
+
+    WHERE m.id = ?
+    ORDER BY ml.created_at DESC
+    `,
+    [managerId, managerId]
+  );
+
+  return rows;
+}
+
+// =====================
+// HR ALL CLs (HISTORY)
+// All CLs that this HR has acted on
+// =====================
+// =====================
+// HR ALL CLs (HISTORY / ACTIVITY)
+// All actions this HR has taken (APPROVED / RETURNED)
+// =====================
+async function getHRAllCL(hrId) {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT 
+        ch.id,
+        e.name        AS employee_name,
+        s.name        AS supervisor_name,
+        d.name        AS department_name,
+        ch.status,                    -- current CL status
+
+        -- activity fields from HR log (aliased to keep FE code simple)
+        hl.action      AS hr_decision,
+        hl.created_at  AS hr_decided_at,
+        hl.remarks     AS hr_decision_remarks
+
+      FROM cl_hr_logs hl
+        JOIN cl_headers   ch ON hl.cl_id       = ch.id
+        JOIN users        e  ON ch.employee_id = e.id
+        JOIN users        s  ON ch.supervisor_id = s.id
+        JOIN departments  d  ON ch.department_id = d.id
+      WHERE
+        hl.hr_id = ?                  -- only actions done by this HR
+      ORDER BY hl.created_at DESC
+      `,
+      [hrId]
+    );
+
+    return rows || [];
+  } catch (err) {
+    logInfo('Error getting HR ALL CLs', { hrId, error: err.message });
+    return [];
+  }
+}
+
+
 module.exports = {
   getById,
   create,
   update,
   submit,
   getSupervisorSummary,
+  getEmployeeHistory,
   getSupervisorAllCL,
   getSupervisorPending,
+  getManagerAllCL,
   getManagerSummary,
   getManagerPending,
   getEmployeePending,
@@ -994,6 +1234,7 @@ module.exports = {
   getCompetenciesForEmployee,
   generateCLPDF,
   managerApprove,
+  getHRAllCL,
   managerReturn,
   amApprove,
   amReturn,

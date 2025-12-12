@@ -31,6 +31,12 @@ app.use('/api', routes);
 // global error handler
 app.use(errorHandler);
 
+// ===============================
+// FOR RECENT ACTIONS LOGGING
+// ===============================
+app.use('/api', require('./routes/recentActions.routes'));
+
+
 // PORT from env or default 4000
 const PORT = process.env.PORT || 4000;
 

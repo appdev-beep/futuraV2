@@ -1,12 +1,15 @@
 // src/pages/EmployeeDashboard.jsx
 import { useEffect, useState } from 'react';
 import { apiRequest } from '../api/client';
+import '../index.css';
+import '../App.css'; 
 
 function EmployeeDashboard() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pendingCL, setPendingCL] = useState([]);
+  const [clHistory, setClHistory] = useState([]); // includes decision fields
 
   // Auth check – must be logged in and Employee
   useEffect(() => {
@@ -27,7 +30,7 @@ function EmployeeDashboard() {
     setUser(parsed);
   }, []);
 
-  // Load pending CLs for this employee
+  // Load pending CLs + full history for this employee
   useEffect(() => {
     if (!user) return;
 
@@ -36,12 +39,17 @@ function EmployeeDashboard() {
       setError('');
 
       try {
-        const data = await apiRequest('/api/cl/employee/pending', { method: 'GET' });
-        setPendingCL(data || []);
+        const [pendingData, historyData] = await Promise.all([
+          apiRequest('/api/cl/employee/pending', { method: 'GET' }),
+          apiRequest('/api/cl/employee/my/history', { method: 'GET' }),
+        ]);
+
+        setPendingCL(pendingData || []);
+        setClHistory(historyData || []);
       } catch (err) {
         console.error(err);
         setError(
-          'Failed to load pending CLs. Please check your /api/cl/employee/pending route.'
+          'Failed to load your dashboard data. Please check /api/cl/employee/pending and /api/cl/employee/my/history routes.'
         );
       } finally {
         setLoading(false);
@@ -63,6 +71,12 @@ function EmployeeDashboard() {
   if (!user) {
     return null; // wait for auth check
   }
+
+  // If you ever want only rows where employee actually acted:
+  // const employeeActivity = clHistory.filter(
+  //   (row) => row.employee_decision != null && row.employee_decision !== ''
+  // );
+  const employeeActivity = clHistory;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
@@ -140,6 +154,51 @@ function EmployeeDashboard() {
                       >
                         Review
                       </button>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Employee CL Activity / History */}
+      <section>
+        <h2 className="mb-3 text-lg font-semibold text-gray-900">
+          My Competency Leveling Activity
+        </h2>
+        {employeeActivity.length === 0 ? (
+          <p className="text-sm text-gray-600">
+            You don&apos;t have any competency leveling activity yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <Th>CL ID</Th>
+                  <Th>Cycle</Th>
+                  <Th>Status</Th>
+                  <Th>Employee Decision</Th>
+                  <Th>Employee Decided At</Th>
+                  <Th>Total Score</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {employeeActivity.map((cl) => (
+                  <tr key={cl.id} className="hover:bg-gray-50">
+                    <Td>{cl.id}</Td>
+                    <Td>{cl.cycle_name || cl.cycle_id || '-'}</Td>
+                    <Td>{cl.status || '-'}</Td>
+                    <Td>{cl.employee_decision || '-'}</Td>
+                    <Td>
+                      {cl.employee_decided_at
+                        ? new Date(cl.employee_decided_at).toLocaleString()
+                        : '-'}
+                    </Td>
+                    <Td>
+                      {cl.total_score != null ? cl.total_score : '-'}
                     </Td>
                   </tr>
                 ))}

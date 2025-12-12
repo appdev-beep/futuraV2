@@ -52,6 +52,13 @@ router.get(
   clController.getManagerPending
 );
 
+// GET /api/cl/manager/all (history)
+router.get(
+  '/manager/all',
+  requireRole('Manager', 'HR', 'Admin'),
+  clController.getManagerAllCL
+);
+
 // =====================================
 // EMPLOYEE DASHBOARD ROUTES
 // =====================================
@@ -61,6 +68,14 @@ router.get(
   '/employee/pending',
   requireRole('Employee'),
   clController.getEmployeePending
+);
+
+// EMPLOYEE SELF HISTORY
+// GET /api/cl/employee/my/history
+router.get(
+  '/employee/my/history',
+  requireRole('Employee'),
+  clController.getMyHistory
 );
 
 // =====================================
@@ -99,6 +114,13 @@ router.get(
   clController.getHRPending
 );
 
+// GET /api/cl/hr/all (history)
+router.get(
+  '/hr/all',
+  requireRole('HR', 'Admin'),
+  clController.getHRAllCL   // make sure this exists in cl.controller
+);
+
 // =====================================
 // PDF UPLOAD (JUSTIFICATION ATTACHMENT)
 // POST /api/cl/upload
@@ -111,7 +133,7 @@ router.post(
 );
 
 // =====================================
-// EMPLOYEE COMPETENCY LOOKUP
+// EMPLOYEE-SPECIFIC DATA (for supervisors/AM/Manager/HR/Admin)
 // MUST BE ABOVE "/:id"
 // =====================================
 
@@ -120,6 +142,13 @@ router.get(
   '/employee/:id/competencies',
   requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
   clController.getCompetenciesForEmployee
+);
+
+// GET /api/cl/employee/:id/history
+router.get(
+  '/employee/:id/history',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  clController.getEmployeeHistory
 );
 
 // =====================================
