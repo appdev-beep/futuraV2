@@ -1,6 +1,7 @@
 // src/pages/StartCLPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../api/client";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 function StartCLPage() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -274,7 +275,7 @@ function StartCLPage() {
           const formData = new FormData();
           formData.append("file", comp.pdf);
 
-          const res = await fetch("http://localhost:4000/api/cl/upload", {
+          const res = await fetch(`${API_BASE_URL}/api/cl/upload`, {
             method: "POST",
             body: formData,
           });

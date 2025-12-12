@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
-
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 function ManagerReviewCLPage() {
   const { id } = useParams();
   const [user, setUser] = useState(null);
@@ -197,14 +197,15 @@ function ManagerReviewCLPage() {
                 {/* PDF FILE COLUMN */}
                 <td className="px-3 py-2">
                   {it.pdf_path ? (
-                    <a
-                      href={`http://localhost:4000/${it.pdf_path}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue-600 underline"
-                    >
-                      View PDF
-                    </a>
+<a
+  href={`${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}`}
+  target="_blank"
+  rel="noreferrer"
+  className="text-blue-600 underline"
+>
+  View PDF
+</a>
+
                   ) : (
                     <span className="text-gray-400 text-xs">No file</span>
                   )}

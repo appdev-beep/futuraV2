@@ -1,6 +1,6 @@
 // src/pages/LoginPage.jsx
 import { useState } from 'react';
-
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 // Map roles to where they should land after login
 const ROLE_REDIRECTS = {
   Admin: '/admin/users/create',
@@ -20,12 +20,12 @@ function LoginPage() {
     e.preventDefault();
     setError('');
 
-    try {
-      const res = await fetch('http://localhost:4000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
+try {
+  const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
 
       if (!res.ok) {
         const err = await res.json();

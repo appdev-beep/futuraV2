@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../api/client';
-
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 function SupervisorReviewCLPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -333,19 +333,20 @@ function SupervisorReviewCLPage() {
         </div>
 
         {/* PDF SECTION */}
-        {pdf_path && (
-          <div className="bg-white rounded shadow p-6 mb-6">
-            <h2 className="text-lg font-semibold mb-4">CL Document</h2>
-            <a
-              href={`http://localhost:4000/${pdf_path}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:underline"
-            >
-              View PDF
-            </a>
-          </div>
-        )}
+{pdf_path && (
+  <div className="bg-white rounded shadow p-6 mb-6">
+    <h2 className="text-lg font-semibold mb-4">CL Document</h2>
+    <a
+      href={`${import.meta.env.VITE_API_BASE_URL}/${pdf_path}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-600 hover:underline"
+    >
+      View PDF
+    </a>
+  </div>
+)}
+
 
         {/* ACTIONS - DRAFT (resubmit) */}
         {status === 'DRAFT' && (
