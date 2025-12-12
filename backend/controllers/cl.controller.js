@@ -1,6 +1,6 @@
 const clService = require('../services/cl.service');
-const { db } = require('../config/db'); // mysql2 pool/connection
-const path = require('path');           // for building file path
+const { db } = require('../config/db'); 
+const path = require('path');           
 
 // =====================================================
 // NOTIFICATION HELPERS
