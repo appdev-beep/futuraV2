@@ -1213,6 +1213,25 @@ async function getHRAllCL(hrId) {
   }
 }
 
+// Find a user by role in same department (simple approach)
+async function findApproverByRole(department_id, role) {
+  // adjust query to your DB layer
+  return db.users.findFirst({
+    where: { department_id, role, is_active: true },
+  });
+}
+
+async function getRecipientForStatus(clHeader) {
+  const { status, department_id, employee_id, supervisor_id } = clHeader;
+
+  if (status === "PENDING_EMPLOYEE") return { recipient_id: employee_id, role: "Employee" };
+  if (status === "PENDING_AM") return { recipient_id: (await findApproverByRole(department_id, "AM"))?.id, role: "AM" };
+  if (status === "PENDING_MANAGER") return { recipient_id: (await findApproverByRole(department_id, "Manager"))?.id, role: "Manager" };
+  if (status === "PENDING_HR") return { recipient_id: (await findApproverByRole(department_id, "HR"))?.id, role: "HR" };
+
+  return null;
+}
+
 
 module.exports = {
   getById,
@@ -1229,6 +1248,7 @@ module.exports = {
   getEmployeePending,
   getAMSummary,
   getAMPending,
+  getRecipientForStatus,
   getHRSummary,
   getHRPending,
   getCompetenciesForEmployee,
