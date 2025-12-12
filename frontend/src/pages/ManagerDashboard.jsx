@@ -1,24 +1,31 @@
 // src/pages/ManagerDashboard.jsx
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../api/client';
 import {
   ClipboardDocumentCheckIcon,
   CheckCircleIcon,
   XCircleIcon,
-  ArrowRightOnRectangleIcon
+  ArrowRightOnRectangleIcon,
+  BellIcon,
 } from '@heroicons/react/24/outline';
 
 function ManagerDashboard() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
   const [summary, setSummary] = useState({
     clPending: 0,
     clInProgress: 0,
-    clApproved: 0
+    clApproved: 0,
   });
+
   const [pendingCL, setPendingCL] = useState([]);
   const [allCL, setAllCL] = useState([]); // <-- all CLs (we'll filter for history)
+
+  // ✅ NEW: notifications + recent actions (right sidebar)
+  const [notifications, setNotifications] = useState([]);
+  const [recentActions, setRecentActions] = useState([]);
 
   // Only these roles can access Manager dashboard
   const managerRoles = ['Manager', 'HR', 'Admin'];
@@ -51,19 +58,16 @@ function ManagerDashboard() {
 
     async function loadDashboard() {
       try {
-        // GET /api/cl/manager/summary
-        // GET /api/cl/manager/pending
-        // GET /api/cl/manager/all        <-- includes manager_decision for history
         const [clSummary, clPending, clAll] = await Promise.all([
           apiRequest('/api/cl/manager/summary'),
           apiRequest('/api/cl/manager/pending'),
-          apiRequest('/api/cl/manager/all')
+          apiRequest('/api/cl/manager/all'),
         ]);
 
         setSummary({
           clPending: clSummary.clPending || 0,
           clInProgress: clSummary.clInProgress || 0,
-          clApproved: clSummary.clApproved || 0
+          clApproved: clSummary.clApproved || 0,
         });
 
         setPendingCL(clPending || []);
@@ -80,6 +84,47 @@ function ManagerDashboard() {
   }, [user]);
 
   // ==========================
+  // LOAD NOTIFICATIONS (polling)
+  // ==========================
+  useEffect(() => {
+    if (!user) return;
+
+    let timer;
+
+    async function loadNotifications() {
+      try {
+        const data = await apiRequest('/api/notifications');
+        setNotifications(data || []);
+      } catch (err) {
+        console.error('Failed to load notifications', err);
+      }
+    }
+
+    loadNotifications();
+    timer = setInterval(loadNotifications, 15000);
+
+    return () => clearInterval(timer);
+  }, [user]);
+
+  // ==========================
+  // LOAD RECENT ACTIONS
+  // ==========================
+  useEffect(() => {
+    if (!user) return;
+
+    async function loadRecentActions() {
+      try {
+        const data = await apiRequest('/api/recent-actions');
+        setRecentActions(data || []);
+      } catch (err) {
+        console.error('Failed to load recent actions', err);
+      }
+    }
+
+    loadRecentActions();
+  }, [user]);
+
+  // ==========================
   // HELPERS
   // ==========================
   function logout() {
@@ -90,6 +135,24 @@ function ManagerDashboard() {
   function goTo(url) {
     window.location.href = url;
   }
+
+  async function handleNotificationClick(n) {
+    try {
+      if (n?.id) {
+        await apiRequest(`/api/notifications/${n.id}/read`, { method: 'PATCH' });
+      }
+    } catch {
+      // ignore
+    } finally {
+      goTo(n?.url || '/manager');
+    }
+  }
+
+  const unreadCount = useMemo(() => {
+    return (notifications || []).filter(
+      (n) => String(n.status || '').toLowerCase() === 'unread'
+    ).length;
+  }, [notifications]);
 
   if (!user) return null;
 
@@ -111,24 +174,21 @@ function ManagerDashboard() {
 
         {/* NAVIGATION */}
         <nav className="flex-1 p-4 space-y-2">
-          {/* Manager CL Dashboard */}
           <button
             onClick={() => goTo('/manager')}
-            className="w-full flex items-center gap-3 px-4 py-2 rounded 
+            className="w-full flex items-center gap-3 px-4 py-2 rounded
                        text-gray-700 hover:bg-gray-100 transition"
           >
             <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-600" />
             <span>CL Approvals</span>
           </button>
-
-          {/* (Optional) add other modules e.g. IDP, reports, etc. */}
         </nav>
 
         {/* LOGOUT */}
         <div className="p-4 border-t border-gray-200">
           <button
             onClick={logout}
-            className="w-full flex items-center justify-center gap-2 
+            className="w-full flex items-center justify-center gap-2
                        py-2 rounded bg-red-600 text-white hover:bg-red-700 transition"
           >
             <ArrowRightOnRectangleIcon className="w-5 h-5" />
@@ -200,6 +260,99 @@ function ManagerDashboard() {
           )}
         </section>
       </main>
+
+      {/* RIGHT SIDEBAR – NOTIFICATIONS + RECENT ACTIONS */}
+      <aside className="w-72 bg-white border-l border-gray-200 flex flex-col">
+        {/* TOP: NOTIFICATIONS */}
+        <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BellIcon className="w-5 h-5 text-orange-500" />
+              <span className="text-sm font-semibold text-gray-700">Notifications</span>
+            </div>
+            {unreadCount > 0 && (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500 text-white">
+                {unreadCount}
+              </span>
+            )}
+          </div>
+
+          <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
+            {notifications.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No notifications.</p>
+            ) : (
+              notifications.map((n) => {
+                const isUnread = String(n.status || '').toLowerCase() === 'unread';
+                return (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onClick={() => handleNotificationClick(n)}
+                    className={`w-full text-left px-3 py-2 rounded text-sm transition
+                      ${isUnread ? 'bg-orange-50 hover:bg-orange-100' : 'bg-gray-50 hover:bg-gray-100'}`}
+                  >
+                    <p className="font-medium text-gray-800 truncate">
+                      {n.message || n.title || 'Notification'}
+                    </p>
+                    {n.created_at && (
+                      <p className="text-[11px] text-gray-400">
+                        {new Date(n.created_at).toLocaleString()}
+                      </p>
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-gray-200" />
+
+        {/* BOTTOM: RECENT ACTIONS */}
+        <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-700">Recent Actions</span>
+            {recentActions.length > 0 && (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500 text-white">
+                {recentActions.length}
+              </span>
+            )}
+          </div>
+
+          <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
+            {recentActions.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No recent actions.</p>
+            ) : (
+              recentActions.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => goTo(a.url || '/manager')}
+                  className="w-full text-left px-3 py-2 rounded text-sm
+                             bg-gray-50 hover:bg-gray-100 transition"
+                >
+                  <p className="font-medium text-gray-800 truncate">
+                    {a.title || 'Action'}
+                  </p>
+
+                  {a.description && (
+                    <p className="text-[12px] text-gray-600 line-clamp-2">
+                      {a.description}
+                    </p>
+                  )}
+
+                  {a.created_at && (
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {new Date(a.created_at).toLocaleString()}
+                    </p>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }
