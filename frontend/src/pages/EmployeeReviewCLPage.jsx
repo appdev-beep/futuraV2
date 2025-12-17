@@ -11,6 +11,8 @@ function EmployeeReviewCLPage() {
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [remarks, setRemarks] = useState('');
+  const [confirmModal, setConfirmModal] = useState({ open: false, action: null });
+  const [messageModal, setMessageModal] = useState({ open: false, message: '', isError: false });
 
   // ==========================
   // AUTH GUARD
@@ -24,7 +26,6 @@ function EmployeeReviewCLPage() {
 
     const parsed = JSON.parse(stored);
     if (parsed.role !== 'Employee') {
-      alert('Only Employees can review CLs.');
       window.location.href = '/';
       return;
     }
@@ -60,8 +61,12 @@ function EmployeeReviewCLPage() {
   // ==========================
   // ACTION HANDLERS
   // ==========================
+  function handleApproveClick() {
+    setConfirmModal({ open: true, action: 'approve' });
+  }
+
   async function handleApprove() {
-    if (!window.confirm('Approve this CL?')) return;
+    setConfirmModal({ open: false, action: null });
 
     try {
       setActionLoading(true);
@@ -69,23 +74,26 @@ function EmployeeReviewCLPage() {
         method: 'POST',
         body: JSON.stringify({ remarks })
       });
-      alert('CL approved successfully.');
-      goBack();
+      setMessageModal({ open: true, message: 'CL approved successfully.', isError: false });
+      setTimeout(() => goBack(), 1500);
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Failed to approve CL.');
+      setMessageModal({ open: true, message: err.message || 'Failed to approve CL.', isError: true });
     } finally {
       setActionLoading(false);
     }
   }
 
-  async function handleReturn() {
+  function handleReturnClick() {
     if (!remarks.trim()) {
-      alert('Please provide remarks before returning.');
+      setMessageModal({ open: true, message: 'Please provide remarks before returning.', isError: true });
       return;
     }
+    setConfirmModal({ open: true, action: 'return' });
+  }
 
-    if (!window.confirm('Return this CL to the supervisor?')) return;
+  async function handleReturn() {
+    setConfirmModal({ open: false, action: null });
 
     try {
       setActionLoading(true);
@@ -93,11 +101,11 @@ function EmployeeReviewCLPage() {
         method: 'POST',
         body: JSON.stringify({ remarks })
       });
-      alert('CL returned to supervisor.');
-      goBack();
+      setMessageModal({ open: true, message: 'CL returned to supervisor.', isError: false });
+      setTimeout(() => goBack(), 1500);
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Failed to return CL.');
+      setMessageModal({ open: true, message: err.message || 'Failed to return CL.', isError: true });
     } finally {
       setActionLoading(false);
     }
@@ -168,7 +176,7 @@ function EmployeeReviewCLPage() {
       </p>
 
       {/* Employee Info */}
-      <div className="bg-white rounded shadow-sm p-6 mb-6">
+      <div className="bg-white border border-gray-200 p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4">Employee Information</h2>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
@@ -184,7 +192,7 @@ function EmployeeReviewCLPage() {
 
       {/* Supervisor & Manager Remarks (read-only) */}
       {(supervisor_remarks || manager_remarks) && (
-        <div className="bg-white rounded shadow-sm p-6 mb-6 text-sm">
+        <div className="bg-white border border-gray-200 p-6 mb-6 text-sm">
           {supervisor_remarks && (
             <div className="mb-4">
               <h2 className="font-semibold text-yellow-800 mb-1">
@@ -210,7 +218,7 @@ function EmployeeReviewCLPage() {
       )}
 
       {/* Competencies Table */}
-      <div className="bg-white rounded shadow-sm p-6 mb-6">
+      <div className="bg-white border border-gray-200 p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4">Competencies</h2>
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
@@ -220,6 +228,8 @@ function EmployeeReviewCLPage() {
               <th className="px-4 py-2 text-left font-semibold">Assigned</th>
               <th className="px-4 py-2 text-left font-semibold">Weight</th>
               <th className="px-4 py-2 text-left font-semibold">Score</th>
+              <th className="px-4 py-2 text-left font-semibold">Justification</th>
+              <th className="px-4 py-2 text-left font-semibold">PDF</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -233,6 +243,21 @@ function EmployeeReviewCLPage() {
                 </td>
                 <td className="px-4 py-2">
                   {Number(it.score || 0).toFixed(2)}
+                </td>
+                <td className="px-4 py-2">{it.justification || '—'}</td>
+                <td className="px-4 py-2">
+                  {it.pdf_path ? (
+                    <a
+                      href={`${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-600 hover:underline text-xs"
+                    >
+                      View PDF
+                    </a>
+                  ) : (
+                    <span className="text-gray-400 text-xs">No file</span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -264,19 +289,75 @@ function EmployeeReviewCLPage() {
       {status === 'PENDING_EMPLOYEE' && (
         <div className="flex gap-4">
           <button
-            onClick={handleApprove}
+            onClick={handleApproveClick}
             disabled={actionLoading}
             className="px-6 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-50"
           >
             {actionLoading ? 'Processing...' : 'Approve'}
           </button>
           <button
-            onClick={handleReturn}
+            onClick={handleReturnClick}
             disabled={actionLoading}
             className="px-6 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-50"
           >
             {actionLoading ? 'Processing...' : 'Return for Revision'}
           </button>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">
+              {confirmModal.action === 'approve' ? 'Confirm Approval' : 'Confirm Return'}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {confirmModal.action === 'approve'
+                ? 'Are you sure you want to approve this CL?'
+                : 'Are you sure you want to return this CL to the supervisor?'}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmModal({ open: false, action: null })}
+                className="px-4 py-2 rounded border border-gray-300 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmModal.action === 'approve' ? handleApprove : handleReturn}
+                className={`px-4 py-2 rounded text-white ${
+                  confirmModal.action === 'approve'
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : 'bg-red-600 hover:bg-red-700'
+                }`}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Message Modal */}
+      {messageModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className={`text-lg font-semibold mb-4 ${
+              messageModal.isError ? 'text-red-600' : 'text-green-600'
+            }`}>
+              {messageModal.isError ? 'Error' : 'Success'}
+            </h3>
+            <p className="text-gray-600 mb-6">{messageModal.message}</p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setMessageModal({ open: false, message: '', isError: false })}
+                className="px-4 py-2 rounded bg-gray-600 text-white hover:bg-gray-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

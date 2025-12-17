@@ -1,4 +1,4 @@
-const { createUser, listUsers } = require('../services/user.service');
+const { createUser, listUsers, deleteUser } = require('../services/user.service');
 
 // GET /api/users
 async function getAll(req, res, next) {
@@ -46,7 +46,19 @@ async function create(req, res, next) {
   }
 }
 
+// DELETE /api/users/:id
+async function deleteById(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await deleteUser(id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getAll,
-  create
+  create,
+  deleteById
 };

@@ -2,15 +2,30 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
+import Modal from '../components/Modal';
 
 function HRReviewCLPage() {
   const { id } = useParams();
   const [user, setUser] = useState(null);
   const [cl, setCl] = useState(null);
+  const [auditTrail, setAuditTrail] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [remarks, setRemarks] = useState('');
+  const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
+
+  const showModal = (title, message, type = 'info') => {
+    setModal({ isOpen: true, title, message, type, isConfirm: false, onConfirm: null });
+  };
+
+  const showConfirmModal = (title, message, onConfirm, type = 'warning') => {
+    setModal({ isOpen: true, title, message, type, isConfirm: true, onConfirm });
+  };
+
+  const closeModal = () => {
+    setModal({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
+  };
 
   // ==========================
   // AUTH GUARD
@@ -24,8 +39,8 @@ function HRReviewCLPage() {
 
     const parsed = JSON.parse(stored);
     if (parsed.role !== 'HR' && parsed.role !== 'Admin') {
-      alert('Only HR can review CLs.');
-      window.location.href = '/';
+      showModal('Access Denied', 'Only HR can review CLs.', 'error');
+      setTimeout(() => window.location.href = '/', 2000);
       return;
     }
 
@@ -40,11 +55,16 @@ function HRReviewCLPage() {
 
     async function loadCL() {
       try {
-        const data = await apiRequest(`/api/cl/${id}`, { method: 'GET' });
-        setCl(data);
+        const [clData, trailData] = await Promise.all([
+          apiRequest(`/api/cl/${id}`, { method: 'GET' }),
+          apiRequest(`/api/cl/${id}/audit-trail`, { method: 'GET' })
+        ]);
+        
+        setCl(clData);
+        setAuditTrail(trailData);
 
         // Normalize header to safely read hr_remarks
-        const header = data.header || data;
+        const header = clData.header || clData;
         if (header.hr_remarks) {
           setRemarks(header.hr_remarks);
         }
@@ -66,20 +86,28 @@ function HRReviewCLPage() {
   // ==========================
   // APPROVE HANDLER
   // ==========================
-  async function handleApprove() {
-    if (!window.confirm('Approve this CL? This will enable IDP creation for the employee.')) return;
+  function confirmApprove() {
+    showConfirmModal(
+      'Confirm Approval',
+      'Approve this CL? This will enable IDP creation for the employee.',
+      executeApprove,
+      'info'
+    );
+  }
 
+  async function executeApprove() {
+    closeModal();
     try {
       setActionLoading(true);
       await apiRequest(`/api/cl/${id}/hr/approve`, {
         method: 'POST',
         body: JSON.stringify({ remarks }),
       });
-      alert('CL approved successfully. Employee can now create IDP.');
-      goBack();
+      showModal('Success', 'CL approved successfully. Employee can now create IDP.', 'success');
+      setTimeout(() => goBack(), 2000);
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Failed to approve CL.');
+      showModal('Error', err.message || 'Failed to approve CL.', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -88,25 +116,33 @@ function HRReviewCLPage() {
   // ==========================
   // RETURN HANDLER
   // ==========================
-  async function handleReturn() {
+  function confirmReturn() {
     if (!remarks.trim()) {
-      alert('Please provide remarks before returning.');
+      showModal('Validation Error', 'Please provide remarks before returning.', 'warning');
       return;
     }
 
-    if (!window.confirm('Return this CL to the supervisor?')) return;
+    showConfirmModal(
+      'Confirm Return',
+      'Return this CL to the supervisor?',
+      executeReturn,
+      'warning'
+    );
+  }
 
+  async function executeReturn() {
+    closeModal();
     try {
       setActionLoading(true);
       await apiRequest(`/api/cl/${id}/hr/return`, {
         method: 'POST',
         body: JSON.stringify({ remarks }),
       });
-      alert('CL returned to supervisor.');
-      goBack();
+      showModal('Success', 'CL returned to supervisor.', 'success');
+      setTimeout(() => goBack(), 2000);
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Failed to return CL.');
+      showModal('Error', err.message || 'Failed to return CL.', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -176,7 +212,7 @@ function HRReviewCLPage() {
       </p>
 
       {/* Employee & Supervisor Info */}
-      <div className="bg-white rounded shadow-sm p-6 mb-6">
+      <div className="bg-white border border-gray-200 p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4">Employee Information</h2>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
@@ -196,7 +232,7 @@ function HRReviewCLPage() {
 
       {/* All Previous Remarks (read-only) */}
       {(supervisor_remarks || manager_remarks || employee_remarks || hr_remarks) && (
-        <div className="bg-white rounded shadow-sm p-6 mb-6 text-sm">
+        <div className="bg-white border border-gray-200 p-6 mb-6 text-sm">
           <h2 className="text-lg font-semibold mb-3">Remarks History</h2>
 
           {supervisor_remarks && (
@@ -237,8 +273,50 @@ function HRReviewCLPage() {
         </div>
       )}
 
+      {/* Process History / Audit Trail */}
+      {auditTrail && auditTrail.length > 0 && (
+        <div className="bg-white border border-gray-200 p-6 mb-6 text-sm">
+          <h2 className="text-lg font-semibold mb-4">Process History</h2>
+          <div className="space-y-4">
+            {auditTrail.map((event, idx) => {
+              let badgeColor = 'bg-gray-100 text-gray-800';
+              let label = event.action_type;
+
+              if (event.action_type === 'CREATED') {
+                badgeColor = 'bg-blue-100 text-blue-800';
+                label = 'Created';
+              } else if (event.action_type.includes('APPROVE')) {
+                badgeColor = 'bg-green-100 text-green-800';
+                label = event.action_type.replace('_', ' ');
+              } else if (event.action_type.includes('RETURN')) {
+                badgeColor = 'bg-red-100 text-red-800';
+                label = event.action_type.replace('_', ' ');
+              }
+
+              return (
+                <div key={idx} className="flex items-start gap-3 pb-3 border-b last:border-0">
+                  <span className={`px-2 py-1 text-xs font-semibold rounded ${badgeColor}`}>
+                    {label}
+                  </span>
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500">
+                      {new Date(event.timestamp).toLocaleString()} • {event.actor_name} ({event.actor_role})
+                    </p>
+                    {event.remarks && (
+                      <p className="mt-1 text-gray-800 whitespace-pre-wrap">
+                        {event.remarks}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Competencies Table */}
-      <div className="bg-white rounded shadow-sm p-6 mb-6">
+      <div className="bg-white border border-gray-200 p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4">Competency Leveling Summary</h2>
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
@@ -248,6 +326,7 @@ function HRReviewCLPage() {
               <th className="px-4 py-2 text-left font-semibold">Assigned</th>
               <th className="px-4 py-2 text-left font-semibold">Weight</th>
               <th className="px-4 py-2 text-left font-semibold">Score</th>
+              <th className="px-4 py-2 text-left font-semibold">Justification</th>
               <th className="px-4 py-2 text-left font-semibold">PDF</th>
             </tr>
           </thead>
@@ -263,10 +342,11 @@ function HRReviewCLPage() {
                 <td className="px-4 py-2">
                   {Number(it.score || 0).toFixed(2)}
                 </td>
+                <td className="px-4 py-2">{it.justification || '—'}</td>
                 <td className="px-4 py-2">
                   {it.pdf_path ? (
                     <a
-                      href={`http://localhost:4000/${it.pdf_path}`}
+                      href={`${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}`}
                       target="_blank"
                       rel="noreferrer"
                       className="text-blue-600 underline text-xs"
@@ -287,7 +367,7 @@ function HRReviewCLPage() {
       </div>
 
       {/* HR Remarks Section */}
-      <div className="bg-white rounded shadow-sm p-6 mb-6">
+      <div className="bg-white border border-gray-200 p-6 mb-6">
         <label className="block text-sm font-semibold mb-2">
           HR Remarks{' '}
           {header.status === 'PENDING_HR' && (
@@ -295,7 +375,7 @@ function HRReviewCLPage() {
           )}
         </label>
         <textarea
-          className="w-full border rounded p-3 text-sm"
+          className="w-full border p-3 text-sm"
           rows="5"
           value={remarks}
           onChange={(e) => setRemarks(e.target.value)}
@@ -307,21 +387,31 @@ function HRReviewCLPage() {
       {header.status === 'PENDING_HR' && (
         <div className="flex gap-4">
           <button
-            onClick={handleApprove}
+            onClick={confirmApprove}
             disabled={actionLoading}
-            className="px-6 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-50"
+            className="px-6 py-2 bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-50"
           >
             {actionLoading ? 'Processing...' : 'Approve & Enable IDP'}
           </button>
           <button
-            onClick={handleReturn}
+            onClick={confirmReturn}
             disabled={actionLoading}
-            className="px-6 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-50"
+            className="px-6 py-2 bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-50"
           >
             {actionLoading ? 'Processing...' : 'Return for Revision'}
           </button>
         </div>
       )}
+
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={closeModal}
+        onConfirm={modal.onConfirm}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        isConfirm={modal.isConfirm}
+      />
     </div>
   );
 }

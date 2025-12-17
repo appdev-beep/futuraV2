@@ -16,10 +16,12 @@ async function getById(id) {
        ch.*,
        e.name as employee_name,
        e.employee_id,
+       s.name as supervisor_name,
        d.name as department_name,
        p.title as position_title
      FROM cl_headers ch
      JOIN users e ON ch.employee_id = e.id
+     LEFT JOIN users s ON ch.supervisor_id = s.id
      JOIN departments d ON ch.department_id = d.id
      JOIN positions p ON e.position_id = p.id
      WHERE ch.id = ?`,
@@ -41,42 +43,52 @@ async function getById(id) {
     [id]
   );
 
+  // Recalculate score for each item and total
+  const mappedItems = items.map(item => {
+    const score = (Number(item.weight) / 100) * Number(item.assigned_level);
+    return {
+      id: item.id,
+      competency_id: item.competency_id,
+      competency_name: item.competency_name,
+      mplr: item.mplr_level,
+      required_level: item.mplr_level,
+      assigned_level: item.assigned_level,
+      self_rating: item.assigned_level,
+      supervisor_rating: score,
+      score,
+      remarks: item.justification,
+      pdf_path: item.pdf_path,
+      weight: item.weight,
+      justification: item.justification
+    };
+  });
+
+  const total_score = mappedItems.reduce((sum, item) => sum + (Number(item.score) || 0), 0);
+
   // Recalculate score for each item before returning
   return {
     id: header.id,
     status: header.status,
 
-    // 👇 ADD THIS (and any other remarks you want exposed)
+    // Remarks with timestamps
     supervisor_remarks: header.supervisor_remarks,
+    supervisor_id: header.supervisor_id,
     am_remarks: header.am_remarks,
     manager_remarks: header.manager_remarks,
     employee_remarks: header.employee_remarks,
     hr_remarks: header.hr_remarks,
+    created_at: header.created_at,
+    updated_at: header.updated_at,
 
     employee_name: header.employee_name,
     employee_id: header.employee_id,
+    supervisor_name: header.supervisor_name,
     department_name: header.department_name,
     position_title: header.position_title,
     cycle_id: header.cycle_id,
-    created_at: header.created_at,
+    total_score: total_score.toFixed(2),
     pdf_path: items.length > 0 ? items[0].pdf_path : null,
-    items: items.map(item => {
-      const score = (Number(item.weight) / 100) * Number(item.assigned_level);
-      return {
-        id: item.id,
-        competency_id: item.competency_id,
-        competency_name: item.competency_name,
-        required_level: item.mplr_level,
-        assigned_level: item.assigned_level,
-        self_rating: item.assigned_level,
-        supervisor_rating: score,
-        score,
-        remarks: item.justification,
-        pdf_path: item.pdf_path,
-        weight: item.weight,
-        justification: item.justification
-      };
-    })
+    items: mappedItems
   };
 }
 
@@ -153,24 +165,45 @@ async function update(id, payload) {
 
     if (payload.items && Array.isArray(payload.items)) {
       for (const item of payload.items) {
-        await conn.query(
-          `UPDATE cl_items
-             SET assigned_level = ?,
-                 weight         = ?,
-                 justification  = ?,
-                 score          = (weight / 100.0) * assigned_level,
-                 pdf_path       = COALESCE(?, pdf_path),
-                 updated_at     = NOW()
-           WHERE id = ? AND cl_header_id = ?`,
-          [
-            item.assigned_level,
-            item.weight,
-            item.justification || '',
-            item.pdf_path || null,  // 👈 will overwrite only if a new path is provided
-            item.id,
-            id
-          ]
-        );
+        // Only update pdf_path if explicitly provided
+        if (item.pdf_path) {
+          await conn.query(
+            `UPDATE cl_items
+               SET assigned_level = ?,
+                   weight         = ?,
+                   justification  = ?,
+                   score          = (weight / 100.0) * assigned_level,
+                   pdf_path       = ?,
+                   updated_at     = NOW()
+             WHERE id = ? AND cl_header_id = ?`,
+            [
+              item.assigned_level,
+              item.weight,
+              item.justification || '',
+              item.pdf_path,
+              item.id,
+              id
+            ]
+          );
+        } else {
+          // Don't update pdf_path if no new file provided
+          await conn.query(
+            `UPDATE cl_items
+               SET assigned_level = ?,
+                   weight         = ?,
+                   justification  = ?,
+                   score          = (weight / 100.0) * assigned_level,
+                   updated_at     = NOW()
+             WHERE id = ? AND cl_header_id = ?`,
+            [
+              item.assigned_level,
+              item.weight,
+              item.justification || '',
+              item.id,
+              id
+            ]
+          );
+        }
       }
     }
 
@@ -243,19 +276,11 @@ async function submit(id, supervisorRemarks = null) {
     nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
   }
 
-  // 3) Generate PDF
-  const pdfPath = await generateCLPDF(id, clHeader);
+  // 3) No longer auto-generate PDF - use uploaded PDFs instead
+  // const pdfPath = await generateCLPDF(id, clHeader);
 
-  // 4) Decide what to store in supervisor_remarks
-  let newSupervisorRemarks = clHeader.supervisor_remarks;
-
-  if (
-    (!newSupervisorRemarks || newSupervisorRemarks.trim() === '') &&
-    supervisorRemarks &&
-    supervisorRemarks.trim() !== ''
-  ) {
-    newSupervisorRemarks = supervisorRemarks;
-  }
+  // 4) Update supervisor_remarks with new remarks if provided
+  let newSupervisorRemarks = supervisorRemarks || clHeader.supervisor_remarks;
 
   // 5) Update header status and pdf_path for all items
   const conn = await db.getConnection();
@@ -272,13 +297,8 @@ async function submit(id, supervisorRemarks = null) {
       [nextStatus, newSupervisorRemarks, id]
     );
 
-    await conn.query(
-      `UPDATE cl_items 
-          SET pdf_path = ?, 
-              updated_at = NOW() 
-        WHERE cl_header_id = ?`,
-      [pdfPath, id]
-    );
+    // PDF paths are already set per competency item via the update() function
+    // No need to override them here
 
     await conn.commit();
   } catch (err) {
@@ -574,14 +594,19 @@ async function getManagerSummary(managerId) {
     SELECT
       SUM(ch.status = 'PENDING_MANAGER') AS clPending,
       SUM(ch.status = 'MANAGER_REVIEW')  AS clInProgress,
-      SUM(ch.status = 'APPROVED')        AS clApproved
+      (SELECT COUNT(*) FROM cl_manager_logs cml 
+       JOIN cl_headers ch2 ON cml.cl_id = ch2.id
+       JOIN users e2 ON ch2.employee_id = e2.id
+       WHERE cml.manager_id = ? AND cml.action = 'APPROVED'
+       AND e2.department_id = (SELECT department_id FROM users WHERE id = ? LIMIT 1)
+      ) AS clApproved
     FROM cl_headers ch
       JOIN users e ON ch.employee_id = e.id
       JOIN users m ON e.department_id = m.department_id
     WHERE
       m.id = ?
     `,
-    [managerId]
+    [managerId, managerId, managerId]
   );
 
   return rows[0] || { clPending: 0, clInProgress: 0, clApproved: 0 };
@@ -674,13 +699,14 @@ async function managerApprove(id, approverId, remarks) {
       [id, approverId, remarks || null]
     );
 
-    // Move CL to next stage
+    // Move CL to next stage and save remarks
     await conn.query(
       `UPDATE cl_headers 
        SET status = 'PENDING_EMPLOYEE',
+           manager_remarks = ?,
            updated_at = NOW()
        WHERE id = ?`,
-      [id]
+      [remarks || null, id]
     );
 
     await conn.commit();
@@ -711,14 +737,15 @@ async function managerReturn(id, approverId, remarks) {
       [id, approverId, remarks]
     );
 
-    // Move CL back to supervisor
+    // Move CL back to supervisor and save remarks
     await conn.query(
       `UPDATE cl_headers 
        SET status = 'DRAFT',
            awaiting_approval_from = 'PENDING_MANAGER',
+           manager_remarks = ?,
            updated_at = NOW()
        WHERE id = ?`,
-      [id]
+      [remarks, id]
     );
 
     await conn.commit();
@@ -815,15 +842,22 @@ async function getAMPending(amId) {
 // =====================
 // HR DASHBOARD
 // =====================
-async function getHRSummary(hrId) {
-  const [rows] = await db.query(
-    `SELECT
+async function getHRSummary(hrId, departmentName = null) {
+  let query = `SELECT
        SUM(ch.status = 'PENDING_HR') as clPending,
        SUM(ch.status = 'APPROVED') as clApproved,
        SUM(ch.status = 'REJECTED') as clReturned
-     FROM cl_headers ch`,
-    []
-  );
+     FROM cl_headers ch`;
+  
+  const params = [];
+  
+  // If department name is provided, filter by department
+  if (departmentName) {
+    query += ` JOIN departments d ON ch.department_id = d.id WHERE d.name = ?`;
+    params.push(departmentName);
+  }
+
+  const [rows] = await db.query(query, params);
 
   return {
     clPending: rows[0]?.clPending || 0,
@@ -1171,6 +1205,39 @@ async function getManagerAllCL(managerId) {
 }
 
 // =====================
+// HR INCOMING - ALL CLs from ALL departments
+// Shows all CLs regardless of status for HR visibility
+// =====================
+async function getHRIncomingCL() {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT 
+        ch.id,
+        e.name        AS employee_name,
+        e.employee_id AS employee_code,
+        s.name        AS supervisor_name,
+        d.name        AS department_name,
+        p.title       AS position_title,
+        ch.status,
+        ch.created_at AS submitted_at
+      FROM cl_headers ch
+        JOIN users e       ON ch.employee_id   = e.id
+        JOIN users s       ON ch.supervisor_id = s.id
+        JOIN departments d ON e.department_id  = d.id
+        JOIN positions   p ON e.position_id    = p.id
+      ORDER BY d.name ASC, ch.created_at DESC
+      `
+    );
+
+    return rows || [];
+  } catch (err) {
+    logInfo('Error getting HR incoming CLs', { error: err.message });
+    return [];
+  }
+}
+
+// =====================
 // HR ALL CLs (HISTORY)
 // All CLs that this HR has acted on
 // =====================
@@ -1233,6 +1300,70 @@ async function getRecipientForStatus(clHeader) {
 }
 
 
+// =====================
+// GET CL AUDIT TRAIL / HISTORY
+// =====================
+async function getCLAuditTrail(clId) {
+  const [trail] = await db.query(
+    `
+    SELECT 
+      'CREATED' as action_type,
+      ch.supervisor_id as actor_id,
+      u.name as actor_name,
+      u.role as actor_role,
+      ch.supervisor_remarks as remarks,
+      ch.created_at as timestamp
+    FROM cl_headers ch
+    JOIN users u ON ch.supervisor_id = u.id
+    WHERE ch.id = ?
+    
+    UNION ALL
+    
+    SELECT 
+      CONCAT('MANAGER_', ml.action) as action_type,
+      ml.manager_id as actor_id,
+      u.name as actor_name,
+      'Manager' as actor_role,
+      ml.remarks,
+      ml.created_at as timestamp
+    FROM cl_manager_logs ml
+    JOIN users u ON ml.manager_id = u.id
+    WHERE ml.cl_id = ?
+    
+    UNION ALL
+    
+    SELECT 
+      CONCAT('EMPLOYEE_', el.action) as action_type,
+      el.employee_id as actor_id,
+      u.name as actor_name,
+      'Employee' as actor_role,
+      el.remarks,
+      el.created_at as timestamp
+    FROM cl_employee_logs el
+    JOIN users u ON el.employee_id = u.id
+    WHERE el.cl_id = ?
+    
+    UNION ALL
+    
+    SELECT 
+      CONCAT('HR_', hl.action) as action_type,
+      hl.hr_id as actor_id,
+      u.name as actor_name,
+      'HR' as actor_role,
+      hl.remarks,
+      hl.created_at as timestamp
+    FROM cl_hr_logs hl
+    JOIN users u ON hl.hr_id = u.id
+    WHERE hl.cl_id = ?
+    
+    ORDER BY timestamp ASC
+    `,
+    [clId, clId, clId, clId]
+  );
+
+  return trail;
+}
+
 module.exports = {
   getById,
   create,
@@ -1251,6 +1382,7 @@ module.exports = {
   getRecipientForStatus,
   getHRSummary,
   getHRPending,
+  getHRIncomingCL,
   getCompetenciesForEmployee,
   generateCLPDF,
   managerApprove,
@@ -1261,5 +1393,6 @@ module.exports = {
   employeeApprove,
   employeeReturn,
   hrApprove,
-  hrReturn
+  hrReturn,
+  getCLAuditTrail
 };

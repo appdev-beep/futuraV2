@@ -1,6 +1,7 @@
 const clService = require('../services/cl.service');
 const { db } = require('../config/db'); 
-const path = require('path');           
+const path = require('path');
+const { logRecentAction } = require('../services/recentActions.service');
 
 // =====================================================
 // NOTIFICATION HELPERS
@@ -17,9 +18,13 @@ async function createNotification({ recipientId, message, module = 'Competency L
 
 async function getCLHeaderBasic(clId) {
   const [rows] = await db.query(
-    `SELECT id, status, department_id, employee_id, supervisor_id, has_assistant_manager
-     FROM cl_headers
-     WHERE id = ?
+    `SELECT h.id, h.status, h.department_id, h.employee_id, h.supervisor_id, h.has_assistant_manager,
+            e.name as employee_name, e.employee_id as employee_code,
+            s.name as supervisor_name
+     FROM cl_headers h
+     LEFT JOIN users e ON h.employee_id = e.id
+     LEFT JOIN users s ON h.supervisor_id = s.id
+     WHERE h.id = ?
      LIMIT 1`,
     [clId]
   );
@@ -78,17 +83,28 @@ async function resolveRecipientFromStatus(clHeader) {
   return null;
 }
 
-async function notifyNextByCurrentStatus(clId, actorRole, actionText) {
+async function notifyNextByCurrentStatus(clId, actorRole, actionText, remarks = null) {
   const clHeader = await getCLHeaderBasic(clId);
   if (!clHeader) return;
 
   const recipient = await resolveRecipientFromStatus(clHeader);
   if (!recipient?.id) return;
 
+  const employeeInfo = clHeader.employee_name 
+    ? `${clHeader.employee_name} (${clHeader.employee_code || 'N/A'})`
+    : `Employee ID ${clHeader.employee_id}`;
+
+  let notificationMessage = `CL #${clId} for ${employeeInfo} ${actionText}. Current status: ${clHeader.status}. (Action by: ${actorRole})`;
+  
+  // Add remarks to notification if provided
+  if (remarks && remarks.trim()) {
+    notificationMessage += `\n\nRemarks: ${remarks}`;
+  }
+
   await createNotification({
     recipientId: recipient.id,
     module: 'Competency Leveling',
-    message: `CL #${clId} ${actionText}. Current status: ${clHeader.status}. (Action by: ${actorRole})`
+    message: notificationMessage
   });
 }
 
@@ -154,7 +170,8 @@ async function create(req, res, next) {
     await notifyNextByCurrentStatus(
       clId,
       req.user?.role || 'Supervisor',
-      'was created and routed to you for review'
+      'was created and routed to you for review',
+      null // No remarks on creation
     );
 
     // 5. Return updated information to frontend
@@ -205,7 +222,8 @@ async function submit(req, res, next) {
     await notifyNextByCurrentStatus(
       id,
       req.user?.role || 'Supervisor',
-      'was submitted and is now waiting for you'
+      'was submitted and is now waiting for you',
+      remarks
     );
 
     res.json(result);
@@ -314,7 +332,7 @@ async function uploadJustificationFile(req, res, next) {
 
 // =====================================================
 // DELETE CL (Supervisor can delete their own CLs)
-// but ONLY if there is no manager history
+// History will be preserved in recent_actions
 // =====================================================
 async function deleteCL(req, res, next) {
   try {
@@ -322,7 +340,12 @@ async function deleteCL(req, res, next) {
     if (!id) return res.status(400).json({ message: 'Invalid CL id' });
 
     const [rows] = await db.query(
-      `SELECT id, supervisor_id, status FROM cl_headers WHERE id = ?`,
+      `SELECT 
+        h.id, h.supervisor_id, h.status, h.employee_id,
+        e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers h
+       LEFT JOIN users e ON h.employee_id = e.id
+       WHERE h.id = ?`,
       [id]
     );
 
@@ -332,30 +355,34 @@ async function deleteCL(req, res, next) {
 
     const cl = rows[0];
 
+    // Only the supervisor who created it can delete
     if (cl.supervisor_id !== req.user.id) {
       return res
         .status(403)
         .json({ message: 'You can only delete your own CLs' });
     }
 
-    if (cl.status !== 'DRAFT') {
-      return res.status(400).json({
-        message: 'You can only delete CLs that are still in DRAFT status.'
-      });
-    }
+    // Log to recent actions before deletion
+    await logRecentAction({
+      actor_id: req.user.id,
+      module: 'CL',
+      action_type: 'DELETE',
+      cl_id: id,
+      employee_id: cl.employee_id,
+      title: `Deleted CL #${id}`,
+      description: `Deleted Competency Leveling for ${cl.employee_name || 'Employee'} (${cl.employee_code || 'N/A'}). Status was: ${cl.status}`,
+      url: `/supervisor`
+    });
 
-    const [logRows] = await db.query(
-      `SELECT 1 FROM cl_manager_logs WHERE cl_id = ? LIMIT 1`,
-      [id]
-    );
-
-    if (logRows.length > 0) {
-      return res.status(400).json({
-        message:
-          'This CL already has Manager actions (approve/return). It cannot be deleted because there is history attached.'
-      });
-    }
-
+    // Delete all related records first (to avoid foreign key constraint errors)
+    // Delete in order of dependencies
+    await db.query(`DELETE FROM cl_manager_logs WHERE cl_id = ?`, [id]);
+    await db.query(`DELETE FROM cl_employee_logs WHERE cl_id = ?`, [id]);
+    await db.query(`DELETE FROM cl_hr_logs WHERE cl_id = ?`, [id]);
+    await db.query(`DELETE FROM cl_approvals WHERE cl_header_id = ?`, [id]);
+    await db.query(`DELETE FROM cl_items WHERE cl_header_id = ?`, [id]);
+    
+    // Finally delete the CL header
     await db.query(`DELETE FROM cl_headers WHERE id = ?`, [id]);
 
     res.json({ message: 'CL deleted successfully', id });
@@ -375,16 +402,41 @@ async function managerApprove(req, res, next) {
 
     const { remarks } = req.body || {};
 
+    // Get CL details for logging
+    const [clDetails] = await db.query(
+      `SELECT h.id, h.employee_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers h
+       LEFT JOIN users e ON h.employee_id = e.id
+       WHERE h.id = ?`,
+      [id]
+    );
+
     const result = await clService.managerApprove(
       id,
       req.user.id,
       remarks || null
     );
 
+    // Log recent action
+    if (clDetails.length > 0) {
+      const cl = clDetails[0];
+      await logRecentAction({
+        actor_id: req.user.id,
+        module: 'CL',
+        action_type: 'APPROVE',
+        cl_id: id,
+        employee_id: cl.employee_id,
+        title: `Approved CL #${id}`,
+        description: `Approved Competency Leveling for ${cl.employee_name || 'Employee'} (${cl.employee_code || 'N/A'})`,
+        url: `/cl/submissions/${id}`
+      });
+    }
+
     await notifyNextByCurrentStatus(
       id,
       req.user?.role || 'Manager',
-      'was approved and moved forward'
+      'was approved and moved forward',
+      remarks
     );
 
     res.json(result);
@@ -401,12 +453,37 @@ async function managerReturn(req, res, next) {
     const { remarks } = req.body;
     if (!remarks) return res.status(400).json({ message: 'Remarks are required' });
 
+    // Get CL details for logging
+    const [clDetails] = await db.query(
+      `SELECT h.id, h.employee_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers h
+       LEFT JOIN users e ON h.employee_id = e.id
+       WHERE h.id = ?`,
+      [id]
+    );
+
     const result = await clService.managerReturn(id, req.user.id, remarks);
+
+    // Log recent action
+    if (clDetails.length > 0) {
+      const cl = clDetails[0];
+      await logRecentAction({
+        actor_id: req.user.id,
+        module: 'CL',
+        action_type: 'RETURN',
+        cl_id: id,
+        employee_id: cl.employee_id,
+        title: `Returned CL #${id}`,
+        description: `Returned Competency Leveling for ${cl.employee_name || 'Employee'} (${cl.employee_code || 'N/A'}) for revision`,
+        url: `/cl/submissions/${id}`
+      });
+    }
 
     await notifyNextByCurrentStatus(
       id,
       req.user?.role || 'Manager',
-      'was returned for revision'
+      'was returned for revision',
+      remarks
     );
 
     res.json(result);
@@ -453,7 +530,8 @@ async function getAMPending(req, res, next) {
 // =====================================================
 async function getHRSummary(req, res, next) {
   try {
-    const summary = await clService.getHRSummary(req.user.id);
+    const departmentName = req.query.department || null;
+    const summary = await clService.getHRSummary(req.user.id, departmentName);
     res.json(summary);
   } catch (err) {
     next(err);
@@ -478,6 +556,15 @@ async function getHRAllCL(req, res, next) {
   }
 }
 
+async function getHRIncomingCL(req, res, next) {
+  try {
+    const rows = await clService.getHRIncomingCL();
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // =====================================================
 // AM APPROVAL ACTIONS
 // + NOTIFY next recipient
@@ -492,7 +579,8 @@ async function amApprove(req, res, next) {
     await notifyNextByCurrentStatus(
       id,
       req.user?.role || 'AM',
-      'was approved and moved forward'
+      'was approved and moved forward',
+      '' // AM doesn't use remarks for approval
     );
 
     res.json(result);
@@ -514,7 +602,8 @@ async function amReturn(req, res, next) {
     await notifyNextByCurrentStatus(
       id,
       req.user?.role || 'AM',
-      'was returned for revision'
+      'was returned for revision',
+      remarks
     );
 
     res.json(result);
@@ -534,16 +623,41 @@ async function employeeApprove(req, res, next) {
 
     const { remarks } = req.body || {};
 
+    // Get CL details for logging
+    const [clDetails] = await db.query(
+      `SELECT h.id, h.employee_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers h
+       LEFT JOIN users e ON h.employee_id = e.id
+       WHERE h.id = ?`,
+      [id]
+    );
+
     const result = await clService.employeeApprove(
       id,
       req.user.id,
       remarks || null
     );
 
+    // Log recent action
+    if (clDetails.length > 0) {
+      const cl = clDetails[0];
+      await logRecentAction({
+        actor_id: req.user.id,
+        module: 'CL',
+        action_type: 'APPROVE',
+        cl_id: id,
+        employee_id: cl.employee_id,
+        title: `Approved CL #${id}`,
+        description: `Approved Competency Leveling for ${cl.employee_name || 'Employee'} (${cl.employee_code || 'N/A'})`,
+        url: `/cl/employee/review/${id}`
+      });
+    }
+
     await notifyNextByCurrentStatus(
       id,
       req.user?.role || 'Employee',
-      'was approved and moved forward'
+      'was approved and moved forward',
+      remarks
     );
 
     res.json(result);
@@ -562,16 +676,41 @@ async function employeeReturn(req, res, next) {
       return res.status(400).json({ message: 'Remarks are required' });
     }
 
+    // Get CL details for logging
+    const [clDetails] = await db.query(
+      `SELECT h.id, h.employee_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers h
+       LEFT JOIN users e ON h.employee_id = e.id
+       WHERE h.id = ?`,
+      [id]
+    );
+
     const result = await clService.employeeReturn(
       id,
       req.user.id,
       remarks
     );
 
+    // Log recent action
+    if (clDetails.length > 0) {
+      const cl = clDetails[0];
+      await logRecentAction({
+        actor_id: req.user.id,
+        module: 'CL',
+        action_type: 'RETURN',
+        cl_id: id,
+        employee_id: cl.employee_id,
+        title: `Returned CL #${id}`,
+        description: `Returned Competency Leveling for ${cl.employee_name || 'Employee'} (${cl.employee_code || 'N/A'}) for revision`,
+        url: `/cl/employee/review/${id}`
+      });
+    }
+
     await notifyNextByCurrentStatus(
       id,
       req.user?.role || 'Employee',
-      'was returned for revision'
+      'was returned for revision',
+      remarks
     );
 
     res.json(result);
@@ -591,25 +730,62 @@ async function hrApprove(req, res, next) {
 
     const { remarks } = req.body || {};
 
+    // Get CL details for logging
+    const [clDetails] = await db.query(
+      `SELECT h.id, h.employee_id, h.supervisor_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers h
+       LEFT JOIN users e ON h.employee_id = e.id
+       WHERE h.id = ?`,
+      [id]
+    );
+
+    const clHeader = clDetails.length > 0 ? clDetails[0] : null;
+    if (!clHeader) {
+      return res.status(404).json({ message: 'CL not found' });
+    }
+
+    const employeeInfo = clHeader.employee_name 
+      ? `${clHeader.employee_name} (${clHeader.employee_code || 'N/A'})`
+      : `Employee ID ${clHeader.employee_id}`;
+
     const result = await clService.hrApprove(
       id,
       req.user.id,
       remarks || null
     );
 
+    // Log recent action
+    await logRecentAction({
+      actor_id: req.user.id,
+      module: 'CL',
+      action_type: 'APPROVE',
+      cl_id: id,
+      employee_id: clHeader.employee_id,
+      title: `Approved CL #${id}`,
+      description: `Approved Competency Leveling for ${clHeader.employee_name || 'Employee'} (${clHeader.employee_code || 'N/A'})`,
+      url: `/cl/hr/review/${id}`
+    });
+
     await notifyNextByCurrentStatus(
       id,
       req.user?.role || 'HR',
-      'was approved'
+      'was approved',
+      req.body.remarks
     );
 
-    // Optional: if final APPROVED, also notify employee explicitly
-    const clHeader = await getCLHeaderBasic(id);
-    if (clHeader?.status === 'APPROVED') {
+    // Notify employee
+    await createNotification({
+      recipientId: clHeader.employee_id,
+      module: 'Competency Leveling',
+      message: `CL #${id} for ${employeeInfo} has been fully approved.`
+    });
+
+    // Notify supervisor
+    if (clHeader.supervisor_id) {
       await createNotification({
-        recipientId: clHeader.employee_id,
+        recipientId: clHeader.supervisor_id,
         module: 'Competency Leveling',
-        message: `CL #${id} has been fully approved.`
+        message: `CL #${id} for ${employeeInfo} has been fully approved by HR.`
       });
     }
 
@@ -629,16 +805,41 @@ async function hrReturn(req, res, next) {
       return res.status(400).json({ message: 'Remarks are required' });
     }
 
+    // Get CL details for logging
+    const [clDetails] = await db.query(
+      `SELECT h.id, h.employee_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers h
+       LEFT JOIN users e ON h.employee_id = e.id
+       WHERE h.id = ?`,
+      [id]
+    );
+
     const result = await clService.hrReturn(
       id,
       req.user.id,
       remarks
     );
 
+    // Log recent action
+    if (clDetails.length > 0) {
+      const cl = clDetails[0];
+      await logRecentAction({
+        actor_id: req.user.id,
+        module: 'CL',
+        action_type: 'RETURN',
+        cl_id: id,
+        employee_id: cl.employee_id,
+        title: `Returned CL #${id}`,
+        description: `Returned Competency Leveling for ${cl.employee_name || 'Employee'} (${cl.employee_code || 'N/A'}) for revision`,
+        url: `/cl/hr/review/${id}`
+      });
+    }
+
     await notifyNextByCurrentStatus(
       id,
       req.user?.role || 'HR',
-      'was returned for revision'
+      'was returned for revision',
+      remarks
     );
 
     res.json(result);
@@ -669,6 +870,21 @@ async function getMyHistory(req, res, next) {
     const employeeId = req.user.id;
     const rows = await clService.getEmployeeHistory(employeeId);
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// =====================================================
+// GET CL AUDIT TRAIL
+// =====================================================
+async function getCLAuditTrail(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid CL id' });
+
+    const trail = await clService.getCLAuditTrail(id);
+    res.json(trail);
   } catch (err) {
     next(err);
   }
@@ -706,6 +922,7 @@ module.exports = {
   getHRSummary,
   getHRPending,
   getHRAllCL,
+  getHRIncomingCL,
 
   // Misc
   getCompetenciesForEmployee,
@@ -720,4 +937,5 @@ module.exports = {
   employeeReturn,
   hrApprove,
   hrReturn,
+  getCLAuditTrail,
 };

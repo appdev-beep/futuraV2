@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
+import Modal from '../components/Modal';
 
 function AMReviewCLPage() {
   const { id } = useParams();
@@ -11,6 +12,19 @@ function AMReviewCLPage() {
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [remarks, setRemarks] = useState('');
+  const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
+
+  const showModal = (title, message, type = 'info') => {
+    setModal({ isOpen: true, title, message, type, isConfirm: false, onConfirm: null });
+  };
+
+  const showConfirmModal = (title, message, onConfirm, type = 'warning') => {
+    setModal({ isOpen: true, title, message, type, isConfirm: true, onConfirm });
+  };
+
+  const closeModal = () => {
+    setModal({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -21,8 +35,8 @@ function AMReviewCLPage() {
 
     const parsed = JSON.parse(stored);
     if (parsed.role !== 'AM') {
-      alert('Only Assistant Managers can review CLs.');
-      window.location.href = '/';
+      showModal('Access Denied', 'Only Assistant Managers can review CLs.', 'error');
+      setTimeout(() => window.location.href = '/', 2000);
       return;
     }
 
@@ -51,44 +65,49 @@ function AMReviewCLPage() {
     window.location.href = '/am';
   }
 
-  async function handleApprove() {
-    if (!window.confirm('Approve this CL?')) return;
+  function confirmApprove() {
+    showConfirmModal('Confirm Approval', 'Approve this CL?', executeApprove, 'info');
+  }
 
+  async function executeApprove() {
+    closeModal();
     try {
       setActionLoading(true);
       await apiRequest(`/api/cl/${id}/am/approve`, {
         method: 'POST',
         body: JSON.stringify({ remarks })
       });
-      alert('CL approved successfully.');
-      goBack();
+      showModal('Success', 'CL approved successfully.', 'success');
+      setTimeout(() => goBack(), 2000);
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Failed to approve CL.');
+      showModal('Error', err.message || 'Failed to approve CL.', 'error');
     } finally {
       setActionLoading(false);
     }
   }
 
-  async function handleReturn() {
+  function confirmReturn() {
     if (!remarks.trim()) {
-      alert('Please provide remarks before returning.');
+      showModal('Validation Error', 'Please provide remarks before returning.', 'warning');
       return;
     }
+    showConfirmModal('Confirm Return', 'Return this CL to the supervisor?', executeReturn, 'warning');
+  }
 
-    if (!window.confirm('Return this CL to the supervisor?')) return;
-
+  async function executeReturn() {
+    closeModal();
     try {
       setActionLoading(true);
       await apiRequest(`/api/cl/${id}/am/return`, {
         method: 'POST',
         body: JSON.stringify({ remarks })
       });
-      alert('CL returned to supervisor.');
-      goBack();
+      showModal('Success', 'CL returned to supervisor.', 'success');
+      setTimeout(() => goBack(), 2000);
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Failed to return CL.');
+      showModal('Error', err.message || 'Failed to return CL.', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -203,14 +222,14 @@ function AMReviewCLPage() {
       {header.status === 'PENDING_AM' && (
         <div className="flex gap-4">
           <button
-            onClick={handleApprove}
+            onClick={confirmApprove}
             disabled={actionLoading}
             className="px-6 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-50"
           >
             {actionLoading ? 'Processing...' : 'Approve'}
           </button>
           <button
-            onClick={handleReturn}
+            onClick={confirmReturn}
             disabled={actionLoading}
             className="px-6 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-50"
           >
@@ -218,6 +237,16 @@ function AMReviewCLPage() {
           </button>
         </div>
       )}
+
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={closeModal}
+        onConfirm={modal.onConfirm}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        isConfirm={modal.isConfirm}
+      />
     </div>
   );
 }

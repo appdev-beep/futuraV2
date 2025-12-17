@@ -1,6 +1,7 @@
 // src/pages/AdminCreateUserPage.jsx
 import { useEffect, useState } from 'react';
 import { apiRequest } from '../api/client';
+import Modal from '../components/Modal';
 
 function AdminPage() {
   const [employeeId, setEmployeeId] = useState('');
@@ -19,6 +20,19 @@ function AdminPage() {
   // NEW: users list state
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
+  const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
+
+  const showModal = (title, message, type = 'info') => {
+    setModal({ isOpen: true, title, message, type, isConfirm: false, onConfirm: null });
+  };
+
+  const showConfirmModal = (title, message, onConfirm) => {
+    setModal({ isOpen: true, title, message, type: 'warning', isConfirm: true, onConfirm });
+  };
+
+  const closeModal = () => {
+    setModal({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
+  };
 
   // Check that current user is Admin or Supervisor
   useEffect(() => {
@@ -30,8 +44,8 @@ function AdminPage() {
     const user = JSON.parse(userStr);
     const allowedRoles = ['Admin', 'Supervisor'];
     if (!allowedRoles.includes(user.role)) {
-      alert('Only Admin and Supervisor can access this page.');
-      window.location.href = '/';
+      showModal('Access Denied', 'Only Admin and Supervisor can access this page.', 'error');
+      setTimeout(() => window.location.href = '/', 2000);
       return;
     }
   }, []);
@@ -109,8 +123,13 @@ function AdminPage() {
         body: JSON.stringify(body)
       });
 
+      // Check if this was a reactivation or new creation
+      const isReactivation = created.created_at !== created.updated_at;
+      
       setMessage(
-        `User created with id ${created.id || created.employee_id || 'N/A'}`
+        isReactivation 
+          ? `User "${created.name}" was reactivated successfully` 
+          : `User created successfully with ID ${created.id || created.employee_id || 'N/A'}`
       );
       // Optional: clear form
       setEmployeeId('');
@@ -127,6 +146,26 @@ function AdminPage() {
       console.error(err);
       setError(err.message || 'Failed to create user.');
     }
+  }
+
+  // Handle delete user
+  async function handleDeleteUser(userId, userName) {
+    showConfirmModal(
+      'Delete User',
+      `Are you sure you want to delete user "${userName}"? This action cannot be undone.`,
+      async () => {
+        try {
+          await apiRequest(`/api/users/${userId}`, {
+            method: 'DELETE'
+          });
+          showModal('Success', 'User deleted successfully.', 'success');
+          await fetchUsers();
+        } catch (err) {
+          console.error(err);
+          showModal('Error', err.message || 'Failed to delete user.', 'error');
+        }
+      }
+    );
   }
 
   return (
@@ -319,6 +358,9 @@ function AdminPage() {
                     <th className="px-3 py-2 text-left font-medium text-gray-700">
                       Role
                     </th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -334,6 +376,14 @@ function AdminPage() {
                         {u.position_title || u.position_id}
                       </td>
                       <td className="px-3 py-2">{u.role}</td>
+                      <td className="px-3 py-2">
+                        <button
+                          onClick={() => handleDeleteUser(u.id, u.name)}
+                          className="inline-flex items-center rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1"
+                        >
+                          Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -342,6 +392,16 @@ function AdminPage() {
           )}
         </section>
       </main>
+
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={closeModal}
+        onConfirm={modal.onConfirm}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        isConfirm={modal.isConfirm}
+      />
     </div>
   );
 }

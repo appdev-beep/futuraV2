@@ -12,6 +12,7 @@ import {
   BriefcaseIcon,
   CheckCircleIcon,
   PencilSquareIcon,
+  ArrowsPointingOutIcon,
 } from '@heroicons/react/24/outline';
 
 import '../index.css';
@@ -32,6 +33,8 @@ function SupervisorDashboard() {
   const [recentActions, setRecentActions] = useState([]);
 
   const [activeSection, setActiveSection] = useState('ALL');
+  const [showFullRecentActions, setShowFullRecentActions] = useState(false);
+  const [showFullNotifications, setShowFullNotifications] = useState(false);
 
   const [modalState, setModalState] = useState({
     open: false,
@@ -43,10 +46,15 @@ function SupervisorDashboard() {
     onConfirm: null,
   });
 
+  const [notificationModalState, setNotificationModalState] = useState({
+    open: false,
+    notification: null,
+  });
+
   const supervisorRoles = ['Supervisor', 'AM', 'Manager', 'HR'];
 
   const CL_STATUS_SECTIONS = [
-    { key: 'DRAFT', label: 'Draft', icon: PencilSquareIcon },
+    { key: 'DRAFT', label: 'Returns   ', icon: PencilSquareIcon },
     { key: 'PENDING_EMPLOYEE', label: 'Pending – Employee', icon: UserIcon },
     { key: 'PENDING_HR', label: 'Pending – HR', icon: BriefcaseIcon },
     { key: 'PENDING_MANAGER', label: 'Pending – Manager', icon: ClockIcon },
@@ -172,7 +180,7 @@ function SupervisorDashboard() {
   async function handleDeleteCL(clId) {
     openModal({
       title: 'Delete CL',
-      message: 'Are you sure you want to delete this CL? This action cannot be undone.',
+      message: 'Are you sure you want to delete this CL? This action cannot be undone. All associated data will be permanently removed.',
       showCancel: true,
       confirmText: 'Delete',
       cancelText: 'Cancel',
@@ -181,7 +189,7 @@ function SupervisorDashboard() {
           await apiRequest(`/api/cl/${clId}`, { method: 'DELETE' });
           openModal({
             title: 'Deleted',
-            message: 'CL deleted successfully.',
+            message: 'CL deleted successfully. The action has been logged in your Recent Actions.',
             showCancel: false,
             confirmText: 'OK',
             onConfirm: () => window.location.reload(),
@@ -200,15 +208,61 @@ function SupervisorDashboard() {
   }
 
   async function handleNotificationClick(n) {
+    // Mark notification as read
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/notifications/${n.id}/read`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      // Reload notifications to update the list
+      loadNotifications();
+    } catch (err) {
+      console.error('Failed to mark notification as read:', err);
+    }
+    
+    setNotificationModalState({
+      open: true,
+      notification: n,
+    });
+  }
+
+  async function handleRecentActionClick(action) {
+    // If action is a deletion, show when it was deleted
+    if (action.title && action.title.toLowerCase().includes('deleted')) {
+      openModal({
+        title: 'Recent Action Details',
+        message: `${action.title}\n\n${action.description || ''}\n\nDeleted at: ${new Date(action.created_at).toLocaleString()}`,
+        showCancel: false,
+        confirmText: 'OK',
+      });
+    } else {
+      // Navigate to the URL for other actions
+      goTo(action.url || '/supervisor');
+    }
+  }
+
+  async function proceedToNotificationLink(n) {
+    setNotificationModalState({ open: false, notification: null });
+    
     try {
       if (n?.id) {
         await apiRequest(`/api/notifications/${n.id}/read`, { method: 'PATCH' });
+        // Reload notifications to update UI
+        const data = await apiRequest('/api/notifications');
+        setNotifications(data || []);
       }
-    } catch (_) {
-      // ignore
+    } catch (err) {
+      console.error('Failed to mark notification as read', err);
     } finally {
       goTo(n?.url || '/supervisor');
     }
+  }
+
+  function closeNotificationModal() {
+    setNotificationModalState({ open: false, notification: null });
   }
 
   const unreadCount = useMemo(() => {
@@ -237,7 +291,7 @@ function SupervisorDashboard() {
   return (
     <div className="flex h-screen bg-white">
       {/* LEFT SIDEBAR */}
-      <aside className="w-72 bg-white border-r border-gray-200 flex flex-col">
+      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-800">FUTURA</h2>
           <p className="text-sm text-gray-500">{user.role}</p>
@@ -248,7 +302,7 @@ function SupervisorDashboard() {
           <div className="space-y-1">
             <button
               onClick={() => goTo('/supervisor')}
-              className="w-full flex items-center gap-3 px-4 py-2 rounded
+              className="w-full flex items-center gap-3 px-3 py-2 rounded
                          text-gray-700 hover:bg-gray-100 transition"
             >
               <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-600" />
@@ -256,8 +310,8 @@ function SupervisorDashboard() {
             </button>
 
             {/* ✅ REPLACE THE "Start" SLOT WITH OPTIONS */}
-            <div className="ml-10 pr-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">
+            <div className="pr-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
                 CL Sections
               </p>
 
@@ -277,7 +331,7 @@ function SupervisorDashboard() {
               </button>
 
               <div className="mt-1 space-y-1">
-                {CL_STATUS_SECTIONS.map(({ key, label, icon: Icon }) => (
+                {CL_STATUS_SECTIONS.map(({ key, label, icon: IconComponent }) => (
                   <button
                     key={key}
                     type="button"
@@ -286,7 +340,7 @@ function SupervisorDashboard() {
                       ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
                   >
                     <span className="flex items-center gap-2">
-                      <Icon className="w-4 h-4" />
+                      <IconComponent className="w-4 h-4" />
                       {label}
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
@@ -302,7 +356,7 @@ function SupervisorDashboard() {
                 className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded
                            text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 transition"
               >
-                <span>➤ Start boombomodmfosd Competency Leveling</span>
+                <span>➤ Start Competency Leveling</span>
               </button>
             </div>
           </div>
@@ -310,7 +364,7 @@ function SupervisorDashboard() {
           {/* IDP */}
           <button
             onClick={() => goTo('/idp')}
-            className="w-full flex items-center gap-3 px-4 py-2 rounded
+            className="w-full flex items-center gap-3 px-3 py-2 rounded
                        text-gray-700 hover:bg-gray-100 transition"
           >
             <BookOpenIcon className="w-5 h-5 text-green-600" />
@@ -391,12 +445,16 @@ function SupervisorDashboard() {
       </main>
 
       {/* RIGHT SIDEBAR */}
-      <aside className="w-72 bg-white border-l border-gray-200 flex flex-col">
+      <aside className="w-56 bg-white border-l border-gray-200 flex flex-col">
         <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
-          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          <button
+            onClick={() => setShowFullNotifications(true)}
+            className="p-4 border-b border-gray-200 flex items-center justify-between hover:bg-gray-50 transition text-left"
+          >
             <div className="flex items-center gap-2">
               <BellIcon className="w-5 h-5 text-orange-500" />
               <span className="text-sm font-semibold text-gray-700">Notifications</span>
+              <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
             </div>
 
             {unreadCount > 0 && (
@@ -404,7 +462,7 @@ function SupervisorDashboard() {
                 {unreadCount}
               </span>
             )}
-          </div>
+          </button>
 
           <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
             {notifications.length === 0 ? (
@@ -421,7 +479,7 @@ function SupervisorDashboard() {
                       isUnread ? 'bg-orange-50 hover:bg-orange-100' : 'bg-gray-50 hover:bg-gray-100'
                     }`}
                   >
-                    <p className="font-medium text-gray-800 truncate">
+                    <p className="font-medium text-gray-800 whitespace-pre-wrap">
                       {n.message || n.title || 'Notification'}
                     </p>
                     {n.created_at && (
@@ -439,14 +497,20 @@ function SupervisorDashboard() {
         <div className="border-t border-gray-200" />
 
         <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
-          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <span className="text-sm font-semibold text-gray-700">Recent Actions</span>
+          <button
+            onClick={() => setShowFullRecentActions(true)}
+            className="p-4 border-b border-gray-200 flex items-center justify-between hover:bg-gray-50 transition text-left"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-gray-700">Recent Actions</span>
+              <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
+            </div>
             {recentActions.length > 0 && (
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500 text-white">
                 {recentActions.length}
               </span>
             )}
-          </div>
+          </button>
 
           <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
             {recentActions.length === 0 ? (
@@ -456,7 +520,7 @@ function SupervisorDashboard() {
                 <button
                   key={`${a.id}-${idx}`}
                   type="button"
-                  onClick={() => goTo(a.url || '/supervisor')}
+                  onClick={() => handleRecentActionClick(a)}
                   className="w-full text-left px-3 py-2 rounded text-sm
                              bg-gray-50 hover:bg-gray-100 transition"
                 >
@@ -485,6 +549,27 @@ function SupervisorDashboard() {
         cancelText={modalState.cancelText}
         onConfirm={handleModalConfirm}
         onClose={closeModal}
+      />
+
+      <NotificationModal
+        open={notificationModalState.open}
+        notification={notificationModalState.notification}
+        onProceed={() => proceedToNotificationLink(notificationModalState.notification)}
+        onClose={closeNotificationModal}
+      />
+
+      <FullRecentActionsModal
+        open={showFullRecentActions}
+        recentActions={recentActions}
+        onActionClick={handleRecentActionClick}
+        onClose={() => setShowFullRecentActions(false)}
+      />
+
+      <FullNotificationsModal
+        open={showFullNotifications}
+        notifications={notifications}
+        onNotificationClick={handleNotificationClick}
+        onClose={() => setShowFullNotifications(false)}
       />
     </div>
   );
@@ -606,6 +691,201 @@ function Modal({
           >
             {confirmText}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotificationModal({ open, notification, onProceed, onClose }) {
+  if (!open || !notification) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-800">Notification Details</h3>
+        </div>
+        <div className="px-6 py-4 space-y-3">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase">Message</p>
+            <p className="text-sm text-gray-800 mt-1">
+              {notification.message || notification.title || 'No message'}
+            </p>
+          </div>
+          {notification.module && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase">Module</p>
+              <p className="text-sm text-gray-800 mt-1">{notification.module}</p>
+            </div>
+          )}
+          {notification.created_at && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase">Time</p>
+              <p className="text-sm text-gray-800 mt-1">
+                {new Date(notification.created_at).toLocaleString()}
+              </p>
+            </div>
+          )}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase">Status</p>
+            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+              String(notification.status || '').toLowerCase() === 'unread'
+                ? 'bg-orange-100 text-orange-800'
+                : 'bg-gray-100 text-gray-800'
+            }`}>
+              {notification.status || 'Unknown'}
+            </span>
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={onProceed}
+            className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            Go to Form
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FullRecentActionsModal({ open, recentActions, onActionClick, onClose }) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-gray-800">Recent Actions</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-6">
+          {recentActions.length === 0 ? (
+            <p className="text-center text-gray-400 py-8">No recent actions found.</p>
+          ) : (
+            <div className="space-y-3">
+              {recentActions.map((a, idx) => (
+                <button
+                  key={`${a.id}-${idx}`}
+                  type="button"
+                  onClick={() => {
+                    onActionClick(a);
+                    if (!a.title || !a.title.toLowerCase().includes('deleted')) {
+                      onClose();
+                    }
+                  }}
+                  className="w-full text-left p-4 rounded-lg border border-gray-200
+                             bg-white hover:bg-gray-50 transition shadow-sm hover:shadow"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-800 mb-1">{a.title || 'Action'}</p>
+                      {a.description && (
+                        <p className="text-sm text-gray-600 mb-2">{a.description}</p>
+                      )}
+                      {a.created_at && (
+                        <p className="text-xs text-gray-400">
+                          {new Date(a.created_at).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                    {a.title && a.title.toLowerCase().includes('deleted') && (
+                      <span className="ml-4 px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">
+                        Deleted
+                      </span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FullNotificationsModal({ open, notifications, onNotificationClick, onClose }) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-gray-800">All Notifications</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-6">
+          {notifications.length === 0 ? (
+            <p className="text-center text-gray-400 py-8">No notifications found.</p>
+          ) : (
+            <div className="space-y-3">
+              {notifications.map((n, idx) => {
+                const isUnread = String(n.status || '').toLowerCase() === 'unread';
+                return (
+                  <button
+                    key={`${n.id}-${idx}`}
+                    type="button"
+                    onClick={() => {
+                      onNotificationClick(n);
+                      onClose();
+                    }}
+                    className={`w-full text-left p-4 rounded-lg border border-gray-200
+                               transition shadow-sm hover:shadow ${
+                                 isUnread ? 'bg-orange-50 hover:bg-orange-100' : 'bg-white hover:bg-gray-50'
+                               }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-800 mb-1">
+                          {n.message || n.title || 'Notification'}
+                        </p>
+                        {n.module && (
+                          <p className="text-sm text-gray-600 mb-2">Module: {n.module}</p>
+                        )}
+                        {n.created_at && (
+                          <p className="text-xs text-gray-400">
+                            {new Date(n.created_at).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                      {isUnread && (
+                        <span className="ml-4 px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded-full">
+                          Unread
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

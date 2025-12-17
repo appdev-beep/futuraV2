@@ -121,6 +121,13 @@ router.get(
   clController.getHRAllCL   // make sure this exists in cl.controller
 );
 
+// GET /api/cl/hr/incoming (all CLs from all departments)
+router.get(
+  '/hr/incoming',
+  requireRole('HR', 'Admin'),
+  clController.getHRIncomingCL
+);
+
 // =====================================
 // PDF UPLOAD (JUSTIFICATION ATTACHMENT)
 // POST /api/cl/upload
@@ -254,6 +261,11 @@ router.post(
   requireRole('HR', 'Admin'),
   clController.hrReturn
 );
+
+// =====================================
+// GET CL AUDIT TRAIL
+// =====================================
+router.get('/:id/audit-trail', clController.getCLAuditTrail);
 
 // =====================================
 // MUST ALWAYS BE LAST

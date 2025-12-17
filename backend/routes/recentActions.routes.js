@@ -8,8 +8,8 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.get(
-  '/', // ✅ IMPORTANT: use "/" so mount path controls the URL
-  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  '/', 
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Employee', 'Admin'),
   recentActionsController.getRecentActions
 );
 

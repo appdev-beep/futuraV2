@@ -13,4 +13,7 @@ router.get('/', userController.getAll);
 // POST /api/users
 router.post('/', userController.create);
 
+// DELETE /api/users/:id
+router.delete('/:id', userController.deleteById);
+
 module.exports = router;

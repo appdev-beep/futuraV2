@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
+import Modal from '../components/Modal';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 function ManagerReviewCLPage() {
   const { id } = useParams();
@@ -11,6 +12,19 @@ function ManagerReviewCLPage() {
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false); // for approve/return buttons
   const [remarks, setRemarks] = useState(''); // manager remarks
+  const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
+
+  const showModal = (title, message, type = 'info') => {
+    setModal({ isOpen: true, title, message, type, isConfirm: false, onConfirm: null });
+  };
+
+  const showConfirmModal = (title, message, onConfirm, type = 'warning') => {
+    setModal({ isOpen: true, title, message, type, isConfirm: true, onConfirm });
+  };
+
+  const closeModal = () => {
+    setModal({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
+  };
 
   const managerRoles = ['Manager', 'HR', 'Admin'];
 
@@ -26,8 +40,8 @@ function ManagerReviewCLPage() {
 
     const parsed = JSON.parse(stored);
     if (!managerRoles.includes(parsed.role)) {
-      alert('Only Managers / HR / Admin can view this page.');
-      window.location.href = '/';
+      showModal('Access Denied', 'Only Managers / HR / Admin can view this page.', 'error');
+      setTimeout(() => window.location.href = '/', 2000);
       return;
     }
 
@@ -62,43 +76,49 @@ function ManagerReviewCLPage() {
   // ==========================
   // HANDLERS: APPROVE / RETURN
   // ==========================
-  async function handleApprove() {
-    if (!window.confirm('Approve this CL?')) return;
+  function confirmApprove() {
+    showConfirmModal('Confirm Approval', 'Approve this CL?', executeApprove, 'info');
+  }
 
+  async function executeApprove() {
+    closeModal();
     try {
       setActionLoading(true);
       await apiRequest(`/api/cl/${id}/manager/approve`, {
         method: 'POST',
         body: JSON.stringify({ remarks }), // send manager remarks (optional)
       });
-      alert('CL approved successfully.');
-      window.location.href = '/manager';
+      showModal('Success', 'CL approved successfully.', 'success');
+      setTimeout(() => window.location.href = '/manager', 2000);
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Failed to approve CL.');
+      showModal('Error', err.message || 'Failed to approve CL.', 'error');
     } finally {
       setActionLoading(false);
     }
   }
 
-  async function handleReturn() {
+  function confirmReturn() {
     if (!remarks.trim()) {
-      alert('Please provide remarks before returning.');
+      showModal('Validation Error', 'Please provide remarks before returning.', 'warning');
       return;
     }
+    showConfirmModal('Confirm Return', 'Return this CL to the supervisor?', executeReturn, 'warning');
+  }
 
-    if (!window.confirm('Return this CL to the supervisor?')) return;
-
+  async function executeReturn() {
+    closeModal();
     try {
       setActionLoading(true);
       await apiRequest(`/api/cl/${id}/manager/return`, {
         method: 'POST',
         body: JSON.stringify({ remarks }), // send manager remarks when returning
       });
-      alert('CL returned to supervisor.');
-      window.location.href = '/manager';
+      showModal('Success', 'CL returned to supervisor.', 'success');
+      setTimeout(() => window.location.href = '/manager', 2000);
     } catch (err) {
       console.error(err);
+      showModal('Error', err.message || 'Failed to return CL.', 'error');
       alert(err.message || 'Failed to return CL.');
     } finally {
       setActionLoading(false);
@@ -131,8 +151,8 @@ function ManagerReviewCLPage() {
     );
   }
 
-  // 👇 include supervisor_remarks from backend
-  const { id: clId, status, items, supervisor_remarks } = cl;
+  // 👇 include supervisor_remarks and manager_remarks from backend
+  const { id: clId, status, items, supervisor_remarks, manager_remarks, updated_at } = cl;
 
   // ==========================
   // COMPUTE TOTAL SCORE
@@ -159,10 +179,27 @@ function ManagerReviewCLPage() {
 
       {/* SUPERVISOR REMARKS (READ-ONLY) */}
       {supervisor_remarks && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded p-4 mb-6 text-sm">
+        <div className="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4 text-sm">
           <h2 className="font-semibold text-yellow-800 mb-1">Supervisor Remarks</h2>
           <p className="text-yellow-900 whitespace-pre-wrap">
             {supervisor_remarks}
+          </p>
+        </div>
+      )}
+
+      {/* MANAGER REMARKS HISTORY (READ-ONLY) */}
+      {manager_remarks && (
+        <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-6 text-sm">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-blue-800">Manager Remarks (Previous)</h2>
+            {updated_at && (
+              <span className="text-xs text-gray-500">
+                {new Date(updated_at).toLocaleString()}
+              </span>
+            )}
+          </div>
+          <p className="text-blue-900 whitespace-pre-wrap">
+            {manager_remarks}
           </p>
         </div>
       )}
@@ -268,7 +305,7 @@ function ManagerReviewCLPage() {
       <div className="flex gap-3">
         <button
           className="px-4 py-2 rounded bg-green-600 text-white disabled:opacity-50"
-          onClick={handleApprove}
+          onClick={confirmApprove}
           disabled={actionLoading}
         >
           {actionLoading ? 'Processing...' : 'Approve'}
@@ -276,12 +313,22 @@ function ManagerReviewCLPage() {
 
         <button
           className="px-4 py-2 rounded bg-red-600 text-white disabled:opacity-50"
-          onClick={handleReturn}
+          onClick={confirmReturn}
           disabled={actionLoading}
         >
           {actionLoading ? 'Processing...' : 'Return to Supervisor'}
         </button>
       </div>
+
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={closeModal}
+        onConfirm={modal.onConfirm}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        isConfirm={modal.isConfirm}
+      />
     </div>
   );
 }
