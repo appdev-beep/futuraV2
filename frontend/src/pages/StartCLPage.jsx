@@ -821,18 +821,18 @@ function StartCLPage() {
                     </h3>
 
                     <div className="overflow-x-auto">
-                      <table className="min-w-full text-xs border border-slate-200 rounded-md overflow-hidden">
+                      <table className="w-full text-xs border border-slate-200 rounded-md overflow-hidden">
                         <thead className="bg-slate-100 uppercase text-[11px] text-slate-700">
                           <tr>
-                            <th className="px-2 py-1 text-left">Competency</th>
-                            <th className="px-2 py-1">Weight</th>
-                            <th className="px-2 py-1">MPLR</th>
-                            <th className="px-2 py-1">Level</th>
-                            <th className="px-2 py-1">Score</th>
-                            <th className="px-2 py-1 text-left">
-                              Justification
+                            <th className="px-2 py-1 text-left min-w-[150px]">Competency</th>
+                            <th className="px-2 py-1 w-20">Weight</th>
+                            <th className="px-2 py-1 w-16">MPLR</th>
+                            <th className="px-2 py-1 w-16">Level</th>
+                            <th className="px-2 py-1 w-20">Score</th>
+                            <th className="px-2 py-1 text-left min-w-[200px]">
+                              Comments (Justification / Trainings / Certificates, Etc)
                             </th>
-                            <th className="px-2 py-1">Upload PDF</th>
+                            <th className="px-2 py-1 min-w-[150px]">Upload PDF</th>
                           </tr>
                         </thead>
 
@@ -895,10 +895,9 @@ function StartCLPage() {
                               </td>
 
                               <td className="px-2 py-1">
-                                <input
-                                  type="text"
-                                  className="border border-slate-200 px-1 py-0.5 w-full rounded text-xs text-slate-800"
-                                  placeholder="Enter justification"
+                                <textarea
+                                  className="border border-slate-200 px-1 py-0.5 w-full rounded text-xs text-slate-800 resize-y min-h-[60px]"
+                                  placeholder="Enter comments, justification, trainings, certificates, etc."
                                   onChange={(e) =>
                                     updateCompetency(
                                       i,
@@ -1072,7 +1071,7 @@ function StartCLPage() {
                                 <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">MPLR</th>
                                 <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Level</th>
                                 <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Score</th>
-                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Justification</th>
+                                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Comments (Justification / Trainings / Certificates, Etc)</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">

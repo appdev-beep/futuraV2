@@ -26,6 +26,7 @@ function SupervisorDashboard() {
   const [summary, setSummary] = useState({
     clPending: 0,
     clApproved: 0,
+    clReturned: 0,
   });
 
   const [clByStatus, setClByStatus] = useState({});
@@ -54,7 +55,7 @@ function SupervisorDashboard() {
   const supervisorRoles = ['Supervisor', 'AM', 'Manager', 'HR'];
 
   const CL_STATUS_SECTIONS = [
-    { key: 'DRAFT', label: 'Returns   ', icon: PencilSquareIcon },
+    { key: 'DRAFT', label: 'Returns', icon: PencilSquareIcon },
     { key: 'PENDING_EMPLOYEE', label: 'Pending – Employee', icon: UserIcon },
     { key: 'PENDING_HR', label: 'Pending – HR', icon: BriefcaseIcon },
     { key: 'PENDING_MANAGER', label: 'Pending – Manager', icon: ClockIcon },
@@ -90,6 +91,7 @@ function SupervisorDashboard() {
         setSummary({
           clPending: clSummary.clPending || 0,
           clApproved: clSummary.clApproved || 0,
+          clReturned: clSummary.clInProgress || 0,
         });
 
         setClByStatus(clGrouped || {});
@@ -147,6 +149,15 @@ function SupervisorDashboard() {
   }
 
   function goTo(url) {
+    const currentPath = window.location.pathname;
+    const targetPath = url.split('?')[0];
+    
+    // If already on the target page, just reload data instead of full refresh
+    if (currentPath === targetPath) {
+      window.location.reload();
+      return;
+    }
+    
     window.location.href = url;
   }
 
@@ -218,7 +229,8 @@ function SupervisorDashboard() {
         }
       });
       // Reload notifications to update the list
-      loadNotifications();
+      const data = await apiRequest('/api/notifications');
+      setNotifications(data || []);
     } catch (err) {
       console.error('Failed to mark notification as read:', err);
     }
@@ -238,10 +250,22 @@ function SupervisorDashboard() {
         showCancel: false,
         confirmText: 'OK',
       });
-    } else {
-      // Navigate to the URL for other actions
-      goTo(action.url || '/supervisor');
+      return;
     }
+    
+    // Check if we're staying on the same page
+    const url = action.url || '/supervisor';
+    const currentPath = window.location.pathname;
+    const targetPath = url.split('?')[0];
+    
+    if (currentPath === targetPath) {
+      // Just close modal and stay on current page
+      return;
+    }
+    
+    // Navigate to different page
+    const separator = url.includes('?') ? '&' : '?';
+    window.location.href = `${url}${separator}viewOnly=true`;
   }
 
   async function proceedToNotificationLink(n) {
@@ -256,13 +280,25 @@ function SupervisorDashboard() {
       }
     } catch (err) {
       console.error('Failed to mark notification as read', err);
-    } finally {
-      goTo(n?.url || '/supervisor');
     }
+    
+    // Check if we're staying on the same page
+    const url = n?.url || '/supervisor';
+    const currentPath = window.location.pathname;
+    const targetPath = url.split('?')[0];
+    
+    if (currentPath === targetPath) {
+      // Stay on current page without refresh
+      return;
+    }
+    
+    // Navigate to different page
+    window.location.href = url;
   }
 
   function closeNotificationModal() {
     setNotificationModalState({ open: false, notification: null });
+    // Modal stays closed without refresh
   }
 
   const unreadCount = useMemo(() => {
@@ -331,23 +367,26 @@ function SupervisorDashboard() {
               </button>
 
               <div className="mt-1 space-y-1">
-                {CL_STATUS_SECTIONS.map(({ key, label, icon: IconComponent }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setActiveSection(key)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                      ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <IconComponent className="w-4 h-4" />
-                      {label}
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                      {sectionCounts[key] || 0}
-                    </span>
-                  </button>
-                ))}
+                {CL_STATUS_SECTIONS.map(({ key, label, icon }) => {
+                  const Icon = icon;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setActiveSection(key)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                        ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        {label}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                        {sectionCounts[key] || 0}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Keep Start button, but place it AFTER the options */}
@@ -402,11 +441,16 @@ function SupervisorDashboard() {
         {error && <div className="text-red-600 mb-4">{error}</div>}
         {loading && <p>Loading...</p>}
 
-        <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           <SummaryCard
-            label="CL – Pending"
+            label="CL - Approval"
             value={summary.clPending}
             gradientClass="from-yellow-400 to-orange-500"
+          />
+          <SummaryCard
+            label="CL - Returns"
+            value={summary.clReturned}
+            gradientClass="from-red-400 to-red-600"
           />
           <SummaryCard
             label="CL – Approved"
@@ -512,29 +556,39 @@ function SupervisorDashboard() {
             )}
           </button>
 
-          <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
+          <div className="flex-1 p-2 overflow-y-auto no-scrollbar">
             {recentActions.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">No recent actions.</p>
+              <p className="text-xs text-gray-400 italic px-2">No recent actions.</p>
             ) : (
-              recentActions.map((a, idx) => (
-                <button
-                  key={`${a.id}-${idx}`}
-                  type="button"
-                  onClick={() => handleRecentActionClick(a)}
-                  className="w-full text-left px-3 py-2 rounded text-sm
-                             bg-gray-50 hover:bg-gray-100 transition"
-                >
-                  <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
-                  {a.description && (
-                    <p className="text-[12px] text-gray-600 line-clamp-2">{a.description}</p>
-                  )}
-                  {a.created_at && (
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      {new Date(a.created_at).toLocaleString()}
-                    </p>
-                  )}
-                </button>
-              ))
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-2 py-1 text-left font-semibold text-gray-600">Action</th>
+                      <th className="px-2 py-1 text-left font-semibold text-gray-600">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentActions.slice(0, 10).map((a, idx) => (
+                      <tr
+                        key={`${a.id}-${idx}`}
+                        onClick={() => handleRecentActionClick(a)}
+                        className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <td className="px-2 py-2">
+                          <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
+                          {a.description && (
+                            <p className="text-gray-600 truncate text-[11px]">{a.description}</p>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
+                          {a.created_at ? new Date(a.created_at).toLocaleDateString() : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
@@ -592,6 +646,7 @@ function CLTable({ data, goTo, onDelete }) {
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
+            <Th>CL ID</Th>
             <Th>Employee</Th>
             <Th>Employee ID</Th>
             <Th>Department</Th>
@@ -605,11 +660,18 @@ function CLTable({ data, goTo, onDelete }) {
         <tbody className="divide-y divide-gray-200">
           {data.map((item, idx) => (
             <tr key={`${item.id}-${idx}`} className="hover:bg-gray-50">
+              <Td>{item.id}</Td>
               <Td>{item.employee_name}</Td>
               <Td>{item.employee_code || item.employee_id}</Td>
               <Td>{item.department_name}</Td>
               <Td>{item.position_title}</Td>
-              <Td>{item.status}</Td>
+              <Td>
+                {item.status === 'DRAFT' 
+                  ? (item.awaiting_approval_from 
+                      ? `Returned from ${item.awaiting_approval_from.replace('PENDING_', '').replace(/_/g, ' ')}` 
+                      : 'Draft - Not Submitted')
+                  : item.status}
+              </Td>
               <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
 
               <Td>
@@ -760,61 +822,134 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
 }
 
 function FullRecentActionsModal({ open, recentActions, onActionClick, onClose }) {
+  const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
+  const [searchTerm, setSearchTerm] = useState('');
+
   if (!open) return null;
+
+  // Filter actions by date range and search term
+  const filteredActions = recentActions.filter(a => {
+    // Date filtering
+    if (a.created_at) {
+      const actionDate = new Date(a.created_at);
+      const start = dateFilter.startDate ? new Date(dateFilter.startDate) : null;
+      const end = dateFilter.endDate ? new Date(dateFilter.endDate) : null;
+      
+      if (start && actionDate < start) return false;
+      if (end) {
+        const endOfDay = new Date(end);
+        endOfDay.setHours(23, 59, 59, 999);
+        if (actionDate > endOfDay) return false;
+      }
+    }
+    
+    // Search term filtering (search in title, description)
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase();
+      const matchTitle = (a.title || '').toLowerCase().includes(search);
+      const matchDescription = (a.description || '').toLowerCase().includes(search);
+      if (!matchTitle && !matchDescription) return false;
+    }
+    
+    return true;
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-gray-800">Recent Actions</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold text-gray-800">Recent Actions</h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          {/* Date Filter */}
+          <div className="space-y-3">
+            <div className="flex gap-4 items-end">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={dateFilter.startDate}
+                  onChange={(e) => setDateFilter({ ...dateFilter, startDate: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={dateFilter.endDate}
+                  onChange={(e) => setDateFilter({ ...dateFilter, endDate: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  setDateFilter({ startDate: '', endDate: '' });
+                  setSearchTerm('');
+                }}
+                className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded"
+              >
+                Clear
+              </button>
+            </div>
+            
+            {/* Search by Employee Name */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Search Employee Name</label>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by employee name..."
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
         </div>
         
         <div className="flex-1 overflow-y-auto p-6">
-          {recentActions.length === 0 ? (
+          {filteredActions.length === 0 ? (
             <p className="text-center text-gray-400 py-8">No recent actions found.</p>
           ) : (
-            <div className="space-y-3">
-              {recentActions.map((a, idx) => (
-                <button
-                  key={`${a.id}-${idx}`}
-                  type="button"
-                  onClick={() => {
-                    onActionClick(a);
-                    if (!a.title || !a.title.toLowerCase().includes('deleted')) {
-                      onClose();
-                    }
-                  }}
-                  className="w-full text-left p-4 rounded-lg border border-gray-200
-                             bg-white hover:bg-gray-50 transition shadow-sm hover:shadow"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-800 mb-1">{a.title || 'Action'}</p>
-                      {a.description && (
-                        <p className="text-sm text-gray-600 mb-2">{a.description}</p>
-                      )}
-                      {a.created_at && (
-                        <p className="text-xs text-gray-400">
-                          {new Date(a.created_at).toLocaleString()}
-                        </p>
-                      )}
-                    </div>
-                    {a.title && a.title.toLowerCase().includes('deleted') && (
-                      <span className="ml-4 px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">
-                        Deleted
-                      </span>
-                    )}
-                  </div>
-                </button>
-              ))}
+            <div className="bg-white shadow rounded overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Action</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Description</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filteredActions.map((a, idx) => (
+                    <tr
+                      key={`${a.id}-${idx}`}
+                      onClick={() => {
+                        onActionClick(a);
+                        if (!a.title || !a.title.toLowerCase().includes('deleted')) {
+                          onClose();
+                        }
+                      }}
+                      className="hover:bg-gray-50 cursor-pointer"
+                    >
+                      <td className="px-4 py-3 text-gray-800 font-medium">{a.title || 'Action'}</td>
+                      <td className="px-4 py-3 text-gray-600">{a.description || '-'}</td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {a.created_at ? new Date(a.created_at).toLocaleString() : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

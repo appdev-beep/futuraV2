@@ -521,6 +521,7 @@ async function getSupervisorAllCL(supervisorId) {
         d.name        AS department_name,
         p.title       AS position_title,
         ch.status,
+        ch.awaiting_approval_from,
         ch.created_at AS submitted_at
       FROM cl_headers ch
         JOIN users e       ON ch.employee_id   = e.id
@@ -598,18 +599,26 @@ async function getManagerSummary(managerId) {
        JOIN cl_headers ch2 ON cml.cl_id = ch2.id
        JOIN users e2 ON ch2.employee_id = e2.id
        WHERE cml.manager_id = ? AND cml.action = 'APPROVED'
+       AND cml.id = (SELECT MAX(id) FROM cl_manager_logs WHERE cl_id = ch2.id AND manager_id = ?)
        AND e2.department_id = (SELECT department_id FROM users WHERE id = ? LIMIT 1)
-      ) AS clApproved
+      ) AS clApproved,
+      (SELECT COUNT(*) FROM cl_manager_logs cml 
+       JOIN cl_headers ch2 ON cml.cl_id = ch2.id
+       JOIN users e2 ON ch2.employee_id = e2.id
+       WHERE cml.manager_id = ? AND cml.action = 'RETURNED' AND ch2.status = 'DRAFT'
+       AND cml.id = (SELECT MAX(id) FROM cl_manager_logs WHERE cl_id = ch2.id AND manager_id = ?)
+       AND e2.department_id = (SELECT department_id FROM users WHERE id = ? LIMIT 1)
+      ) AS clReturned
     FROM cl_headers ch
       JOIN users e ON ch.employee_id = e.id
       JOIN users m ON e.department_id = m.department_id
     WHERE
       m.id = ?
     `,
-    [managerId, managerId, managerId]
+    [managerId, managerId, managerId, managerId, managerId, managerId, managerId]
   );
 
-  return rows[0] || { clPending: 0, clInProgress: 0, clApproved: 0 };
+  return rows[0] || { clPending: 0, clInProgress: 0, clApproved: 0, clReturned: 0 };
 }
 
 // =====================
@@ -1181,8 +1190,9 @@ async function getManagerAllCL(managerId) {
       e.employee_id AS employee_code,
       d.name AS department_name,
       p.title AS position_title,
+      ch.status,
 
-      -- log fields
+      -- Get only the LATEST log entry for this manager
       ml.action AS manager_decision,
       ml.remarks AS manager_remarks,
       ml.created_at AS manager_decided_at
@@ -1193,12 +1203,18 @@ async function getManagerAllCL(managerId) {
     JOIN departments d ON e.department_id = d.id
     JOIN positions p ON e.position_id = p.id
 
-    LEFT JOIN cl_manager_logs ml ON ml.cl_id = ch.id AND ml.manager_id = ?
+    LEFT JOIN cl_manager_logs ml ON ml.cl_id = ch.id 
+      AND ml.manager_id = ?
+      AND ml.id = (
+        SELECT MAX(id) FROM cl_manager_logs 
+        WHERE cl_id = ch.id AND manager_id = ?
+      )
 
     WHERE m.id = ?
+      AND ml.id IS NOT NULL
     ORDER BY ml.created_at DESC
     `,
-    [managerId, managerId]
+    [managerId, managerId, managerId]
   );
 
   return rows;
@@ -1364,6 +1380,46 @@ async function getCLAuditTrail(clId) {
   return trail;
 }
 
+// =====================
+// MANAGER DEPARTMENT TRACKING
+// Returns ALL ongoing CLs in the manager's department for tracking purposes
+// =====================
+async function getManagerDepartmentCL(managerId) {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT 
+        ch.id,
+        e.name        AS employee_name,
+        e.employee_id AS employee_code,
+        s.name        AS supervisor_name,
+        d.name        AS department_name,
+        p.title       AS position_title,
+        ch.status,
+        ch.awaiting_approval_from,
+        ch.created_at,
+        ch.updated_at
+      FROM cl_headers ch
+        JOIN users e       ON ch.employee_id   = e.id
+        JOIN users m       ON e.department_id  = m.department_id
+        LEFT JOIN users s  ON ch.supervisor_id = s.id
+        JOIN departments d ON e.department_id  = d.id
+        JOIN positions   p ON e.position_id    = p.id
+      WHERE
+        m.id = ?
+        AND ch.status != 'DRAFT'
+      ORDER BY ch.updated_at DESC
+      `,
+      [managerId]
+    );
+
+    return rows || [];
+  } catch (err) {
+    logInfo('Error getting manager department CLs', { managerId, error: err.message });
+    return [];
+  }
+}
+
 module.exports = {
   getById,
   create,
@@ -1376,6 +1432,7 @@ module.exports = {
   getManagerAllCL,
   getManagerSummary,
   getManagerPending,
+  getManagerDepartmentCL,
   getEmployeePending,
   getAMSummary,
   getAMPending,

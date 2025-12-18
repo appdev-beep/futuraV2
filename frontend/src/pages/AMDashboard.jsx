@@ -136,11 +136,35 @@ function AMDashboard() {
 
   async function proceedToNotificationLink(n) {
     setNotificationModalState({ open: false, notification: null });
-    goTo(n?.url || '/am');
+    
+    try {
+      if (n?.id) {
+        await apiRequest(`/api/notifications/${n.id}/read`, { method: 'PATCH' });
+        // Reload notifications to update UI
+        const data = await apiRequest('/api/notifications');
+        setNotifications(data || []);
+      }
+    } catch (err) {
+      console.error('Failed to mark notification as read', err);
+    }
+    
+    // Check if we're staying on the same page
+    const url = n?.url || '/am';
+    const currentPath = window.location.pathname;
+    const targetPath = url.split('?')[0];
+    
+    if (currentPath === targetPath) {
+      // Stay on current page without refresh
+      return;
+    }
+    
+    // Navigate to different page
+    window.location.href = url;
   }
 
   function closeNotificationModal() {
     setNotificationModalState({ open: false, notification: null });
+    // Modal stays closed without refresh
   }
 
   const unreadCount = useMemo(() => {
@@ -150,6 +174,15 @@ function AMDashboard() {
   }, [notifications]);
 
   function goTo(url) {
+    const currentPath = window.location.pathname;
+    const targetPath = url.split('?')[0];
+    
+    // If already on the target page, just reload data instead of full refresh
+    if (currentPath === targetPath) {
+      window.location.reload();
+      return;
+    }
+    
     window.location.href = url;
   }
 
@@ -325,29 +358,39 @@ function AMDashboard() {
             )}
           </button>
 
-          <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
+          <div className="flex-1 p-2 overflow-y-auto no-scrollbar">
             {recentActions.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">No recent actions.</p>
+              <p className="text-xs text-gray-400 italic px-2">No recent actions.</p>
             ) : (
-              recentActions.map((a, idx) => (
-                <button
-                  key={`${a.id}-${idx}`}
-                  type="button"
-                  onClick={() => goTo(a.url)}
-                  className="w-full text-left px-3 py-2 rounded text-sm
-                             bg-gray-50 hover:bg-gray-100 transition"
-                >
-                  <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
-                  {a.description && (
-                    <p className="text-[12px] text-gray-600 line-clamp-2">{a.description}</p>
-                  )}
-                  {a.created_at && (
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      {new Date(a.created_at).toLocaleString()}
-                    </p>
-                  )}
-                </button>
-              ))
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-2 py-1 text-left font-semibold text-gray-600">Action</th>
+                      <th className="px-2 py-1 text-left font-semibold text-gray-600">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentActions.slice(0, 10).map((a, idx) => (
+                      <tr
+                        key={`${a.id}-${idx}`}
+                        onClick={() => goTo(a.url)}
+                        className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <td className="px-2 py-2">
+                          <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
+                          {a.description && (
+                            <p className="text-gray-600 truncate text-[11px]">{a.description}</p>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
+                          {a.created_at ? new Date(a.created_at).toLocaleDateString() : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>

@@ -1,12 +1,14 @@
 // src/pages/SupervisorReviewCLPage.jsx
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
 import Modal from '../components/Modal';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 function SupervisorReviewCLPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const viewOnly = searchParams.get('viewOnly') === 'true';
   const [user, setUser] = useState(null);
   const [cl, setCl] = useState(null);
   const [auditTrail, setAuditTrail] = useState([]);
@@ -188,7 +190,6 @@ function SupervisorReviewCLPage() {
     department_name,
     position_title,
     items = [],
-    pdf_path,
     supervisor_remarks,
     manager_remarks,
     employee_remarks,
@@ -197,175 +198,179 @@ function SupervisorReviewCLPage() {
   } = cl;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4">
-        {/* HEADER */}
-        <div className="mb-6 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Review CL</h1>
-            <p className="text-sm text-gray-500 mt-1">Status: {status}</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/80">
+            <div>
+              <h1 className="text-lg font-semibold text-slate-800">Review CL</h1>
+              <p className="text-xs text-slate-500 mt-0.5">Status: <strong>{status}</strong></p>
+            </div>
+            <button
+              onClick={() => navigate('/supervisor')}
+              className="text-slate-500 hover:text-slate-700 px-4 py-2 rounded-md hover:bg-slate-100 text-sm transition"
+            >
+              ← Back to Dashboard
+            </button>
           </div>
-          <button
-            onClick={() => navigate('/supervisor')}
-            className="px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-900"
-          >
-            Back
-          </button>
-        </div>
 
-        {/* EMPLOYEE INFO */}
-        <div className="bg-white border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">Employee Information</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-gray-500">Employee Name</p>
-              <p className="font-semibold">{employee_name}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Employee ID</p>
-              <p className="font-semibold">{employee_id}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Department</p>
-              <p className="font-semibold">{department_name}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Position</p>
-              <p className="font-semibold">{position_title}</p>
-            </div>
-          </div>
-        </div>
+          {/* Body */}
+          <div className="px-6 py-4 overflow-y-auto space-y-4">
 
-        {/* REMARKS HISTORY (READ-ONLY) */}
-        {(supervisor_remarks || manager_remarks || employee_remarks || hr_remarks) && (
-          <div className="bg-white border border-gray-200 p-6 mb-6 text-sm">
-            <h2 className="text-lg font-semibold mb-4">Remarks History</h2>
-
-            {supervisor_remarks && (
-              <div className="mb-3">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-semibold text-yellow-800">Supervisor Remarks</h3>
-                  {updated_at && (
-                    <span className="text-xs text-gray-500">
-                      {new Date(updated_at).toLocaleString()}
-                    </span>
-                  )}
+            {/* EMPLOYEE INFO */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+              <h3 className="text-sm font-semibold mb-2 text-slate-700">Employee Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-slate-600">Employee Name:</span>
+                  <span className="ml-2 font-medium text-slate-800">{employee_name}</span>
                 </div>
-                <p className="text-gray-800 whitespace-pre-wrap">
-                  {supervisor_remarks}
-                </p>
-              </div>
-            )}
-
-            {manager_remarks && (
-              <div className="mb-3">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-semibold text-blue-800">Manager Remarks</h3>
-                  {updated_at && (
-                    <span className="text-xs text-gray-500">
-                      {new Date(updated_at).toLocaleString()}
-                    </span>
-                  )}
+                <div>
+                  <span className="text-slate-600">Employee ID:</span>
+                  <span className="ml-2 font-medium text-slate-800">{employee_id}</span>
                 </div>
-                <p className="text-gray-800 whitespace-pre-wrap">
-                  {manager_remarks}
-                </p>
-              </div>
-            )}
-
-            {employee_remarks && (
-              <div className="mb-3">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-semibold text-green-800">Employee Remarks</h3>
-                  {updated_at && (
-                    <span className="text-xs text-gray-500">
-                      {new Date(updated_at).toLocaleString()}
-                    </span>
-                  )}
+                <div>
+                  <span className="text-slate-600">Department:</span>
+                  <span className="ml-2 font-medium text-slate-800">{department_name}</span>
                 </div>
-                <p className="text-gray-800 whitespace-pre-wrap">
-                  {employee_remarks}
-                </p>
-              </div>
-            )}
-
-            {hr_remarks && (
-              <div className="mb-3">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-semibold text-purple-800">HR Remarks</h3>
-                  {updated_at && (
-                    <span className="text-xs text-gray-500">
-                      {new Date(updated_at).toLocaleString()}
-                    </span>
-                  )}
+                <div>
+                  <span className="text-slate-600">Position:</span>
+                  <span className="ml-2 font-medium text-slate-800">{position_title}</span>
                 </div>
-                <p className="text-gray-800 whitespace-pre-wrap">
-                  {hr_remarks}
-                </p>
               </div>
-            )}
-          </div>
-        )}
+            </div>
 
-        {/* AUDIT TRAIL / PROCESS HISTORY */}
-        {auditTrail.length > 0 && (
-          <div className="bg-white border border-gray-200 p-6 mb-6">
-            <h2 className="text-lg font-semibold mb-4">Process History</h2>
-            <div className="space-y-3">
-              {auditTrail.map((event, idx) => {
-                const actionLabel = event.action_type.replace(/_/g, ' ');
-                const actionColor = 
-                  event.action_type.includes('APPROVED') ? 'text-green-600' :
-                  event.action_type.includes('RETURNED') ? 'text-red-600' :
-                  'text-blue-600';
-                
-                return (
-                  <div key={idx} className="flex gap-4 pb-3 border-b border-gray-100 last:border-0">
-                    <div className="flex-shrink-0 w-32 text-xs text-gray-500">
-                      {new Date(event.timestamp).toLocaleString()}
-                    </div>
-                    <div className="flex-1">
-                      <p className={`font-semibold text-sm ${actionColor}`}>
-                        {actionLabel}
-                      </p>
-                      <p className="text-sm text-gray-700">
-                        by <span className="font-medium">{event.actor_name}</span> ({event.actor_role})
-                      </p>
-                      {event.remarks && (
-                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">
-                          Remarks: {event.remarks}
-                        </p>
+            {/* REMARKS HISTORY (READ-ONLY) */}
+            {(supervisor_remarks || manager_remarks || employee_remarks || hr_remarks) && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-2 text-slate-700">Remarks History</h3>
+
+                {supervisor_remarks && (
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="text-xs font-semibold text-yellow-800">Supervisor Remarks</h4>
+                      {updated_at && (
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(updated_at).toLocaleString()}
+                        </span>
                       )}
                     </div>
+                    <p className="text-xs text-slate-800 whitespace-pre-wrap">
+                      {supervisor_remarks}
+                    </p>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                )}
 
-        {/* COMPETENCIES TABLE */}
-        <div className="bg-white border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">Competencies</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-2 text-left font-semibold">Competency</th>
-                  <th className="px-4 py-2 text-left font-semibold">Required Level</th>
-                  <th className="px-4 py-2 text-left font-semibold">Assigned Level</th>
-                  <th className="px-4 py-2 text-left font-semibold">Weight (%)</th>
-                  <th className="px-4 py-2 text-left font-semibold">Score</th>
-                  <th className="px-4 py-2 text-left font-semibold">Justification</th>
-                  <th className="px-4 py-2 text-left font-semibold">PDF</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+                {manager_remarks && (
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="text-xs font-semibold text-blue-800">Manager Remarks</h4>
+                      {updated_at && (
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(updated_at).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-800 whitespace-pre-wrap">
+                      {manager_remarks}
+                    </p>
+                  </div>
+                )}
+
+                {employee_remarks && (
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="text-xs font-semibold text-green-800">Employee Remarks</h4>
+                      {updated_at && (
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(updated_at).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-800 whitespace-pre-wrap">
+                      {employee_remarks}
+                    </p>
+                  </div>
+                )}
+
+                {hr_remarks && (
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="text-xs font-semibold text-purple-800">HR Remarks</h4>
+                      {updated_at && (
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(updated_at).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-800 whitespace-pre-wrap">
+                      {hr_remarks}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* AUDIT TRAIL / PROCESS HISTORY */}
+            {auditTrail.length > 0 && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-2 text-slate-700">Process History</h3>
+                <div className="space-y-2">
+                  {auditTrail.map((event, idx) => {
+                    const actionLabel = event.action_type.replace(/_/g, ' ');
+                    const actionColor = 
+                      event.action_type.includes('APPROVED') ? 'text-green-600' :
+                      event.action_type.includes('RETURNED') ? 'text-red-600' :
+                      'text-blue-600';
+                    
+                    return (
+                      <div key={idx} className="flex gap-3 pb-2 border-b border-slate-100 last:border-0">
+                        <div className="flex-shrink-0 w-28 text-[10px] text-slate-500">
+                          {new Date(event.timestamp).toLocaleString()}
+                        </div>
+                        <div className="flex-1">
+                          <p className={`font-semibold text-xs ${actionColor}`}>
+                            {actionLabel}
+                          </p>
+                          <p className="text-xs text-slate-700">
+                            by <span className="font-medium">{event.actor_name}</span> ({event.actor_role})
+                          </p>
+                          {event.remarks && (
+                            <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap">
+                              Remarks: {event.remarks}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* COMPETENCIES TABLE */}
+            <div className="bg-white border border-slate-200 rounded-lg p-3">
+              <h3 className="text-sm font-semibold mb-2 text-slate-700">Competency Assessment</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border border-slate-200 rounded-md overflow-hidden">
+                  <thead className="bg-slate-100 uppercase text-[11px] text-slate-700">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Competency</th>
+                      <th className="px-2 py-1 text-left">MPLR</th>
+                      <th className="px-2 py-1 text-left">Level</th>
+                      <th className="px-2 py-1 text-left">Weight (%)</th>
+                      <th className="px-2 py-1 text-left">Score</th>
+                      <th className="px-2 py-1 text-left">Comments (Justification / Trainings / Certificates, Etc)</th>
+                      <th className="px-2 py-1 text-left">PDF</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
                 {items.map((item, idx) => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2">{item.competency_name}</td>
-                    <td className="px-4 py-2">{item.required_level}</td>
-                    <td className="px-4 py-2">
+                  <tr key={item.id} className="border-t border-slate-100">
+                    <td className="px-2 py-1 text-slate-800">{item.competency_name}</td>
+                    <td className="px-2 py-1 text-slate-700">{item.required_level}</td>
+                    <td className="px-2 py-1">
                       {status === 'DRAFT' ? (
                         <input
                           type="number"
@@ -380,11 +385,11 @@ function SupervisorReviewCLPage() {
                               Number(updated[idx].assigned_level);
                             setCl({ ...cl, items: updated });
                           }}
-                          className="w-16 px-2 py-1 border rounded"
+                          className="w-14 px-1 py-0.5 border border-slate-200 rounded text-xs text-slate-800"
                         />
                       ) : item.assigned_level}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 py-1">
                       {status === 'DRAFT' ? (
                         <input
                           type="number"
@@ -400,133 +405,132 @@ function SupervisorReviewCLPage() {
                               Number(updated[idx].assigned_level);
                             setCl({ ...cl, items: updated });
                           }}
-                          className="w-20 px-2 py-1 border rounded"
+                          className="w-16 px-1 py-0.5 border border-slate-200 rounded text-xs text-slate-800"
                         />
                       ) : `${Number(item.weight || 0).toFixed(2)}%`}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 py-1 font-semibold text-blue-600">
                       {Number(item.score || 0).toFixed(2)}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 py-1">
                       {status === 'DRAFT' ? (
-                        <input
-                          type="text"
+                        <textarea
                           value={item.justification || ''}
                           onChange={e => {
                             const updated = [...items];
                             updated[idx].justification = e.target.value;
                             setCl({ ...cl, items: updated });
                           }}
-                          className="w-full px-2 py-1 border rounded"
+                          className="w-full px-1 py-0.5 border border-slate-200 rounded text-xs text-slate-800 resize-y min-h-[40px]"
                         />
                       ) : (item.justification || '—')}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 py-1">
                       {item.pdf_path ? (
                         <a
                           href={`${import.meta.env.VITE_API_BASE_URL}/${item.pdf_path}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-blue-600 hover:underline text-xs"
+                          className="text-blue-600 hover:text-blue-800 underline"
                         >
-                          View PDF
+                          View
                         </a>
                       ) : (
-                        <span className="text-gray-400 text-xs">No file</span>
+                        <span className="text-slate-400 text-xs">No file</span>
                       )}
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+                </table>
+              </div>
+            </div>
+
+
+            {/* ACTIONS - DRAFT (resubmit) */}
+            {status === 'DRAFT' && !viewOnly && (
+              <div className="bg-white border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-2 text-slate-700">Resubmission</h3>
+                <p className="text-xs text-slate-600 mb-3">
+                  This CL has been returned for revision. You may modify the competencies
+                  and add optional remarks for the next reviewer, then resubmit when ready.
+                </p>
+
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Supervisor Remarks for Resubmission (optional)
+                  </label>
+                  <textarea
+                    value={resubmitRemarks}
+                    onChange={(e) => setResubmitRemarks(e.target.value)}
+                    placeholder="Add any notes or clarification for the next reviewer..."
+                    className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    rows="3"
+                  />
+                </div>
+
+                <button
+                  onClick={confirmResubmit}
+                  disabled={actionLoading}
+                  className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:opacity-50 shadow-sm"
+                >
+                  {actionLoading ? 'Processing...' : 'Resubmit CL'}
+                </button>
+              </div>
+            )}
+
+
+            {/* ACTIONS - PENDING_MANAGER (approve/return) */}
+            {status === 'PENDING_MANAGER' && !viewOnly && (
+              <div className="bg-white border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-2 text-slate-700">Approval Actions</h3>
+
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Remarks (required for returning)
+                  </label>
+                  <textarea
+                    value={returnRemarks}
+                    onChange={(e) => setReturnRemarks(e.target.value)}
+                    placeholder="Enter remarks if you're returning this CL..."
+                    className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    rows="3"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={confirmApprove}
+                    disabled={actionLoading}
+                    className="flex-1 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50 shadow-sm"
+                  >
+                    {actionLoading ? 'Processing...' : 'Approve'}
+                  </button>
+                  <button
+                    onClick={confirmReturn}
+                    disabled={actionLoading}
+                    className="flex-1 px-4 py-2 text-sm bg-yellow-600 hover:bg-yellow-700 text-white rounded-md disabled:opacity-50 shadow-sm"
+                  >
+                    {actionLoading ? 'Processing...' : 'Return'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* VIEW ONLY - For other statuses or viewOnly mode */}
+            {(viewOnly || !['DRAFT', 'PENDING_MANAGER'].includes(status)) && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+                <p className="text-sm text-slate-600">
+                  {viewOnly ? (
+                    <span>View only - This is a historical record from recent actions.</span>
+                  ) : (
+                    <span>This CL is in <strong>{status}</strong> status. View only - no actions available.</span>
+                  )}
+                </p>
+              </div>
+            )}
           </div>
         </div>
-
-
-        {/* ACTIONS - DRAFT (resubmit) */}
-        {status === 'DRAFT' && (
-          <div className="bg-white border border-gray-200 p-6 mb-6">
-            <h2 className="text-lg font-semibold mb-4">Resubmission</h2>
-            <p className="text-sm text-gray-600 mb-4">
-              This CL has been returned for revision. You may modify the competencies
-              and add optional remarks for the next reviewer, then resubmit when ready.
-            </p>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Supervisor Remarks for Resubmission (optional)
-              </label>
-              <textarea
-                value={resubmitRemarks}
-                onChange={(e) => setResubmitRemarks(e.target.value)}
-                placeholder="Add any notes or clarification for the next reviewer..."
-                className="w-full px-3 py-2 border border-gray-300 focus:outline-none focus:border-blue-500"
-                rows="4"
-              />
-            </div>
-
-            <button
-              onClick={confirmResubmit}
-              disabled={actionLoading}
-              className="px-6 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {actionLoading ? 'Processing...' : 'Resubmit CL'}
-            </button>
-          </div>
-        )}
-
-        {/* ACTIONS - Only show for DRAFT or PENDING_MANAGER */}
-        {(status === 'DRAFT' || status === 'PENDING_MANAGER') ? null : (
-          <div className="bg-white border border-gray-200 p-6 mb-6">
-            <p className="text-sm text-gray-600">
-              View only - This CL is currently being reviewed by other approvers.
-            </p>
-          </div>
-        )}
-
-        {/* ACTIONS - PENDING_MANAGER (approve/return) */}
-        {status === 'PENDING_MANAGER' && (
-          <div className="bg-white border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold mb-4">Approval Actions</h2>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Remarks (required for returning)
-              </label>
-              <textarea
-                value={returnRemarks}
-                onChange={(e) => setReturnRemarks(e.target.value)}
-                placeholder="Enter remarks if you're returning this CL..."
-                className="w-full px-3 py-2 border border-gray-300 focus:outline-none focus:border-blue-500"
-                rows="4"
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={confirmApprove}
-                disabled={actionLoading}
-                className="flex-1 px-4 py-2 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-              >
-                {actionLoading ? 'Processing...' : 'Approve'}
-              </button>
-              <button
-                onClick={confirmReturn}
-                disabled={actionLoading}
-                className="flex-1 px-4 py-2 bg-yellow-600 text-white hover:bg-yellow-700 disabled:opacity-50"
-              >
-                {actionLoading ? 'Processing...' : 'Return'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW ONLY - For other statuses */}
-        {!['DRAFT', 'PENDING_MANAGER'].includes(status) && (
-          <div className="bg-gray-50 border border-gray-200 p-6 text-center text-gray-600">
-            This CL is in <strong>{status}</strong> status. View only - no actions available.
-          </div>
-        )}
       </div>
 
       <Modal

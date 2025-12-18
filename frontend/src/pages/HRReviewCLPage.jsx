@@ -1,11 +1,13 @@
 // src/pages/HRReviewCLPage.jsx
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
 import Modal from '../components/Modal';
 
 function HRReviewCLPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const viewOnly = searchParams.get('viewOnly') === 'true';
   const [user, setUser] = useState(null);
   const [cl, setCl] = useState(null);
   const [auditTrail, setAuditTrail] = useState([]);
@@ -196,212 +198,225 @@ function HRReviewCLPage() {
   );
 
   return (
-    <div className="max-w-6xl mx-auto p-8">
-      <button
-        onClick={goBack}
-        className="mb-4 px-4 py-2 rounded border border-gray-300 text-sm"
-      >
-        ← Back to Dashboard
-      </button>
-
-      <h1 className="text-2xl font-bold mb-2">
-        CL Final Review – #{header.id}
-      </h1>
-      <p className="text-sm text-gray-600 mb-4">
-        Status: <strong>{header.status}</strong>
-      </p>
-
-      {/* Employee & Supervisor Info */}
-      <div className="bg-white border border-gray-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold mb-4">Employee Information</h2>
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <p className="text-gray-600">Employee Name</p>
-            <p className="font-medium">{header.employee_name || 'N/A'}</p>
-          </div>
-          <div>
-            <p className="text-gray-600">Supervisor</p>
-            <p className="font-medium">{header.supervisor_name || 'N/A'}</p>
-          </div>
-          <div>
-            <p className="text-gray-600">Department</p>
-            <p className="font-medium">{header.department_name || 'N/A'}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* All Previous Remarks (read-only) */}
-      {(supervisor_remarks || manager_remarks || employee_remarks || hr_remarks) && (
-        <div className="bg-white border border-gray-200 p-6 mb-6 text-sm">
-          <h2 className="text-lg font-semibold mb-3">Remarks History</h2>
-
-          {supervisor_remarks && (
-            <div className="mb-3">
-              <p className="font-semibold text-yellow-800">Supervisor Remarks</p>
-              <p className="text-gray-800 whitespace-pre-wrap">
-                {supervisor_remarks}
-              </p>
-            </div>
-          )}
-
-          {manager_remarks && (
-            <div className="mb-3">
-              <p className="font-semibold text-blue-800">Manager Remarks</p>
-              <p className="text-gray-800 whitespace-pre-wrap">
-                {manager_remarks}
-              </p>
-            </div>
-          )}
-
-          {employee_remarks && (
-            <div className="mb-3">
-              <p className="font-semibold text-green-800">Employee Remarks</p>
-              <p className="text-gray-800 whitespace-pre-wrap">
-                {employee_remarks}
-              </p>
-            </div>
-          )}
-
-          {hr_remarks && (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/80">
             <div>
-              <p className="font-semibold text-purple-800">Previous HR Remarks</p>
-              <p className="text-gray-800 whitespace-pre-wrap">
-                {hr_remarks}
+              <h1 className="text-lg font-semibold text-slate-800">
+                CL Final Review – #{header.id}
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Status: <strong>{header.status}</strong>
               </p>
+            </div>
+            <button
+              onClick={goBack}
+              className="text-slate-500 hover:text-slate-700 px-4 py-2 rounded-md hover:bg-slate-100 text-sm transition"
+            >
+              ← Back to Dashboard
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 py-4 overflow-y-auto space-y-4">
+
+            {/* Employee & Supervisor Info */}
+            <div className="bg-white border border-slate-200 rounded-lg p-3">
+              <h3 className="text-sm font-semibold mb-2 text-slate-700">Employee Information</h3>
+              <div className="grid grid-cols-3 gap-4 text-xs">
+                <div>
+                  <p className="text-slate-500">Employee Name</p>
+                  <p className="font-medium text-slate-800">{header.employee_name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Supervisor</p>
+                  <p className="font-medium text-slate-800">{header.supervisor_name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Department</p>
+                  <p className="font-medium text-slate-800">{header.department_name || 'N/A'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* All Previous Remarks (read-only) */}
+            {supervisor_remarks && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-yellow-800">Supervisor Remarks</h3>
+                <p className="text-sm text-yellow-900 whitespace-pre-wrap">
+                  {supervisor_remarks}
+                </p>
+              </div>
+            )}
+
+            {manager_remarks && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-blue-800">Manager Remarks</h3>
+                <p className="text-sm text-blue-900 whitespace-pre-wrap">
+                  {manager_remarks}
+                </p>
+              </div>
+            )}
+
+            {employee_remarks && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-green-800">Employee Remarks</h3>
+                <p className="text-sm text-green-900 whitespace-pre-wrap">
+                  {employee_remarks}
+                </p>
+              </div>
+            )}
+
+            {hr_remarks && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-purple-800">Previous HR Remarks</h3>
+                <p className="text-sm text-purple-900 whitespace-pre-wrap">
+                  {hr_remarks}
+                </p>
+              </div>
+            )}
+
+            {/* Process History / Audit Trail */}
+            {auditTrail && auditTrail.length > 0 && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-2 text-slate-700">Process History</h3>
+                <div className="space-y-3">
+                  {auditTrail.map((event, idx) => {
+                    let badgeColor = 'bg-slate-100 text-slate-800';
+                    let label = event.action_type;
+
+                    if (event.action_type === 'CREATED') {
+                      badgeColor = 'bg-blue-100 text-blue-800';
+                      label = 'Created';
+                    } else if (event.action_type.includes('APPROVE')) {
+                      badgeColor = 'bg-green-100 text-green-800';
+                      label = event.action_type.replace('_', ' ');
+                    } else if (event.action_type.includes('RETURN')) {
+                      badgeColor = 'bg-red-100 text-red-800';
+                      label = event.action_type.replace('_', ' ');
+                    }
+
+                    return (
+                      <div key={idx} className="flex items-start gap-2 pb-2 border-b border-slate-200 last:border-0">
+                        <span className={`px-2 py-1 text-[11px] font-semibold rounded ${badgeColor}`}>
+                          {label}
+                        </span>
+                        <div className="flex-1">
+                          <p className="text-[11px] text-slate-500">
+                            {new Date(event.timestamp).toLocaleString()} • {event.actor_name} ({event.actor_role})
+                          </p>
+                          {event.remarks && (
+                            <p className="mt-1 text-xs text-slate-800 whitespace-pre-wrap">
+                              {event.remarks}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Competencies Table */}
+            <div className="bg-white border border-slate-200 rounded-lg p-3">
+              <h3 className="text-sm font-semibold mb-2 text-slate-700">Competency Leveling Summary</h3>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border border-slate-200 rounded-md overflow-hidden">
+                  <thead className="bg-slate-100 uppercase text-[11px] text-slate-700">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Competency</th>
+                      <th className="px-2 py-1 text-left">MPLR</th>
+                      <th className="px-2 py-1 text-left">Assigned</th>
+                      <th className="px-2 py-1 text-left">Weight (%)</th>
+                      <th className="px-2 py-1 text-left">Score</th>
+                      <th className="px-2 py-1 text-left">Justification</th>
+                      <th className="px-2 py-1 text-left">PDF</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="bg-white">
+                    {items.map((it) => (
+                      <tr key={it.id} className="border-t border-slate-100">
+                        <td className="px-2 py-1 text-slate-800">{it.competency_name}</td>
+                        <td className="px-2 py-1 text-slate-700">{it.mplr_level || it.required_level}</td>
+                        <td className="px-2 py-1 text-slate-700">{it.assigned_level}</td>
+                        <td className="px-2 py-1 text-slate-700">{Number(it.weight || 0).toFixed(2)}</td>
+                        <td className="px-2 py-1 font-semibold text-blue-600">{Number(it.score || 0).toFixed(2)}</td>
+                        <td className="px-2 py-1 text-slate-700">{it.justification || '—'}</td>
+                        <td className="px-2 py-1">
+                          {it.pdf_path ? (
+                            <a
+                              href={`${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline"
+                            >
+                              View
+                            </a>
+                          ) : (
+                            <span className="text-slate-400 text-xs">No file</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* HR Remarks Section */}
+            {!viewOnly && (
+              <div className="bg-white border border-slate-200 rounded-lg p-3">
+                <label className="block text-xs font-medium mb-1 text-slate-700">
+                  HR Remarks{' '}
+                  {header.status === 'PENDING_HR' && (
+                    <span className="text-red-600">*</span>
+                  )}
+                </label>
+                <textarea
+                  className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  rows="3"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Enter your remarks or leave empty to approve..."
+                ></textarea>
+              </div>
+            )}
+
+            {viewOnly && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-700">
+                  This CL is being viewed in read-only mode.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          {!viewOnly && header.status === 'PENDING_HR' && (
+            <div className="px-6 py-3 border-t border-slate-200 bg-slate-50/80 flex justify-end gap-2">
+              <button
+                onClick={confirmApprove}
+                disabled={actionLoading}
+                className="px-5 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50 shadow-sm"
+              >
+                {actionLoading ? 'Processing...' : 'Approve & Enable IDP'}
+              </button>
+              <button
+                onClick={confirmReturn}
+                disabled={actionLoading}
+                className="px-5 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md disabled:opacity-50 shadow-sm"
+              >
+                {actionLoading ? 'Processing...' : 'Return for Revision'}
+              </button>
             </div>
           )}
         </div>
-      )}
-
-      {/* Process History / Audit Trail */}
-      {auditTrail && auditTrail.length > 0 && (
-        <div className="bg-white border border-gray-200 p-6 mb-6 text-sm">
-          <h2 className="text-lg font-semibold mb-4">Process History</h2>
-          <div className="space-y-4">
-            {auditTrail.map((event, idx) => {
-              let badgeColor = 'bg-gray-100 text-gray-800';
-              let label = event.action_type;
-
-              if (event.action_type === 'CREATED') {
-                badgeColor = 'bg-blue-100 text-blue-800';
-                label = 'Created';
-              } else if (event.action_type.includes('APPROVE')) {
-                badgeColor = 'bg-green-100 text-green-800';
-                label = event.action_type.replace('_', ' ');
-              } else if (event.action_type.includes('RETURN')) {
-                badgeColor = 'bg-red-100 text-red-800';
-                label = event.action_type.replace('_', ' ');
-              }
-
-              return (
-                <div key={idx} className="flex items-start gap-3 pb-3 border-b last:border-0">
-                  <span className={`px-2 py-1 text-xs font-semibold rounded ${badgeColor}`}>
-                    {label}
-                  </span>
-                  <div className="flex-1">
-                    <p className="text-xs text-gray-500">
-                      {new Date(event.timestamp).toLocaleString()} • {event.actor_name} ({event.actor_role})
-                    </p>
-                    {event.remarks && (
-                      <p className="mt-1 text-gray-800 whitespace-pre-wrap">
-                        {event.remarks}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Competencies Table */}
-      <div className="bg-white border border-gray-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold mb-4">Competency Leveling Summary</h2>
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-2 text-left font-semibold">Competency</th>
-              <th className="px-4 py-2 text-left font-semibold">MPLR</th>
-              <th className="px-4 py-2 text-left font-semibold">Assigned</th>
-              <th className="px-4 py-2 text-left font-semibold">Weight</th>
-              <th className="px-4 py-2 text-left font-semibold">Score</th>
-              <th className="px-4 py-2 text-left font-semibold">Justification</th>
-              <th className="px-4 py-2 text-left font-semibold">PDF</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {items.map((it) => (
-              <tr key={it.id}>
-                <td className="px-4 py-2">{it.competency_name}</td>
-                <td className="px-4 py-2">{it.mplr_level || it.required_level}</td>
-                <td className="px-4 py-2">{it.assigned_level}</td>
-                <td className="px-4 py-2">
-                  {Number(it.weight || 0).toFixed(2)}%
-                </td>
-                <td className="px-4 py-2">
-                  {Number(it.score || 0).toFixed(2)}
-                </td>
-                <td className="px-4 py-2">{it.justification || '—'}</td>
-                <td className="px-4 py-2">
-                  {it.pdf_path ? (
-                    <a
-                      href={`${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue-600 underline text-xs"
-                    >
-                      View
-                    </a>
-                  ) : (
-                    <span className="text-gray-400">-</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="mt-4 text-right font-semibold">
-          Total Score: {totalScore.toFixed(2)}
-        </p>
       </div>
-
-      {/* HR Remarks Section */}
-      <div className="bg-white border border-gray-200 p-6 mb-6">
-        <label className="block text-sm font-semibold mb-2">
-          HR Remarks{' '}
-          {header.status === 'PENDING_HR' && (
-            <span className="text-red-600">*</span>
-          )}
-        </label>
-        <textarea
-          className="w-full border p-3 text-sm"
-          rows="5"
-          value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
-          placeholder="Enter your remarks or leave empty to approve..."
-        ></textarea>
-      </div>
-
-      {/* Action Buttons */}
-      {header.status === 'PENDING_HR' && (
-        <div className="flex gap-4">
-          <button
-            onClick={confirmApprove}
-            disabled={actionLoading}
-            className="px-6 py-2 bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-50"
-          >
-            {actionLoading ? 'Processing...' : 'Approve & Enable IDP'}
-          </button>
-          <button
-            onClick={confirmReturn}
-            disabled={actionLoading}
-            className="px-6 py-2 bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-50"
-          >
-            {actionLoading ? 'Processing...' : 'Return for Revision'}
-          </button>
-        </div>
-      )}
 
       <Modal
         isOpen={modal.isOpen}

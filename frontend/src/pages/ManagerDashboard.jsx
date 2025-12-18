@@ -8,6 +8,12 @@ import {
   ArrowRightOnRectangleIcon,
   BellIcon,
   ArrowsPointingOutIcon,
+  Squares2X2Icon,
+  ClockIcon,
+  PencilSquareIcon,
+  UsersIcon,
+  MagnifyingGlassIcon,
+  ListBulletIcon,
 } from '@heroicons/react/24/outline';
 
 function ManagerDashboard() {
@@ -19,11 +25,17 @@ function ManagerDashboard() {
     clPending: 0,
     clInProgress: 0,
     clApproved: 0,
+    clReturned: 0,
   });
 
   const [pendingCL, setPendingCL] = useState([]);
-  const [allCL, setAllCL] = useState([]); // <-- all CLs (we'll filter for history)
-
+  const [allCL, setAllCL] = useState([]);
+  const [departmentCLs, setDepartmentCLs] = useState([]); // All CLs in department for tracking
+  const [activeSection, setActiveSection] = useState('pending'); // 'pending', 'approved', 'returned', 'all', 'department', 'employees'
+  const [departmentStatusFilter, setDepartmentStatusFilter] = useState('ALL'); // Filter for department tracking
+  const [employees, setEmployees] = useState([]); // All employees in department
+  const [searchQuery, setSearchQuery] = useState(''); // Search for employees
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   // ✅ NEW: notifications + recent actions (right sidebar)
   const [notifications, setNotifications] = useState([]);
   const [recentActions, setRecentActions] = useState([]);
@@ -33,12 +45,18 @@ function ManagerDashboard() {
     notification: null,
   });
 
-  const [activeView, setActiveView] = useState('pending'); // 'pending' or 'history'
   const [showFullNotifications, setShowFullNotifications] = useState(false);
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
 
   // Only these roles can access Manager dashboard
   const managerRoles = ['Manager', 'HR', 'Admin'];
+
+  const CL_STATUS_SECTIONS = [
+    { key: 'pending', label: 'For Approval by Manager', icon: ClockIcon },
+    { key: 'returned', label: 'Returned to Supervisor', icon: PencilSquareIcon },
+    { key: 'approved', label: 'Approved by Manager', icon: CheckCircleIcon },
+    { key: 'department', label: 'Department CL Tracking', icon: Squares2X2Icon },
+  ];
 
   // ==========================
   // AUTH GUARD & LOAD USER
@@ -67,20 +85,55 @@ function ManagerDashboard() {
 
     async function loadDashboard() {
       try {
-        const [clSummary, clPending, clAll] = await Promise.all([
+        const [clSummary, clPending, clAll, deptCLs] = await Promise.all([
           apiRequest('/api/cl/manager/summary'),
           apiRequest('/api/cl/manager/pending'),
           apiRequest('/api/cl/manager/all'),
+          apiRequest('/api/cl/manager/department'), // All CLs in manager's department
         ]);
 
         setSummary({
           clPending: clSummary.clPending || 0,
           clInProgress: clSummary.clInProgress || 0,
           clApproved: clSummary.clApproved || 0,
+          clReturned: clSummary.clReturned || 0,
         });
 
         setPendingCL(clPending || []);
         setAllCL(clAll || []);
+        setDepartmentCLs(deptCLs || []);
+        
+        // Fetch all users and filter by department and Employee role
+        const allUsers = await apiRequest('/api/users');
+        const deptEmployees = (allUsers || []).filter(
+          u => u.department_id === user.department_id && u.role === 'Employee'
+        );
+        
+        // Enrich with competency data
+        const enriched = await Promise.all(
+          deptEmployees.map(async (emp) => {
+            try {
+              const resp = await apiRequest(`/api/cl/employee/${emp.id}/competencies`);
+              const competencyCount = (resp?.competencies || []).length;
+              
+              const histResp = await apiRequest(`/api/cl/employee/${emp.id}/history`);
+              const histArr = Array.isArray(histResp) ? histResp : (histResp?.history || []);
+              const historyCount = histArr.length;
+              const latestCL = histArr.length > 0 ? histArr[0] : null;
+              
+              return {
+                ...emp,
+                competencyCount,
+                historyCount,
+                latestCL,
+              };
+            } catch {
+              return { ...emp, competencyCount: 0, historyCount: 0, latestCL: null };
+            }
+          })
+        );
+        
+        setEmployees(enriched);
       } catch (err) {
         console.error(err);
         setError('Failed to load Manager dashboard data.');
@@ -142,6 +195,16 @@ function ManagerDashboard() {
   }
 
   function goTo(url) {
+    const currentPath = window.location.pathname;
+    const targetPath = url.split('?')[0];
+    
+    // If already on the target page, just reload data instead of full refresh
+    if (currentPath === targetPath) {
+      // Reload dashboard data without page refresh
+      window.location.reload();
+      return;
+    }
+    
     window.location.href = url;
   }
 
@@ -156,7 +219,8 @@ function ManagerDashboard() {
         }
       });
       // Reload notifications to update the list
-      loadNotifications();
+      const data = await apiRequest('/api/notifications');
+      setNotifications(data || []);
     } catch (err) {
       console.error('Failed to mark notification as read:', err);
     }
@@ -171,10 +235,22 @@ function ManagerDashboard() {
     // If action is a deletion, show when it was deleted
     if (action.title && action.title.toLowerCase().includes('deleted')) {
       alert(`${action.title}\n\n${action.description || ''}\n\nDeleted at: ${new Date(action.created_at).toLocaleString()}`);
-    } else {
-      // Navigate to the URL for other actions
-      goTo(action.url || '/manager');
+      return;
     }
+    
+    // Check if we're staying on the same page
+    const url = action.url || '/manager';
+    const currentPath = window.location.pathname;
+    const targetPath = url.split('?')[0];
+    
+    if (currentPath === targetPath) {
+      // Just close modal and stay on current page
+      return;
+    }
+    
+    // Navigate to different page
+    const separator = url.includes('?') ? '&' : '?';
+    window.location.href = `${url}${separator}viewOnly=true`;
   }
 
   async function proceedToNotificationLink(n) {
@@ -189,13 +265,25 @@ function ManagerDashboard() {
       }
     } catch (err) {
       console.error('Failed to mark notification as read', err);
-    } finally {
-      goTo(n?.url || '/manager');
     }
+    
+    // Check if we're staying on the same page
+    const url = n?.url || '/manager';
+    const currentPath = window.location.pathname;
+    const targetPath = url.split('?')[0];
+    
+    if (currentPath === targetPath) {
+      // Stay on current page without refresh
+      return;
+    }
+    
+    // Navigate to different page
+    window.location.href = url;
   }
 
   function closeNotificationModal() {
     setNotificationModalState({ open: false, notification: null });
+    // Modal stays closed without refresh
   }
 
   const unreadCount = useMemo(() => {
@@ -204,18 +292,41 @@ function ManagerDashboard() {
     ).length;
   }, [notifications]);
 
+  // Filter CLs by section
+  const approvedCLs = allCL.filter(item => item.manager_decision === 'APPROVED');
+  // Only show returned CLs that are still in DRAFT status (not yet resubmitted)
+  const returnedCLs = allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT');
+
+  // Filter department CLs by status
+  const filteredDepartmentCLs = useMemo(() => {
+    if (departmentStatusFilter === 'ALL') {
+      return departmentCLs;
+    }
+    return departmentCLs.filter(item => item.status === departmentStatusFilter);
+  }, [departmentCLs, departmentStatusFilter]);
+
+  const sectionCounts = useMemo(() => {
+    return {
+      pending: pendingCL.length,
+      approved: approvedCLs.length,
+      returned: returnedCLs.length,
+      department: departmentCLs.length,
+      all: pendingCL.length + approvedCLs.length + returnedCLs.length,
+    };
+  }, [pendingCL, approvedCLs, returnedCLs, departmentCLs]);
+
+  const activeSectionLabel = useMemo(() => {
+    if (activeSection === 'all') return 'All Competency Levelings';
+    const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
+    return section ? section.label : 'Competency Levelings';
+  }, [activeSection]);
+
   if (!user) return null;
 
-  // HISTORY:
-  // Show ALL CLs where this manager already acted (APPROVED or RETURNED)
-  const managerHistory = allCL.filter(
-    (item) => item.manager_decision != null && item.manager_decision !== ''
-  );
-
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-screen bg-white">
       {/* SIDEBAR */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
         {/* HEADER */}
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-800">FUTURA</h2>
@@ -223,31 +334,72 @@ function ManagerDashboard() {
         </div>
 
         {/* NAVIGATION */}
-        <nav className="flex-1 p-4 space-y-2">
-          <button
-            onClick={() => setActiveView('pending')}
-            className={`w-full flex items-center gap-3 px-4 py-2 rounded transition
-                       ${
-                         activeView === 'pending'
-                           ? 'bg-blue-50 text-blue-700'
-                           : 'text-gray-700 hover:bg-gray-100'
-                       }`}
-          >
-            <ClipboardDocumentCheckIcon className="w-5 h-5" />
-            <span>Pending Approvals</span>
-          </button>
-          <button
-            onClick={() => setActiveView('history')}
-            className={`w-full flex items-center gap-3 px-4 py-2 rounded transition
-                       ${
-                         activeView === 'history'
-                           ? 'bg-blue-50 text-blue-700'
-                           : 'text-gray-700 hover:bg-gray-100'
-                       }`}
-          >
-            <CheckCircleIcon className="w-5 h-5" />
-            <span>My Activity</span>
-          </button>
+        <nav className="p-4 space-y-4 overflow-y-auto">
+          {/* Competency Leveling */}
+          <div className="space-y-1">
+            <button
+              onClick={() => setActiveSection('all')}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded
+                         text-gray-700 hover:bg-gray-100 transition"
+            >
+              <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-600" />
+              <span>All Competencies</span>
+            </button>
+
+            <button
+              onClick={() => setActiveSection('employees')}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded
+                         text-gray-700 hover:bg-gray-100 transition"
+            >
+              <UsersIcon className="w-5 h-5 text-green-600" />
+              <span>View Employees</span>
+            </button>
+
+            {/* CL Sections */}
+            <div className="pr-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
+                CL Sections
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setActiveSection('all')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                  ${activeSection === 'all' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <Squares2X2Icon className="w-4 h-4" />
+                  All
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                  {sectionCounts.all || 0}
+                </span>
+              </button>
+
+              <div className="mt-1 space-y-1">
+                {CL_STATUS_SECTIONS.map(({ key, label, icon }) => {
+                  const Icon = icon;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setActiveSection(key)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                        ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        {label}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                        {sectionCounts[key] || 0}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </nav>
 
         {/* LOGOUT */}
@@ -265,10 +417,14 @@ function ManagerDashboard() {
 
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-y-auto p-8">
-        <h1 className="text-2xl font-bold text-gray-800">Manager Dashboard</h1>
-        <p className="text-gray-600 mb-6">
-          Welcome, {user.name} ({user.employee_id})
-        </p>
+        <header className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">Manager Dashboard</h1>
+            <p className="text-gray-600">
+              Welcome, {user.name} ({user.employee_id})
+            </p>
+          </div>
+        </header>
 
         {error && (
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -278,54 +434,113 @@ function ManagerDashboard() {
         {loading && <p>Loading...</p>}
 
         {/* SUMMARY CARDS */}
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           <SummaryCard
-            icon={ClipboardDocumentCheckIcon}
-            label="CL – Pending for Manager"
+            label="For Approval by Manager"
             value={summary.clPending}
+            gradientClass="from-yellow-400 to-orange-500"
           />
           <SummaryCard
-            icon={CheckCircleIcon}
-            label="CL – Approved by Manager"
+            label="Returned to Supervisor"
+            value={summary.clReturned}
+            gradientClass="from-red-400 to-red-600"
+          />
+          <SummaryCard
+            label="Approved by Manager"
             value={summary.clApproved}
-          />
-          <SummaryCard
-            icon={XCircleIcon}
-            label="CL – In Progress / Others"
-            value={summary.clInProgress}
+            gradientClass="from-emerald-400 to-emerald-700"
           />
         </section>
 
-        {/* CONDITIONAL CONTENT BASED ON VIEW */}
-        {activeView === 'pending' ? (
-          <section>
-            <h2 className="text-xl font-semibold mb-3">
-              Competency Leveling – Pending Manager Approval
-            </h2>
+        {/* CONDITIONAL CONTENT BASED ON SECTION */}
+        <section>
+          <h2 className="text-xl font-semibold mb-3">{activeSectionLabel}</h2>
 
-            {pendingCL.length === 0 ? (
-              <p className="text-gray-500">
-                No CL submissions currently pending Manager approval.
-              </p>
+          {activeSection === 'all' ? (
+            <>
+              {/* Pending Section */}
+              {pendingCL.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">For Approval by Manager</h3>
+                  <PendingTable data={pendingCL} goTo={goTo} />
+                </div>
+              )}
+
+              {/* Returned Section */}
+              {returnedCLs.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Returned to Supervisor</h3>
+                  <HistoryTable data={returnedCLs} goTo={goTo} />
+                </div>
+              )}
+
+              {/* Approved Section */}
+              {approvedCLs.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Approved by Manager</h3>
+                  <HistoryTable data={approvedCLs} goTo={goTo} />
+                </div>
+              )}
+
+              {pendingCL.length === 0 && returnedCLs.length === 0 && approvedCLs.length === 0 && (
+                <p className="text-gray-400 text-sm italic">No competency levelings found.</p>
+              )}
+            </>
+          ) : activeSection === 'pending' ? (
+            pendingCL.length === 0 ? (
+              <p className="text-gray-400 text-sm italic">No pending CLs for manager approval.</p>
             ) : (
               <PendingTable data={pendingCL} goTo={goTo} />
-            )}
-          </section>
-        ) : (
-          <section>
-            <h2 className="text-xl font-semibold mb-3">
-              Manager Activity Log (Approvals & Returns)
-            </h2>
-
-            {managerHistory.length === 0 ? (
-              <p className="text-gray-500">
-                No CL actions recorded for this manager yet.
-              </p>
+            )
+          ) : activeSection === 'returned' ? (
+            returnedCLs.length === 0 ? (
+              <p className="text-gray-400 text-sm italic">No CLs returned to supervisor.</p>
             ) : (
-              <HistoryTable data={managerHistory} goTo={goTo} />
-            )}
-          </section>
-        )}
+              <HistoryTable data={returnedCLs} goTo={goTo} />
+            )
+          ) : activeSection === 'approved' ? (
+            approvedCLs.length === 0 ? (
+              <p className="text-gray-400 text-sm italic">No CLs approved by manager.</p>
+            ) : (
+              <HistoryTable data={approvedCLs} goTo={goTo} />
+            )
+          ) : activeSection === 'department' ? (
+            <>
+              {/* Status Filter for Department Tracking */}
+              <div className="mb-4 flex items-center gap-3">
+                <label className="text-sm font-medium text-gray-700">Filter by Status:</label>
+                <select
+                  value={departmentStatusFilter}
+                  onChange={(e) => setDepartmentStatusFilter(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                >
+                  <option value="ALL">All Status</option>
+                  <option value="PENDING_EMPLOYEE">Pending Employee</option>
+                  <option value="PENDING_MANAGER">Pending Manager</option>
+                  <option value="PENDING_HR">Pending HR</option>
+                  <option value="PENDING_AM">Pending AM</option>
+                  <option value="APPROVED">Approved</option>
+                  <option value="DRAFT">Draft</option>
+                </select>
+              </div>
+
+              {filteredDepartmentCLs.length === 0 ? (
+                <p className="text-gray-400 text-sm italic">No CLs found for the selected status.</p>
+              ) : (
+                <DepartmentTrackingTable data={filteredDepartmentCLs} goTo={goTo} />
+              )}
+            </>
+          ) : activeSection === 'employees' ? (
+            <EmployeeCompetenciesView 
+              employees={employees} 
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              goTo={goTo}
+            />
+          ) : null}
+        </section>
       </main>
 
       {/* RIGHT SIDEBAR – NOTIFICATIONS + RECENT ACTIONS */}
@@ -397,35 +612,39 @@ function ManagerDashboard() {
             )}
           </button>
 
-          <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
+          <div className="flex-1 p-2 overflow-y-auto no-scrollbar">
             {recentActions.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">No recent actions.</p>
+              <p className="text-xs text-gray-400 italic px-2">No recent actions.</p>
             ) : (
-              recentActions.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => handleRecentActionClick(a)}
-                  className="w-full text-left px-3 py-2 rounded text-sm
-                             bg-gray-50 hover:bg-gray-100 transition"
-                >
-                  <p className="font-medium text-gray-800 truncate">
-                    {a.title || 'Action'}
-                  </p>
-
-                  {a.description && (
-                    <p className="text-[12px] text-gray-600 line-clamp-2">
-                      {a.description}
-                    </p>
-                  )}
-
-                  {a.created_at && (
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      {new Date(a.created_at).toLocaleString()}
-                    </p>
-                  )}
-                </button>
-              ))
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-2 py-1 text-left font-semibold text-gray-600">Action</th>
+                      <th className="px-2 py-1 text-left font-semibold text-gray-600">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentActions.slice(0, 10).map((a, idx) => (
+                      <tr
+                        key={`${a.id}-${idx}`}
+                        onClick={() => handleRecentActionClick(a)}
+                        className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <td className="px-2 py-2">
+                          <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
+                          {a.description && (
+                            <p className="text-gray-600 truncate text-[11px]">{a.description}</p>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
+                          {a.created_at ? new Date(a.created_at).toLocaleDateString() : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
@@ -457,16 +676,11 @@ function ManagerDashboard() {
 
 /* ----------------- Reusable Components ----------------- */
 
-function SummaryCard({ icon: IconComponent, label, value }) {
+function SummaryCard({ label, value, gradientClass }) {
   return (
-    <div className="bg-white p-4 rounded shadow-sm flex items-center gap-3">
-      <div className="p-2 rounded-full bg-blue-50">
-        <IconComponent className="w-5 h-5 text-blue-600" />
-      </div>
-      <div>
-        <h3 className="text-sm text-gray-500">{label}</h3>
-        <p className="text-2xl font-semibold text-gray-900 mt-1">{value}</p>
-      </div>
+    <div className={`bg-gradient-to-br ${gradientClass} p-6 rounded-lg shadow-md text-white`}>
+      <h3 className="text-sm font-medium opacity-90">{label}</h3>
+      <p className="text-3xl font-bold mt-2">{value}</p>
     </div>
   );
 }
@@ -477,6 +691,7 @@ function PendingTable({ data, goTo }) {
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
+            <Th>CL ID</Th>
             <Th>Employee</Th>
             <Th>Employee ID</Th>
             <Th>Department</Th>
@@ -490,6 +705,7 @@ function PendingTable({ data, goTo }) {
         <tbody className="divide-y divide-gray-200">
           {data.map((item) => (
             <tr key={item.id} className="hover:bg-gray-50">
+              <Td>{item.id}</Td>
               <Td>{item.employee_name}</Td>
               <Td>{item.employee_code || item.employee_id}</Td>
               <Td>{item.department_name}</Td>
@@ -522,6 +738,7 @@ function HistoryTable({ data, goTo }) {
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
+            <Th>CL ID</Th>
             <Th>Employee</Th>
             <Th>Employee ID</Th>
             <Th>Department</Th>
@@ -535,6 +752,7 @@ function HistoryTable({ data, goTo }) {
         <tbody className="divide-y divide-gray-200">
           {data.map((item) => (
             <tr key={item.id} className="hover:bg-gray-50">
+              <Td>{item.id}</Td>
               <Td>{item.employee_name}</Td>
               <Td>{item.employee_code || item.employee_id}</Td>
               <Td>{item.department_name}</Td>
@@ -547,7 +765,7 @@ function HistoryTable({ data, goTo }) {
               </Td>
               <Td>
                 <button
-                  onClick={() => goTo(`/cl/submissions/${item.id}`)}
+                  onClick={() => goTo(`/cl/submissions/${item.id}?viewOnly=true`)}
                   className="px-3 py-1 rounded text-white text-xs
                              bg-gradient-to-r from-gray-500 to-gray-700
                              hover:from-gray-600 hover:to-gray-800"
@@ -559,6 +777,71 @@ function HistoryTable({ data, goTo }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Department Tracking table - ALL CLs in manager's department
+function DepartmentTrackingTable({ data, goTo }) {
+  return (
+    <div className="bg-white shadow rounded overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">ID</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Employee</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Supervisor</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Position</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Status</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Updated</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Action</th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-gray-200">
+            {data.map((item) => (
+              <tr key={item.id} className="hover:bg-gray-50">
+                <td className="px-3 py-2 text-gray-700">{item.id}</td>
+                <td className="px-3 py-2 text-gray-700">
+                  <div className="text-sm font-medium">{item.employee_name}</div>
+                  <div className="text-xs text-gray-500">{item.employee_code || item.employee_id}</div>
+                </td>
+                <td className="px-3 py-2 text-gray-700 text-sm">{item.supervisor_name || '-'}</td>
+                <td className="px-3 py-2 text-gray-700 text-sm">{item.position_title}</td>
+                <td className="px-3 py-2">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                    item.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                    item.status === 'PENDING_MANAGER' ? 'bg-yellow-100 text-yellow-800' :
+                    item.status === 'PENDING_HR' ? 'bg-blue-100 text-blue-800' :
+                    item.status === 'PENDING_AM' ? 'bg-purple-100 text-purple-800' :
+                    item.status === 'PENDING_EMPLOYEE' ? 'bg-cyan-100 text-cyan-800' :
+                    item.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>
+                    {item.status.replace('PENDING_', '')}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-gray-700 text-xs whitespace-nowrap">
+                  {item.updated_at
+                    ? new Date(item.updated_at).toLocaleDateString()
+                    : '-'}
+                </td>
+                <td className="px-3 py-2">
+                  <button
+                    onClick={() => goTo(`/cl/submissions/${item.id}?viewOnly=true`)}
+                    className="px-3 py-1 rounded text-white text-xs whitespace-nowrap
+                               bg-gradient-to-r from-indigo-500 to-indigo-700
+                               hover:from-indigo-600 hover:to-indigo-800"
+                  >
+                    View
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -638,61 +921,134 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
 }
 
 function FullRecentActionsModal({ open, recentActions, onActionClick, onClose }) {
+  const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
+  const [searchTerm, setSearchTerm] = useState('');
+
   if (!open) return null;
+
+  // Filter actions by date range and search term
+  const filteredActions = recentActions.filter(a => {
+    // Date filtering
+    if (a.created_at) {
+      const actionDate = new Date(a.created_at);
+      const start = dateFilter.startDate ? new Date(dateFilter.startDate) : null;
+      const end = dateFilter.endDate ? new Date(dateFilter.endDate) : null;
+      
+      if (start && actionDate < start) return false;
+      if (end) {
+        const endOfDay = new Date(end);
+        endOfDay.setHours(23, 59, 59, 999);
+        if (actionDate > endOfDay) return false;
+      }
+    }
+    
+    // Search term filtering (search in title, description)
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase();
+      const matchTitle = (a.title || '').toLowerCase().includes(search);
+      const matchDescription = (a.description || '').toLowerCase().includes(search);
+      if (!matchTitle && !matchDescription) return false;
+    }
+    
+    return true;
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-gray-800">Recent Actions</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold text-gray-800">Recent Actions</h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          {/* Date Filter */}
+          <div className="space-y-3">
+            <div className="flex gap-4 items-end">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={dateFilter.startDate}
+                  onChange={(e) => setDateFilter({ ...dateFilter, startDate: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={dateFilter.endDate}
+                  onChange={(e) => setDateFilter({ ...dateFilter, endDate: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  setDateFilter({ startDate: '', endDate: '' });
+                  setSearchTerm('');
+                }}
+                className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded"
+              >
+                Clear
+              </button>
+            </div>
+            
+            {/* Search by Employee Name */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Search Employee Name</label>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by employee name..."
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
         </div>
         
         <div className="flex-1 overflow-y-auto p-6">
-          {recentActions.length === 0 ? (
+          {filteredActions.length === 0 ? (
             <p className="text-center text-gray-400 py-8">No recent actions found.</p>
           ) : (
-            <div className="space-y-3">
-              {recentActions.map((a, idx) => (
-                <button
-                  key={`${a.id}-${idx}`}
-                  type="button"
-                  onClick={() => {
-                    onActionClick(a);
-                    if (!a.title || !a.title.toLowerCase().includes('deleted')) {
-                      onClose();
-                    }
-                  }}
-                  className="w-full text-left p-4 rounded-lg border border-gray-200
-                             bg-white hover:bg-gray-50 transition shadow-sm hover:shadow"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-800 mb-1">{a.title || 'Action'}</p>
-                      {a.description && (
-                        <p className="text-sm text-gray-600 mb-2">{a.description}</p>
-                      )}
-                      {a.created_at && (
-                        <p className="text-xs text-gray-400">
-                          {new Date(a.created_at).toLocaleString()}
-                        </p>
-                      )}
-                    </div>
-                    {a.title && a.title.toLowerCase().includes('deleted') && (
-                      <span className="ml-4 px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">
-                        Deleted
-                      </span>
-                    )}
-                  </div>
-                </button>
-              ))}
+            <div className="bg-white shadow rounded overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Action</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Description</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filteredActions.map((a, idx) => (
+                    <tr
+                      key={`${a.id}-${idx}`}
+                      onClick={() => {
+                        onActionClick(a);
+                        if (!a.title || !a.title.toLowerCase().includes('deleted')) {
+                          onClose();
+                        }
+                      }}
+                      className="hover:bg-gray-50 cursor-pointer"
+                    >
+                      <td className="px-4 py-3 text-gray-800 font-medium">{a.title || 'Action'}</td>
+                      <td className="px-4 py-3 text-gray-600">{a.description || '-'}</td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {a.created_at ? new Date(a.created_at).toLocaleString() : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -767,6 +1123,258 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
         </div>
       </div>
     </div>
+  );
+}
+
+// Employee Competencies View Component
+function EmployeeCompetenciesView({ employees, searchQuery, setSearchQuery, viewMode, setViewMode, goTo }) {
+  const filteredEmployees = useMemo(() => {
+    if (!searchQuery.trim()) return employees;
+    
+    const query = searchQuery.toLowerCase();
+    return employees.filter(emp => 
+      emp.name?.toLowerCase().includes(query) ||
+      emp.employee_id?.toLowerCase().includes(query) ||
+      emp.position_title?.toLowerCase().includes(query)
+    );
+  }, [employees, searchQuery]);
+
+  return (
+    <div>
+      {/* Header with View Toggle */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-slate-800">
+          Department Employees
+        </h2>
+        
+        {/* View Toggle Buttons */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`p-2 rounded transition ${
+              viewMode === 'grid'
+                ? 'bg-blue-100 text-blue-700'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="Grid View"
+          >
+            <Squares2X2Icon className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`p-2 rounded transition ${
+              viewMode === 'list'
+                ? 'bg-blue-100 text-blue-700'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="List View"
+          >
+            <ListBulletIcon className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Search Input */}
+      <div className="mb-4 relative">
+        <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search by name, employee ID, or position..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+        />
+      </div>
+
+      {filteredEmployees.length === 0 ? (
+        <p className="text-sm text-gray-500 text-center py-8">
+          {searchQuery ? 'No employees found matching your search.' : 'No employees found.'}
+        </p>
+      ) : viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {filteredEmployees.map((emp) => (
+            <EmployeeCard key={emp.id} employee={emp} goTo={goTo} />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredEmployees.map((emp) => (
+            <EmployeeListItem key={emp.id} employee={emp} goTo={goTo} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Employee Card Component (Grid View)
+function EmployeeCard({ employee, goTo }) {
+  const latestDate = employee.latestCL?.created_at
+    ? new Date(employee.latestCL.created_at).toLocaleDateString()
+    : null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => employee.latestCL && goTo(`/cl/submissions/${employee.latestCL.id}?viewOnly=true`)}
+      className="relative border border-slate-200 border-l-4 border-l-blue-500 rounded-sm pl-3 pr-4 py-4 text-left shadow-sm transition
+        flex gap-3 items-start bg-white hover:shadow-md hover:-translate-y-0.5"
+    >
+      {/* Avatar / Icon */}
+      <div className="flex-shrink-0 mt-1">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5.5 20.5a7 7 0 0113 0M12 12a4 4 0 100-8 4 4 0 000 8z"
+            />
+          </svg>
+        </div>
+      </div>
+
+      {/* Text content */}
+      <div className="flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-semibold text-sm truncate text-slate-800">
+            {employee.name}
+          </div>
+          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+            {employee.employee_id}
+          </span>
+        </div>
+
+        {employee.position_title && (
+          <div className="text-xs text-slate-700 mt-1">
+            {employee.position_title}
+          </div>
+        )}
+
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+            {employee.competencyCount || 0} competenc{employee.competencyCount === 1 ? 'y' : 'ies'}
+          </span>
+          
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+            {employee.historyCount || 0} CL record(s)
+          </span>
+
+          {employee.latestCL?.status ? (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+              employee.latestCL.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' :
+              employee.latestCL.status === 'PENDING_MANAGER' ? 'bg-yellow-50 text-yellow-700' :
+              employee.latestCL.status === 'PENDING_HR' ? 'bg-blue-50 text-blue-700' :
+              employee.latestCL.status === 'PENDING_AM' ? 'bg-purple-50 text-purple-700' :
+              employee.latestCL.status === 'DRAFT' ? 'bg-slate-50 text-slate-700' :
+              'bg-slate-100 text-slate-600'
+            }`}>
+              Latest: {employee.latestCL.status.replace('PENDING_', '')}
+              {latestDate ? ` • ${latestDate}` : ''}
+            </span>
+          ) : (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              No CL yet
+            </span>
+          )}
+        </div>
+
+        <div className="mt-2 text-[11px] text-slate-500">
+          {employee.latestCL ? 'Click to view latest CL' : 'No CL available'}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// Employee List Item Component (List View)
+function EmployeeListItem({ employee, goTo }) {
+  const latestDate = employee.latestCL?.created_at
+    ? new Date(employee.latestCL.created_at).toLocaleDateString()
+    : null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => employee.latestCL && goTo(`/cl/submissions/${employee.latestCL.id}?viewOnly=true`)}
+      className="w-full border border-slate-200 border-l-4 border-l-blue-500 rounded-sm pl-3 pr-4 py-3 text-left shadow-sm transition
+        flex gap-3 items-center bg-white hover:shadow-md hover:bg-slate-50"
+    >
+      {/* Avatar / Icon */}
+      <div className="flex-shrink-0">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5.5 20.5a7 7 0 0113 0M12 12a4 4 0 100-8 4 4 0 000 8z"
+            />
+          </svg>
+        </div>
+      </div>
+
+      {/* Main Content - Horizontal Layout */}
+      <div className="flex-1 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="font-semibold text-sm truncate text-slate-800">
+                {employee.name}
+              </div>
+              <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 flex-shrink-0">
+                {employee.employee_id}
+              </span>
+            </div>
+            
+            {employee.position_title && (
+              <div className="text-xs text-slate-600 mt-0.5 truncate">
+                {employee.position_title}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 whitespace-nowrap">
+              {employee.competencyCount || 0} competenc{employee.competencyCount === 1 ? 'y' : 'ies'}
+            </span>
+            
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 whitespace-nowrap">
+              {employee.historyCount || 0} CL
+            </span>
+
+            {employee.latestCL?.status ? (
+              <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${
+                employee.latestCL.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' :
+                employee.latestCL.status === 'PENDING_MANAGER' ? 'bg-yellow-50 text-yellow-700' :
+                employee.latestCL.status === 'PENDING_HR' ? 'bg-blue-50 text-blue-700' :
+                employee.latestCL.status === 'PENDING_AM' ? 'bg-purple-50 text-purple-700' :
+                employee.latestCL.status === 'DRAFT' ? 'bg-slate-50 text-slate-700' :
+                'bg-slate-100 text-slate-600'
+              }`}>
+                {employee.latestCL.status.replace('PENDING_', '')}
+              </span>
+            ) : (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">
+                No CL
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </button>
   );
 }
 

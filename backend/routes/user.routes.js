@@ -5,7 +5,7 @@ const { requireAuth, requireRole } = require('../middleware/auth.middleware');
 const router = express.Router();
 
 router.use(requireAuth);
-router.use(requireRole('Admin', 'Supervisor')); // Admin and Supervisor can manage users
+router.use(requireRole('Admin', 'Supervisor', 'Manager', 'HR')); // Admin, Supervisor, Manager, and HR can access users
 
 // GET /api/users
 router.get('/', userController.getAll);

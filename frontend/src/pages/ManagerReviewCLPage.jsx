@@ -1,11 +1,14 @@
 // src/pages/ManagerReviewCLPage.jsx
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
 import Modal from '../components/Modal';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 function ManagerReviewCLPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const viewOnly = searchParams.get('viewOnly') === 'true';
+  
   const [user, setUser] = useState(null);
   const [cl, setCl] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -26,8 +29,6 @@ function ManagerReviewCLPage() {
     setModal({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
   };
 
-  const managerRoles = ['Manager', 'HR', 'Admin'];
-
   // ==========================
   // AUTH GUARD
   // ==========================
@@ -39,6 +40,7 @@ function ManagerReviewCLPage() {
     }
 
     const parsed = JSON.parse(stored);
+    const managerRoles = ['Manager', 'HR', 'Admin'];
     if (!managerRoles.includes(parsed.role)) {
       showModal('Access Denied', 'Only Managers / HR / Admin can view this page.', 'error');
       setTimeout(() => window.location.href = '/', 2000);
@@ -163,161 +165,182 @@ function ManagerReviewCLPage() {
   );
 
   return (
-    <div className="max-w-6xl mx-auto p-8">
-      <button
-        onClick={goBack}
-        className="mb-4 px-4 py-2 rounded border border-gray-300 text-sm"
-      >
-        ← Back to Manager Dashboard
-      </button>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/80">
+            <div>
+              <h1 className="text-lg font-semibold text-slate-800">
+                CL Review – #{clId}
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Status: <strong>{status}</strong>
+              </p>
+            </div>
+            <button
+              onClick={goBack}
+              className="text-slate-500 hover:text-slate-700 px-4 py-2 rounded-md hover:bg-slate-100 text-sm transition"
+            >
+              ← Back to Dashboard
+            </button>
+          </div>
 
-      <h1 className="text-2xl font-bold mb-2">CL Review – #{clId}</h1>
+          {/* Body */}
+          <div className="px-6 py-4 overflow-y-auto space-y-4">
+            {/* SUPERVISOR REMARKS (READ-ONLY) */}
+            {supervisor_remarks && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-yellow-800">Supervisor Remarks</h3>
+                <p className="text-sm text-yellow-900 whitespace-pre-wrap">
+                  {supervisor_remarks}
+                </p>
+              </div>
+            )}
 
-      <p className="text-sm text-gray-600 mb-4">
-        Status: <strong>{status}</strong>
-      </p>
+            {/* MANAGER REMARKS HISTORY (READ-ONLY) */}
+            {manager_remarks && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-sm font-semibold text-blue-800">Manager Remarks (Previous)</h3>
+                  {updated_at && (
+                    <span className="text-xs text-slate-500">
+                      {new Date(updated_at).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-blue-900 whitespace-pre-wrap">
+                  {manager_remarks}
+                </p>
+              </div>
+            )}
 
-      {/* SUPERVISOR REMARKS (READ-ONLY) */}
-      {supervisor_remarks && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4 text-sm">
-          <h2 className="font-semibold text-yellow-800 mb-1">Supervisor Remarks</h2>
-          <p className="text-yellow-900 whitespace-pre-wrap">
-            {supervisor_remarks}
-          </p>
-        </div>
-      )}
+            {/* COMPETENCY TABLE */}
+            <div className="bg-white border border-slate-200 rounded-lg p-3">
+              <h3 className="text-sm font-semibold mb-2 text-slate-700">Competency Assessment</h3>
 
-      {/* MANAGER REMARKS HISTORY (READ-ONLY) */}
-      {manager_remarks && (
-        <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-6 text-sm">
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="font-semibold text-blue-800">Manager Remarks (Previous)</h2>
-            {updated_at && (
-              <span className="text-xs text-gray-500">
-                {new Date(updated_at).toLocaleString()}
-              </span>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border border-slate-200 rounded-md overflow-hidden">
+                  <thead className="bg-slate-100 uppercase text-[11px] text-slate-700">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Competency</th>
+                      <th className="px-2 py-1 text-left">MPLR</th>
+                      <th className="px-2 py-1 text-left">Assigned Level</th>
+                      <th className="px-2 py-1 text-left">Weight (%)</th>
+                      <th className="px-2 py-1 text-left">Score</th>
+                      <th className="px-2 py-1 text-left">Comments (Justification / Trainings / Certificates, Etc)</th>
+                      <th className="px-2 py-1 text-left">PDF</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="bg-white">
+                    {items.map((it) => (
+                      <tr key={it.id} className="border-t border-slate-100">
+                        <td className="px-2 py-1 text-slate-800">{it.competency_name}</td>
+                        <td className="px-2 py-1 text-slate-700">{it.required_level}</td>
+                        <td className="px-2 py-1 text-slate-700">{it.assigned_level}</td>
+                        <td className="px-2 py-1 text-slate-700">{Number(it.weight || 0).toFixed(2)}</td>
+                        <td className="px-2 py-1 font-semibold text-blue-600">{Number(it.score || 0).toFixed(2)}</td>
+                        <td className="px-2 py-1 text-slate-700">{it.justification}</td>
+                        <td className="px-2 py-1">
+                          {it.pdf_path ? (
+                            <a
+                              href={`${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline"
+                            >
+                              View
+                            </a>
+                          ) : (
+                            <span className="text-slate-400 text-xs">No file</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* TOTAL SCORE */}
+              <p className="mt-3 text-xs text-slate-700">
+                <strong>Total Final Score:</strong> {totalScore.toFixed(2)}
+              </p>
+            </div>
+
+            {/* PROFICIENCY LEVEL GUIDE */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+              <h3 className="text-sm font-semibold text-slate-700 mb-2">
+                Proficiency Level Guide
+              </h3>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border border-slate-200 rounded-md overflow-hidden">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="px-2 py-1 text-left text-slate-700">Level</th>
+                      <th className="px-2 py-1 text-left text-slate-700">Proficiency</th>
+                      <th className="px-2 py-1 text-left text-slate-700">Definition</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    <tr className="border-t border-slate-100"><td className="px-2 py-1">1</td><td className="px-2 py-1">Fundamental Awareness</td><td className="px-2 py-1">Basic understanding…</td></tr>
+                    <tr className="border-t border-slate-100"><td className="px-2 py-1">2</td><td className="px-2 py-1">Novice</td><td className="px-2 py-1">Limited experience…</td></tr>
+                    <tr className="border-t border-slate-100"><td className="px-2 py-1">3</td><td className="px-2 py-1">Intermediate</td><td className="px-2 py-1">Works independently…</td></tr>
+                    <tr className="border-t border-slate-100"><td className="px-2 py-1">4</td><td className="px-2 py-1">Advanced</td><td className="px-2 py-1">Handles complex tasks…</td></tr>
+                    <tr className="border-t border-slate-100"><td className="px-2 py-1">5</td><td className="px-2 py-1">Expert</td><td className="px-2 py-1">Top-level mastery…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* MANAGER REMARKS SECTION */}
+            {!viewOnly && (
+              <div className="bg-white border border-slate-200 rounded-lg p-3">
+                <label className="block text-xs font-medium mb-1 text-slate-700">
+                  Manager Remarks <span className="text-red-600">*</span>
+                </label>
+                <textarea
+                  className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  rows="3"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Enter your remarks before approving or returning..."
+                ></textarea>
+              </div>
+            )}
+
+            {viewOnly && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-700">
+                  This CL has already been {cl.status === 'APPROVED' || cl.manager_decision === 'APPROVED' ? 'approved' : 'returned'} by the manager. 
+                  You are viewing it in read-only mode.
+                </p>
+              </div>
             )}
           </div>
-          <p className="text-blue-900 whitespace-pre-wrap">
-            {manager_remarks}
-          </p>
+
+          {/* Footer */}
+          {!viewOnly && (
+            <div className="px-6 py-3 border-t border-slate-200 bg-slate-50/80 flex justify-end gap-2">
+              <button
+                className="px-5 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50 shadow-sm"
+                onClick={confirmApprove}
+                disabled={actionLoading}
+              >
+                {actionLoading ? 'Processing...' : 'Approve'}
+              </button>
+
+              <button
+                className="px-5 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md disabled:opacity-50 shadow-sm"
+                onClick={confirmReturn}
+                disabled={actionLoading}
+              >
+                {actionLoading ? 'Processing...' : 'Return to Supervisor'}
+              </button>
+            </div>
+          )}
         </div>
-      )}
-
-      {/* COMPETENCY TABLE */}
-      <div className="bg-white shadow rounded p-4 mb-6 overflow-x-auto">
-        <h2 className="text-lg font-semibold mb-3">Competencies</h2>
-
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-100 uppercase text-xs">
-            <tr>
-              <th className="px-3 py-2 text-left">Competency</th>
-              <th className="px-3 py-2 text-left">MPLR</th>
-              <th className="px-3 py-2 text-left">Assigned Level</th>
-              <th className="px-3 py-2 text-left">Weight (%)</th>
-              <th className="px-3 py-2 text-left">Score</th>
-              <th className="px-3 py-2 text-left">Justification</th>
-              <th className="px-3 py-2 text-left">PDF Attachment</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {items.map((it) => (
-              <tr key={it.id} className="border-t">
-                <td className="px-3 py-2">{it.competency_name}</td>
-                <td className="px-3 py-2">{it.required_level}</td>
-                <td className="px-3 py-2">{it.assigned_level}</td>
-                <td className="px-3 py-2">{Number(it.weight || 0).toFixed(2)}</td>
-                <td className="px-3 py-2">{Number(it.score || 0).toFixed(2)}</td>
-                <td className="px-3 py-2">{it.justification}</td>
-
-                {/* PDF FILE COLUMN */}
-                <td className="px-3 py-2">
-                  {it.pdf_path ? (
-<a
-  href={`${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}`}
-  target="_blank"
-  rel="noreferrer"
-  className="text-blue-600 underline"
->
-  View PDF
-</a>
-
-                  ) : (
-                    <span className="text-gray-400 text-xs">No file</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {/* TOTAL SCORE */}
-        <div className="mt-4 text-sm">
-          <p className="text-gray-700">
-            <strong>Total Final Score:</strong> {totalScore.toFixed(2)}
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            Score = (Weight % / 100) × Assigned Level. Total is sum of all scores.
-          </p>
-        </div>
-      </div>
-
-      {/* PROFICIENCY LEVEL GUIDE */}
-      <div className="bg-white shadow rounded p-4 mb-6">
-        <h2 className="text-lg font-semibold text-gray-700 mb-3">
-          Proficiency Level Guide
-        </h2>
-
-        <table className="min-w-full text-sm border">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="px-3 py-2">Level</th>
-              <th className="px-3 py-2">Proficiency</th>
-              <th className="px-3 py-2">Definition</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td className="px-3 py-2">1</td><td>Fundamental Awareness</td><td>Basic understanding…</td></tr>
-            <tr><td className="px-3 py-2">2</td><td>Novice</td><td>Limited experience…</td></tr>
-            <tr><td className="px-3 py-2">3</td><td>Intermediate</td><td>Works independently…</td></tr>
-            <tr><td className="px-3 py-2">4</td><td>Advanced</td><td>Handles complex tasks…</td></tr>
-            <tr><td className="px-3 py-2">5</td><td>Expert</td><td>Top-level mastery…</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* MANAGER REMARKS SECTION */}
-      <div className="bg-white shadow rounded p-4 mb-6">
-        <label className="block text-sm font-semibold mb-2">
-          Manager Remarks <span className="text-red-600">*</span>
-        </label>
-        <textarea
-          className="w-full border rounded p-3 text-sm"
-          rows="4"
-          value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
-          placeholder="Enter your remarks before approving or returning..."
-        ></textarea>
-      </div>
-
-      {/* ACTION BUTTONS */}
-      <div className="flex gap-3">
-        <button
-          className="px-4 py-2 rounded bg-green-600 text-white disabled:opacity-50"
-          onClick={confirmApprove}
-          disabled={actionLoading}
-        >
-          {actionLoading ? 'Processing...' : 'Approve'}
-        </button>
-
-        <button
-          className="px-4 py-2 rounded bg-red-600 text-white disabled:opacity-50"
-          onClick={confirmReturn}
-          disabled={actionLoading}
-        >
-          {actionLoading ? 'Processing...' : 'Return to Supervisor'}
-        </button>
       </div>
 
       <Modal

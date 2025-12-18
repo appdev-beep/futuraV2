@@ -59,6 +59,13 @@ router.get(
   clController.getManagerAllCL
 );
 
+// GET /api/cl/manager/department - Track ALL CLs in department
+router.get(
+  '/manager/department',
+  requireRole('Manager', 'HR', 'Admin'),
+  clController.getManagerDepartmentCL
+);
+
 // =====================================
 // EMPLOYEE DASHBOARD ROUTES
 // =====================================

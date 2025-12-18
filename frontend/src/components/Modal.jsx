@@ -15,18 +15,6 @@ function Modal({ isOpen, onClose, onConfirm, title, message, type = 'info', isCo
 
   if (!isOpen) return null;
 
-  const getTypeStyles = () => {
-    switch (type) {
-      case 'success':
-        return 'bg-green-50 border-green-500';
-      case 'error':
-        return 'bg-red-50 border-red-500';
-      case 'warning':
-        return 'bg-yellow-50 border-yellow-500';
-      default:
-        return 'bg-blue-50 border-blue-500';
-    }
-  };
 
   const getIconColor = () => {
     switch (type) {

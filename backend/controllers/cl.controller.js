@@ -2,6 +2,7 @@ const clService = require('../services/cl.service');
 const { db } = require('../config/db'); 
 const path = require('path');
 const { logRecentAction } = require('../services/recentActions.service');
+const { sendCLNotificationEmail } = require('../services/email.service');
 
 // =====================================================
 // NOTIFICATION HELPERS
@@ -106,6 +107,19 @@ async function notifyNextByCurrentStatus(clId, actorRole, actionText, remarks = 
     module: 'Competency Leveling',
     message: notificationMessage
   });
+
+  // Send email notification
+  await sendCLNotificationEmail({
+    clId,
+    recipientId: recipient.id,
+    ccIds: [clHeader.employee_id], // CC the employee
+    actionType: 'PENDING_REVIEW',
+    actorName: clHeader.supervisor_name || 'System',
+    actorRole,
+    employeeName: clHeader.employee_name,
+    employeeCode: clHeader.employee_code,
+    remarks
+  });
 }
 
 // =====================================================
@@ -174,7 +188,25 @@ async function create(req, res, next) {
       null // No remarks on creation
     );
 
-    // 5. Return updated information to frontend
+    // 5. Get supervisor and employee info for emails
+    const clHeader = await getCLHeaderBasic(clId);
+    
+    // Send email to employee about CL creation
+    if (clHeader) {
+      await sendCLNotificationEmail({
+        clId,
+        recipientId: employee_id,
+        ccIds: [],
+        actionType: 'CREATED',
+        actorName: clHeader.supervisor_name || 'Supervisor',
+        actorRole: 'Supervisor',
+        employeeName: clHeader.employee_name,
+        employeeCode: clHeader.employee_code,
+        remarks: null
+      });
+    }
+
+    // 6. Return updated information to frontend
     res.status(201).json({
       id: clId,
       status: nextStatus,
@@ -216,6 +248,9 @@ async function submit(req, res, next) {
 
     console.log('CL SUBMIT body:', { id, remarks });
 
+    // Get CL details before submitting
+    const clHeader = await getCLHeaderBasic(id);
+
     const result = await clService.submit(id, remarks || null);
 
     // Notify next approver/recipient after submit
@@ -225,6 +260,21 @@ async function submit(req, res, next) {
       'was submitted and is now waiting for you',
       remarks
     );
+
+    // Send email to employee about submission
+    if (clHeader) {
+      await sendCLNotificationEmail({
+        clId: id,
+        recipientId: clHeader.employee_id,
+        ccIds: [],
+        actionType: 'PENDING_REVIEW',
+        actorName: req.user?.name || clHeader.supervisor_name,
+        actorRole: 'Supervisor',
+        employeeName: clHeader.employee_name,
+        employeeCode: clHeader.employee_code,
+        remarks
+      });
+    }
 
     res.json(result);
   } catch (err) {
@@ -286,6 +336,16 @@ async function getManagerPending(req, res, next) {
 async function getManagerAllCL(req, res, next) {
   try {
     const rows = await clService.getManagerAllCL(req.user.id);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Get ALL CLs in manager's department for tracking purposes
+async function getManagerDepartmentCL(req, res, next) {
+  try {
+    const rows = await clService.getManagerDepartmentCL(req.user.id);
     res.json(rows);
   } catch (err) {
     next(err);
@@ -439,6 +499,22 @@ async function managerApprove(req, res, next) {
       remarks
     );
 
+    // Send approval email to employee
+    if (clDetails.length > 0) {
+      const cl = clDetails[0];
+      await sendCLNotificationEmail({
+        clId: id,
+        recipientId: cl.employee_id,
+        ccIds: [],
+        actionType: 'APPROVED',
+        actorName: req.user?.name || 'Manager',
+        actorRole: 'Manager',
+        employeeName: cl.employee_name,
+        employeeCode: cl.employee_code,
+        remarks
+      });
+    }
+
     res.json(result);
   } catch (err) {
     next(err);
@@ -485,6 +561,25 @@ async function managerReturn(req, res, next) {
       'was returned for revision',
       remarks
     );
+
+    // Send return email to supervisor
+    if (clDetails.length > 0) {
+      const cl = clDetails[0];
+      const clHeader = await getCLHeaderBasic(id);
+      if (clHeader && clHeader.supervisor_id) {
+        await sendCLNotificationEmail({
+          clId: id,
+          recipientId: clHeader.supervisor_id,
+          ccIds: [cl.employee_id],
+          actionType: 'RETURNED',
+          actorName: req.user?.name || 'Manager',
+          actorRole: 'Manager',
+          employeeName: cl.employee_name,
+          employeeCode: cl.employee_code,
+          remarks
+        });
+      }
+    }
 
     res.json(result);
   } catch (err) {
@@ -574,6 +669,9 @@ async function amApprove(req, res, next) {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: 'Invalid CL id' });
 
+    // Get CL details for email
+    const clHeader = await getCLHeaderBasic(id);
+
     const result = await clService.amApprove(id, req.user.id, '');
 
     await notifyNextByCurrentStatus(
@@ -582,6 +680,21 @@ async function amApprove(req, res, next) {
       'was approved and moved forward',
       '' // AM doesn't use remarks for approval
     );
+
+    // Send approval email to employee
+    if (clHeader) {
+      await sendCLNotificationEmail({
+        clId: id,
+        recipientId: clHeader.employee_id,
+        ccIds: [],
+        actionType: 'APPROVED',
+        actorName: req.user?.name || 'Assistant Manager',
+        actorRole: 'Assistant Manager',
+        employeeName: clHeader.employee_name,
+        employeeCode: clHeader.employee_code,
+        remarks: null
+      });
+    }
 
     res.json(result);
   } catch (err) {
@@ -597,6 +710,9 @@ async function amReturn(req, res, next) {
     const { remarks } = req.body;
     if (!remarks) return res.status(400).json({ message: 'Remarks are required' });
 
+    // Get CL details for email
+    const clHeader = await getCLHeaderBasic(id);
+
     const result = await clService.amReturn(id, req.user.id, remarks);
 
     await notifyNextByCurrentStatus(
@@ -605,6 +721,21 @@ async function amReturn(req, res, next) {
       'was returned for revision',
       remarks
     );
+
+    // Send return email to supervisor
+    if (clHeader) {
+      await sendCLNotificationEmail({
+        clId: id,
+        recipientId: clHeader.supervisor_id,
+        ccIds: [clHeader.employee_id],
+        actionType: 'RETURNED',
+        actorName: req.user?.name || 'Assistant Manager',
+        actorRole: 'Assistant Manager',
+        employeeName: clHeader.employee_name,
+        employeeCode: clHeader.employee_code,
+        remarks
+      });
+    }
 
     res.json(result);
   } catch (err) {
@@ -660,6 +791,25 @@ async function employeeApprove(req, res, next) {
       remarks
     );
 
+    // Send approval email to supervisor
+    if (clDetails.length > 0) {
+      const cl = clDetails[0];
+      const clHeader = await getCLHeaderBasic(id);
+      if (clHeader && clHeader.supervisor_id) {
+        await sendCLNotificationEmail({
+          clId: id,
+          recipientId: clHeader.supervisor_id,
+          ccIds: [],
+          actionType: 'APPROVED',
+          actorName: req.user?.name || cl.employee_name,
+          actorRole: 'Employee',
+          employeeName: cl.employee_name,
+          employeeCode: cl.employee_code,
+          remarks
+        });
+      }
+    }
+
     res.json(result);
   } catch (err) {
     next(err);
@@ -712,6 +862,25 @@ async function employeeReturn(req, res, next) {
       'was returned for revision',
       remarks
     );
+
+    // Send return email to supervisor
+    if (clDetails.length > 0) {
+      const cl = clDetails[0];
+      const clHeader = await getCLHeaderBasic(id);
+      if (clHeader && clHeader.supervisor_id) {
+        await sendCLNotificationEmail({
+          clId: id,
+          recipientId: clHeader.supervisor_id,
+          ccIds: [],
+          actionType: 'RETURNED',
+          actorName: req.user?.name || cl.employee_name,
+          actorRole: 'Employee',
+          employeeName: cl.employee_name,
+          employeeCode: cl.employee_code,
+          remarks
+        });
+      }
+    }
 
     res.json(result);
   } catch (err) {
@@ -789,6 +958,19 @@ async function hrApprove(req, res, next) {
       });
     }
 
+    // Send final approval email to employee
+    await sendCLNotificationEmail({
+      clId: id,
+      recipientId: clHeader.employee_id,
+      ccIds: [clHeader.supervisor_id],
+      actionType: 'FINAL_APPROVED',
+      actorName: req.user?.name || 'HR',
+      actorRole: 'HR',
+      employeeName: clHeader.employee_name,
+      employeeCode: clHeader.employee_code,
+      remarks
+    });
+
     res.json(result);
   } catch (err) {
     next(err);
@@ -841,6 +1023,25 @@ async function hrReturn(req, res, next) {
       'was returned for revision',
       remarks
     );
+
+    // Send return email to supervisor
+    if (clDetails.length > 0) {
+      const cl = clDetails[0];
+      const clHeader = await getCLHeaderBasic(id);
+      if (clHeader && clHeader.supervisor_id) {
+        await sendCLNotificationEmail({
+          clId: id,
+          recipientId: clHeader.supervisor_id,
+          ccIds: [cl.employee_id],
+          actionType: 'RETURNED',
+          actorName: req.user?.name || 'HR',
+          actorRole: 'HR',
+          employeeName: cl.employee_name,
+          employeeCode: cl.employee_code,
+          remarks
+        });
+      }
+    }
 
     res.json(result);
   } catch (err) {
@@ -910,6 +1111,7 @@ module.exports = {
   getManagerSummary,
   getManagerPending,
   getManagerAllCL,
+  getManagerDepartmentCL,
 
   // Employee dashboard
   getEmployeePending,
