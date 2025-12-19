@@ -153,6 +153,9 @@ function EmployeeReviewCLPage() {
     status,
     employee_name,
     employee_id,
+    employee_email,
+    department_name,
+    position_title,
     items,
     supervisor_remarks,
     manager_remarks,
@@ -199,6 +202,18 @@ function EmployeeReviewCLPage() {
                 <div>
                   <p className="text-slate-500">Employee ID</p>
                   <p className="font-medium text-slate-800">{employee_id || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Email</p>
+                  <p className="font-medium text-slate-800">{employee_email || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Position</p>
+                  <p className="font-medium text-slate-800">{position_title || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Department</p>
+                  <p className="font-medium text-slate-800">{department_name || 'N/A'}</p>
                 </div>
               </div>
             </div>

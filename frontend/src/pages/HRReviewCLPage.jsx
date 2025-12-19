@@ -225,10 +225,22 @@ function HRReviewCLPage() {
             {/* Employee & Supervisor Info */}
             <div className="bg-white border border-slate-200 rounded-lg p-3">
               <h3 className="text-sm font-semibold mb-2 text-slate-700">Employee Information</h3>
-              <div className="grid grid-cols-3 gap-4 text-xs">
+              <div className="grid grid-cols-2 gap-4 text-xs">
                 <div>
                   <p className="text-slate-500">Employee Name</p>
                   <p className="font-medium text-slate-800">{header.employee_name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Employee ID</p>
+                  <p className="font-medium text-slate-800">{header.employee_id || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Email</p>
+                  <p className="font-medium text-slate-800">{header.employee_email || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Position</p>
+                  <p className="font-medium text-slate-800">{header.position_title || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500">Supervisor</p>

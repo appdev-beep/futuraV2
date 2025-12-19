@@ -181,8 +181,24 @@ function AMReviewCLPage() {
                   <p className="font-medium text-slate-800">{header.employee_name || 'N/A'}</p>
                 </div>
                 <div>
+                  <p className="text-slate-500">Employee ID</p>
+                  <p className="font-medium text-slate-800">{header.employee_id || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Email</p>
+                  <p className="font-medium text-slate-800">{header.employee_email || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Position</p>
+                  <p className="font-medium text-slate-800">{header.position_title || 'N/A'}</p>
+                </div>
+                <div>
                   <p className="text-slate-500">Supervisor</p>
                   <p className="font-medium text-slate-800">{header.supervisor_name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Department</p>
+                  <p className="font-medium text-slate-800">{header.department_name || 'N/A'}</p>
                 </div>
               </div>
             </div>

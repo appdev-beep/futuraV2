@@ -187,6 +187,7 @@ function SupervisorReviewCLPage() {
     status,
     employee_name,
     employee_id,
+    employee_email,
     department_name,
     position_title,
     items = [],
@@ -231,12 +232,16 @@ function SupervisorReviewCLPage() {
                   <span className="ml-2 font-medium text-slate-800">{employee_id}</span>
                 </div>
                 <div>
-                  <span className="text-slate-600">Department:</span>
-                  <span className="ml-2 font-medium text-slate-800">{department_name}</span>
+                  <span className="text-slate-600">Email:</span>
+                  <span className="ml-2 font-medium text-slate-800">{employee_email}</span>
                 </div>
                 <div>
                   <span className="text-slate-600">Position:</span>
                   <span className="ml-2 font-medium text-slate-800">{position_title}</span>
+                </div>
+                <div>
+                  <span className="text-slate-600">Department:</span>
+                  <span className="ml-2 font-medium text-slate-800">{department_name}</span>
                 </div>
               </div>
             </div>

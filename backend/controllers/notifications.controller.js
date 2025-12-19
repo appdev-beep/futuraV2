@@ -64,4 +64,22 @@ async function markAsRead(req, res, next) {
   }
 }
 
-module.exports = { getMyNotifications, markAsRead };
+// PATCH /api/notifications/mark-all-read
+async function markAllAsRead(req, res, next) {
+  try {
+    const userId = req.user.id;
+
+    await db.query(
+      `UPDATE notifications
+       SET status = 'Read', read_at = NOW()
+       WHERE recipient_id = ? AND status = 'Unread'`,
+      [userId]
+    );
+
+    res.json({ ok: true, message: 'All notifications marked as read' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getMyNotifications, markAsRead, markAllAsRead };

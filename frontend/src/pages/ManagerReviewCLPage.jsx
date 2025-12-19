@@ -154,7 +154,20 @@ function ManagerReviewCLPage() {
   }
 
   // 👇 include supervisor_remarks and manager_remarks from backend
-  const { id: clId, status, items, supervisor_remarks, manager_remarks, updated_at } = cl;
+  const { 
+    id: clId, 
+    status, 
+    items, 
+    employee_name,
+    employee_id,
+    employee_email,
+    position_title,
+    department_name,
+    supervisor_name,
+    supervisor_remarks, 
+    manager_remarks, 
+    updated_at 
+  } = cl;
 
   // ==========================
   // COMPUTE TOTAL SCORE
@@ -188,6 +201,37 @@ function ManagerReviewCLPage() {
 
           {/* Body */}
           <div className="px-6 py-4 overflow-y-auto space-y-4">
+            {/* EMPLOYEE INFO */}
+            <div className="bg-white border border-slate-200 rounded-lg p-3">
+              <h3 className="text-sm font-semibold mb-2 text-slate-700">Employee Information</h3>
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <p className="text-slate-500">Employee Name</p>
+                  <p className="font-medium text-slate-800">{employee_name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Employee ID</p>
+                  <p className="font-medium text-slate-800">{employee_id || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Email</p>
+                  <p className="font-medium text-slate-800">{employee_email || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Position</p>
+                  <p className="font-medium text-slate-800">{position_title || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Supervisor</p>
+                  <p className="font-medium text-slate-800">{supervisor_name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Department</p>
+                  <p className="font-medium text-slate-800">{department_name || 'N/A'}</p>
+                </div>
+              </div>
+            </div>
+
             {/* SUPERVISOR REMARKS (READ-ONLY) */}
             {supervisor_remarks && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">

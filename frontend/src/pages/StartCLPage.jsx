@@ -742,6 +742,9 @@ function StartCLPage() {
                       <strong>Name:</strong> {employeeInfo.name}
                     </p>
                     <p className="text-sm text-slate-700">
+                      <strong>Email:</strong> {employeeInfo.email || "N/A"}
+                    </p>
+                    <p className="text-sm text-slate-700">
                       <strong>Position:</strong>{" "}
                       {employeeInfo.position_title || "N/A"}
                     </p>

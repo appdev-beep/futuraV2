@@ -16,6 +16,7 @@ async function getById(id) {
        ch.*,
        e.name as employee_name,
        e.employee_id,
+       e.email as employee_email,
        s.name as supervisor_name,
        d.name as department_name,
        p.title as position_title
@@ -661,6 +662,7 @@ async function getCompetenciesForEmployee(employeeId) {
         u.id,
         u.name,
         u.employee_id,
+        u.email,
         u.position_id,
         u.department_id,
         p.title AS position_title,

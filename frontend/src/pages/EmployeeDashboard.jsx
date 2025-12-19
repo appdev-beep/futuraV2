@@ -154,6 +154,17 @@ function EmployeeDashboard() {
     });
   }
 
+  async function handleMarkAllAsRead() {
+    try {
+      await apiRequest('/api/notifications/mark-all-read', { method: 'PATCH' });
+      // Reload notifications to update UI
+      const data = await apiRequest('/api/notifications');
+      setNotifications(data || []);
+    } catch (err) {
+      console.error('Failed to mark all notifications as read:', err);
+    }
+  }
+
   async function handleRecentActionClick(action) {
     // If action is a deletion, show when it was deleted
     if (action.title && action.title.toLowerCase().includes('deleted')) {
@@ -404,22 +415,32 @@ function EmployeeDashboard() {
       {/* RIGHT SIDEBAR - Notifications & Recent Actions */}
       <aside className="w-72 bg-white border-l border-gray-200 flex flex-col">
         <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
-          <button
-            onClick={() => setShowFullNotifications(true)}
-            className="p-4 border-b border-gray-200 flex items-center justify-between hover:bg-gray-50 transition text-left"
-          >
-            <div className="flex items-center gap-2">
-              <BellIcon className="w-5 h-5 text-orange-500" />
-              <span className="text-sm font-semibold text-gray-700">Notifications</span>
-              <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
-            </div>
+          <div className="p-4 border-b border-gray-200">
+            <button
+              onClick={() => setShowFullNotifications(true)}
+              className="w-full flex items-center justify-between hover:bg-gray-50 transition text-left rounded px-2 py-1 -mx-2"
+            >
+              <div className="flex items-center gap-2">
+                <BellIcon className="w-5 h-5 text-orange-500" />
+                <span className="text-sm font-semibold text-gray-700">Notifications</span>
+                <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
+              </div>
 
+              {unreadCount > 0 && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500 text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
             {unreadCount > 0 && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500 text-white">
-                {unreadCount}
-              </span>
+              <button
+                onClick={handleMarkAllAsRead}
+                className="mt-2 w-full text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition text-center"
+              >
+                Mark All as Read
+              </button>
             )}
-          </button>
+          </div>
 
           <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
             {notifications.length === 0 ? (
@@ -525,6 +546,7 @@ function EmployeeDashboard() {
         open={showFullNotifications}
         notifications={notifications}
         onNotificationClick={handleNotificationClick}
+        onMarkAllRead={handleMarkAllAsRead}
         onClose={() => setShowFullNotifications(false)}
       />
     </div>
@@ -746,14 +768,28 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
   );
 }
 
-function FullNotificationsModal({ open, notifications, onNotificationClick, onClose }) {
+function FullNotificationsModal({ open, notifications, onNotificationClick, onClose, onMarkAllRead }) {
   if (!open) return null;
+
+  const unreadCount = notifications.filter(n => String(n.status || '').toLowerCase() === 'unread').length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-gray-800">All Notifications</h3>
+          <div className="flex items-center gap-4">
+            <h3 className="text-xl font-semibold text-gray-800">All Notifications</h3>
+            {unreadCount > 0 && (
+              <button
+                onClick={() => {
+                  onMarkAllRead();
+                }}
+                className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+              >
+                Mark All as Read ({unreadCount})
+              </button>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition"

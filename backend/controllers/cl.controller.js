@@ -20,6 +20,7 @@ async function createNotification({ recipientId, message, module = 'Competency L
 async function getCLHeaderBasic(clId) {
   const [rows] = await db.query(
     `SELECT h.id, h.status, h.department_id, h.employee_id, h.supervisor_id, h.has_assistant_manager,
+            h.awaiting_approval_from,
             e.name as employee_name, e.employee_id as employee_code,
             s.name as supervisor_name
      FROM cl_headers h
@@ -109,17 +110,7 @@ async function notifyNextByCurrentStatus(clId, actorRole, actionText, remarks = 
   });
 
   // Send email notification
-  await sendCLNotificationEmail({
-    clId,
-    recipientId: recipient.id,
-    ccIds: [clHeader.employee_id], // CC the employee
-    actionType: 'PENDING_REVIEW',
-    actorName: clHeader.supervisor_name || 'System',
-    actorRole,
-    employeeName: clHeader.employee_name,
-    employeeCode: clHeader.employee_code,
-    remarks
-  });
+  // REMOVED: Only employee gets emails now
 }
 
 // =====================================================
@@ -191,12 +182,11 @@ async function create(req, res, next) {
     // 5. Get supervisor and employee info for emails
     const clHeader = await getCLHeaderBasic(clId);
     
-    // Send email to employee about CL creation
     if (clHeader) {
+      // Email to EMPLOYEE - confirming their CL was created
       await sendCLNotificationEmail({
         clId,
-        recipientId: employee_id,
-        ccIds: [],
+        employeeId: employee_id,
         actionType: 'CREATED',
         actorName: clHeader.supervisor_name || 'Supervisor',
         actorRole: 'Supervisor',
@@ -250,6 +240,9 @@ async function submit(req, res, next) {
 
     // Get CL details before submitting
     const clHeader = await getCLHeaderBasic(id);
+    
+    // Check if this is a resubmission (was previously returned)
+    const isResubmission = clHeader.status === 'DRAFT' && clHeader.awaiting_approval_from;
 
     const result = await clService.submit(id, remarks || null);
 
@@ -261,18 +254,18 @@ async function submit(req, res, next) {
       remarks
     );
 
-    // Send email to employee about submission
-    if (clHeader) {
+    // Email employee if this is a resubmission after being returned
+    if (isResubmission) {
+      const { sendCLNotificationEmail } = require('../services/email.service');
       await sendCLNotificationEmail({
         clId: id,
-        recipientId: clHeader.employee_id,
-        ccIds: [],
-        actionType: 'PENDING_REVIEW',
-        actorName: req.user?.name || clHeader.supervisor_name,
+        employeeId: clHeader.employee_id,
+        actionType: 'RESUBMITTED',
+        actorName: req.user?.name || clHeader.supervisor_name || 'Your Supervisor',
         actorRole: 'Supervisor',
         employeeName: clHeader.employee_name,
         employeeCode: clHeader.employee_code,
-        remarks
+        remarks: remarks || null
       });
     }
 
@@ -502,16 +495,24 @@ async function managerApprove(req, res, next) {
     // Send approval email to employee
     if (clDetails.length > 0) {
       const cl = clDetails[0];
+      
+      // Check if employee approval is required (get updated status)
+      const [statusCheck] = await db.query(
+        `SELECT status FROM cl_headers WHERE id = ?`,
+        [id]
+      );
+      const requiresEmployeeAction = statusCheck.length > 0 && statusCheck[0].status === 'PENDING_EMPLOYEE';
+      
       await sendCLNotificationEmail({
         clId: id,
-        recipientId: cl.employee_id,
-        ccIds: [],
+        employeeId: cl.employee_id,
         actionType: 'APPROVED',
         actorName: req.user?.name || 'Manager',
         actorRole: 'Manager',
         employeeName: cl.employee_name,
         employeeCode: cl.employee_code,
-        remarks
+        remarks,
+        requiresEmployeeAction
       });
     }
 
@@ -562,15 +563,14 @@ async function managerReturn(req, res, next) {
       remarks
     );
 
-    // Send return email to supervisor
+    // Send return email to employee only
     if (clDetails.length > 0) {
       const cl = clDetails[0];
       const clHeader = await getCLHeaderBasic(id);
-      if (clHeader && clHeader.supervisor_id) {
+      if (clHeader) {
         await sendCLNotificationEmail({
           clId: id,
-          recipientId: clHeader.supervisor_id,
-          ccIds: [cl.employee_id],
+          employeeId: cl.employee_id,
           actionType: 'RETURNED',
           actorName: req.user?.name || 'Manager',
           actorRole: 'Manager',
@@ -685,8 +685,7 @@ async function amApprove(req, res, next) {
     if (clHeader) {
       await sendCLNotificationEmail({
         clId: id,
-        recipientId: clHeader.employee_id,
-        ccIds: [],
+        employeeId: clHeader.employee_id,
         actionType: 'APPROVED',
         actorName: req.user?.name || 'Assistant Manager',
         actorRole: 'Assistant Manager',
@@ -722,12 +721,11 @@ async function amReturn(req, res, next) {
       remarks
     );
 
-    // Send return email to supervisor
+    // Send return email to employee
     if (clHeader) {
       await sendCLNotificationEmail({
         clId: id,
-        recipientId: clHeader.supervisor_id,
-        ccIds: [clHeader.employee_id],
+        employeeId: clHeader.employee_id,
         actionType: 'RETURNED',
         actorName: req.user?.name || 'Assistant Manager',
         actorRole: 'Assistant Manager',
@@ -791,23 +789,37 @@ async function employeeApprove(req, res, next) {
       remarks
     );
 
-    // Send approval email to supervisor
-    if (clDetails.length > 0) {
-      const cl = clDetails[0];
-      const clHeader = await getCLHeaderBasic(id);
-      if (clHeader && clHeader.supervisor_id) {
-        await sendCLNotificationEmail({
-          clId: id,
-          recipientId: clHeader.supervisor_id,
-          ccIds: [],
-          actionType: 'APPROVED',
-          actorName: req.user?.name || cl.employee_name,
-          actorRole: 'Employee',
-          employeeName: cl.employee_name,
-          employeeCode: cl.employee_code,
-          remarks
-        });
-      }
+    // Email HR that employee has approved and CL is ready for final review
+    const clHeader = await getCLHeaderBasic(id);
+    const hrUser = await findUserByRoleAndDepartment('HR', clHeader.department_id);
+    
+    if (hrUser) {
+      const { sendEmail } = require('../services/email.service');
+      const currentDateTime = new Date().toLocaleString('en-US', { 
+        dateStyle: 'full', 
+        timeStyle: 'short' 
+      });
+      
+      const subject = `CL #${id} - Employee Approved and Ready for Final Review`;
+      const htmlContent = `
+        <h3>CL Form - Employee Approved</h3>
+        <p>Hello <strong>${hrUser.name}</strong>,</p>
+        <p>CL form <strong>#${id}</strong> for <strong>${clDetails[0]?.employee_name} (${clDetails[0]?.employee_code})</strong> has been approved by the employee and is now ready for your final review.</p>
+        <p><strong>Approved by:</strong> ${clDetails[0]?.employee_name} (Employee)</p>
+        <p><strong>Date & Time:</strong> ${currentDateTime}</p>
+        ${remarks ? `<p><strong>Employee Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
+        <p><strong>⚠️ Action Required:</strong> Please log in to review and provide final approval for this CL form.</p>
+        <hr/>
+        <p style="font-size: 12px; color: #666;">This is an automated notification from Futura CL System.</p>
+      `;
+      const textContent = `CL Form - Employee Approved\n\nHello ${hrUser.name},\n\nCL form #${id} for ${clDetails[0]?.employee_name} (${clDetails[0]?.employee_code}) has been approved by the employee and is now ready for your final review.\n\nApproved by: ${clDetails[0]?.employee_name} (Employee)\nDate & Time: ${currentDateTime}\n${remarks ? `\nEmployee Remarks: ${remarks}` : ''}\n\n⚠️ Action Required: Please log in to review and provide final approval for this CL form.`;
+      
+      await sendEmail({
+        to: hrUser.email,
+        subject,
+        text: textContent,
+        html: htmlContent
+      });
     }
 
     res.json(result);
@@ -863,15 +875,14 @@ async function employeeReturn(req, res, next) {
       remarks
     );
 
-    // Send return email to supervisor
+    // Send return email to employee
     if (clDetails.length > 0) {
       const cl = clDetails[0];
       const clHeader = await getCLHeaderBasic(id);
-      if (clHeader && clHeader.supervisor_id) {
+      if (clHeader) {
         await sendCLNotificationEmail({
           clId: id,
-          recipientId: clHeader.supervisor_id,
-          ccIds: [],
+          employeeId: cl.employee_id,
           actionType: 'RETURNED',
           actorName: req.user?.name || cl.employee_name,
           actorRole: 'Employee',
@@ -961,8 +972,7 @@ async function hrApprove(req, res, next) {
     // Send final approval email to employee
     await sendCLNotificationEmail({
       clId: id,
-      recipientId: clHeader.employee_id,
-      ccIds: [clHeader.supervisor_id],
+      employeeId: clHeader.employee_id,
       actionType: 'FINAL_APPROVED',
       actorName: req.user?.name || 'HR',
       actorRole: 'HR',
@@ -1024,15 +1034,14 @@ async function hrReturn(req, res, next) {
       remarks
     );
 
-    // Send return email to supervisor
+    // Send return email to employee
     if (clDetails.length > 0) {
       const cl = clDetails[0];
       const clHeader = await getCLHeaderBasic(id);
-      if (clHeader && clHeader.supervisor_id) {
+      if (clHeader) {
         await sendCLNotificationEmail({
           clId: id,
-          recipientId: clHeader.supervisor_id,
-          ccIds: [cl.employee_id],
+          employeeId: cl.employee_id,
           actionType: 'RETURNED',
           actorName: req.user?.name || 'HR',
           actorRole: 'HR',

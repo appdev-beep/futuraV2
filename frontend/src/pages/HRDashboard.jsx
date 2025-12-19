@@ -8,6 +8,13 @@ import {
   ClipboardDocumentCheckIcon,
   CheckCircleIcon,
   ArrowsPointingOutIcon,
+  Squares2X2Icon,
+  ClockIcon,
+  UserIcon,
+  BriefcaseIcon,
+  PencilSquareIcon,
+  UsersIcon,
+  BookOpenIcon,
 } from '@heroicons/react/24/outline';
 import '../index.css';
 import '../App.css'; 
@@ -16,27 +23,43 @@ function HRDashboard() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [allCL, setAllCL] = useState([]); // one row per HR action
-  const [allIncomingCL, setAllIncomingCL] = useState([]); // ALL CLs for incoming view
-  const [allDepartments, setAllDepartments] = useState([]); // All departments from DB
+  
   const [summary, setSummary] = useState({
     clPending: 0,
     clApproved: 0,
-    clReturned: 0
+    clReturned: 0,
   });
-  
+
+  const [clByStatus, setClByStatus] = useState({});
+  const [allIncomingCL, setAllIncomingCL] = useState([]);
+  const [allDepartments, setAllDepartments] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [recentActions, setRecentActions] = useState([]);
-  
+
+  const [activeSection, setActiveSection] = useState('ALL');
+  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [showFullRecentActions, setShowFullRecentActions] = useState(false);
+  const [showFullNotifications, setShowFullNotifications] = useState(false);
+
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
     notification: null,
   });
 
-  const [activeView, setActiveView] = useState('incoming'); // 'incoming' or 'history'
-  const [selectedDepartment, setSelectedDepartment] = useState(''); // department name
-  const [showFullNotifications, setShowFullNotifications] = useState(false);
-  const [showFullRecentActions, setShowFullRecentActions] = useState(false);
+  const [clDetailsModal, setClDetailsModal] = useState({
+    open: false,
+    clId: null,
+    details: null,
+    loading: false,
+  });
+
+  const CL_STATUS_SECTIONS = [
+    { key: 'DRAFT', label: 'Returns', icon: PencilSquareIcon },
+    { key: 'PENDING_EMPLOYEE', label: 'Pending – Employee', icon: UserIcon },
+    { key: 'PENDING_HR', label: 'Pending – HR', icon: BriefcaseIcon },
+    { key: 'PENDING_MANAGER', label: 'Pending – Manager', icon: ClockIcon },
+    { key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon },
+  ];
 
   // Auth check – must be logged in and HR
   useEffect(() => {
@@ -56,7 +79,7 @@ function HRDashboard() {
     setUser(parsed);
   }, []);
 
-  // Load dashboard (summary, pending list, and activity log)
+  // Load dashboard
   useEffect(() => {
     if (!user) return;
 
@@ -65,23 +88,40 @@ function HRDashboard() {
       setError('');
 
       try {
-        const [_clPending, clAll, clIncoming, departments] = await Promise.all([
-          apiRequest('/api/cl/hr/pending', { method: 'GET' }),
-          apiRequest('/api/cl/hr/all', { method: 'GET' }), // activity log
-          apiRequest('/api/cl/hr/incoming', { method: 'GET' }), // all CLs from all departments
-          apiRequest('/api/lookup/departments', { method: 'GET' }) // all departments
+        const [clIncoming, departments] = await Promise.all([
+          apiRequest('/api/cl/hr/incoming', { method: 'GET' }),
+          apiRequest('/api/lookup/departments', { method: 'GET' })
         ]);
 
-        // Summary will be loaded separately based on selected department
-        setSummary({
-          clPending: 0,
-          clApproved: 0,
-          clReturned: 0
-        });
-
-        setAllCL(clAll || []);
         setAllIncomingCL(clIncoming || []);
         setAllDepartments(departments || []);
+
+        // Group CLs by status
+        const grouped = {};
+        CL_STATUS_SECTIONS.forEach(s => {
+          grouped[s.key] = [];
+        });
+        
+        (clIncoming || []).forEach(cl => {
+          const status = cl.status;
+          if (grouped[status]) {
+            grouped[status].push(cl);
+          }
+        });
+
+        setClByStatus(grouped);
+
+        // Calculate summary across all departments
+        const pendingHR = (clIncoming || []).filter(cl => cl.status === 'PENDING_HR').length;
+        const approved = (clIncoming || []).filter(cl => cl.status === 'APPROVED').length;
+        const draft = (clIncoming || []).filter(cl => cl.status === 'DRAFT').length;
+
+        setSummary({
+          clPending: pendingHR,
+          clApproved: approved,
+          clReturned: draft,
+        });
+
       } catch (err) {
         console.error(err);
         setError('Failed to load HR dashboard data.');
@@ -171,6 +211,17 @@ function HRDashboard() {
     });
   }
 
+  async function handleMarkAllAsRead() {
+    try {
+      await apiRequest('/api/notifications/mark-all-read', { method: 'PATCH' });
+      // Reload notifications to update UI
+      const data = await apiRequest('/api/notifications');
+      setNotifications(data || []);
+    } catch (err) {
+      console.error('Failed to mark all notifications as read:', err);
+    }
+  }
+
   async function handleRecentActionClick(action) {
     // If action is a deletion, show when it was deleted
     if (action.title && action.title.toLowerCase().includes('deleted')) {
@@ -223,7 +274,40 @@ function HRDashboard() {
 
   function closeNotificationModal() {
     setNotificationModalState({ open: false, notification: null });
-    // Modal stays closed without refresh
+  }
+
+  async function handleCLClick(clId) {
+    try {
+      setClDetailsModal({
+        open: true,
+        clId,
+        details: null,
+        loading: true,
+      });
+
+      const data = await apiRequest(`/api/cl/${clId}`, { method: 'GET' });
+      
+      setClDetailsModal(prev => ({
+        ...prev,
+        details: data,
+        loading: false,
+      }));
+    } catch (err) {
+      console.error('Failed to load CL details:', err);
+      setClDetailsModal(prev => ({
+        ...prev,
+        loading: false,
+      }));
+    }
+  }
+
+  function closeCLDetailsModal() {
+    setClDetailsModal({
+      open: false,
+      clId: null,
+      details: null,
+      loading: false,
+    });
   }
 
   const unreadCount = useMemo(() => {
@@ -246,7 +330,7 @@ function HRDashboard() {
 
   // Load department-specific summary when department changes
   React.useEffect(() => {
-    if (!user || !selectedDepartment || activeView !== 'incoming') return;
+    if (!user || !selectedDepartment) return;
 
     async function loadDepartmentSummary() {
       try {
@@ -266,10 +350,30 @@ function HRDashboard() {
     }
 
     loadDepartmentSummary();
-  }, [user, selectedDepartment, activeView]);
+  }, [user, selectedDepartment]);
+
+  const sectionCounts = useMemo(() => {
+    const counts = { ALL: 0 };
+    const dataToCount = selectedDepartment 
+      ? allIncomingCL.filter(cl => cl.department_name === selectedDepartment)
+      : allIncomingCL;
+    
+    for (const s of CL_STATUS_SECTIONS) {
+      counts[s.key] = dataToCount.filter(cl => cl.status === s.key).length;
+      counts.ALL += counts[s.key];
+    }
+    return counts;
+  }, [allIncomingCL, selectedDepartment]);
+
+  const activeLabel = useMemo(() => {
+    if (activeSection === 'ALL') return 'All Competency Levelings';
+    const s = CL_STATUS_SECTIONS.find((x) => x.key === activeSection);
+    return s ? s.label : 'All Competency Levelings';
+  }, [activeSection]);
 
   // Filter incoming CLs by selected department
   const filteredIncomingCLs = useMemo(() => {
+    if (!selectedDepartment) return allIncomingCL;
     return allIncomingCL.filter(cl => cl.department_name === selectedDepartment);
   }, [allIncomingCL, selectedDepartment]);
 
@@ -277,244 +381,229 @@ function HRDashboard() {
     return null;
   }
 
-  // Activity log: every APPROVED / RETURNED done by this HR
-  const hrActivity = allCL;
-
   return (
     <div className="flex h-screen bg-white">
-      {/* LEFT SIDEBAR - Navigation */}
-      <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col overflow-y-auto">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-blue-600">FUTURA</h2>
-          <p className="text-xs text-gray-500 mt-1">HR Portal</p>
+      {/* LEFT SIDEBAR */}
+      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
+        <div className="p-4 border-b border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-800">FUTURA</h2>
+          <p className="text-sm text-gray-500">{user.role}</p>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2">
-          {/* Department List */}
-          {departments.length > 0 && (
-            <div className="space-y-1">
-              {departments.map(dept => {
-                const deptCount = allIncomingCL.filter(cl => cl.department_name === dept).length;
-                return (
-                  <button
-                    key={dept}
-                    onClick={() => { setActiveView('incoming'); setSelectedDepartment(dept); }}
-                    className={`w-full text-left px-4 py-2 transition
-                               ${
-                                 activeView === 'incoming' && selectedDepartment === dept
-                                   ? 'bg-blue-50 text-blue-700 font-semibold'
-                                   : 'text-gray-700 hover:bg-gray-100'
-                               }`}
-                  >
-                    {dept} ({deptCount})
-                  </button>
-                );
-              })}
-            </div>
-          )}
+        <nav className="p-4 space-y-4 overflow-y-auto">
+          {/* Competency Leveling */}
+          <div className="space-y-1">
+            <button
+              onClick={() => goTo('/hr')}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded
+                         text-gray-700 hover:bg-gray-100 transition"
+            >
+              <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-600" />
+              <span>Competency Leveling</span>
+            </button>
 
+            {/* CL Sections */}
+            <div className="pr-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
+                CL Sections
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setActiveSection('ALL')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                  ${activeSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <Squares2X2Icon className="w-4 h-4" />
+                  All
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                  {sectionCounts.ALL || 0}
+                </span>
+              </button>
+
+              <div className="mt-1 space-y-1">
+                {CL_STATUS_SECTIONS.map(({ key, label, icon }) => {
+                  const Icon = icon;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setActiveSection(key)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                        ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        {label}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                        {sectionCounts[key] || 0}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* IDP */}
           <button
-            onClick={() => { setActiveView('history'); setSelectedDepartment(''); }}
-            className={`w-full flex items-center gap-3 px-4 py-2 transition
-                       ${
-                         activeView === 'history'
-                           ? 'bg-blue-50 text-blue-700 font-semibold'
-                           : 'text-gray-700 hover:bg-gray-100'
-                       }`}
+            onClick={() => goTo('/idp')}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded
+                       text-gray-700 hover:bg-gray-100 transition"
           >
-            <CheckCircleIcon className="w-5 h-5" />
-            <span>HR Activity Log</span>
+            <BookOpenIcon className="w-5 h-5 text-green-600" />
+            <span>IDP Leveling</span>
           </button>
         </nav>
-
-        <div className="p-4 border-t border-gray-200">
-          <button
-            onClick={logout}
-            className="w-full flex items-center gap-3 px-4 py-2
-                       bg-red-600 text-white hover:bg-red-700 transition"
-          >
-            <ArrowRightOnRectangleIcon className="w-5 h-5" />
-            <span>Logout</span>
-          </button>
-        </div>
       </aside>
 
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-y-auto p-8">
-        <header className="mb-6">
+        <header className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">
-              HR Dashboard
-            </h1>
-            <p className="mt-1 text-sm text-gray-600">
-              Welcome, <span className="font-semibold">{user.name}</span> (
-              {user.employee_id})
+            <h1 className="text-2xl font-bold text-gray-800">HR Dashboard</h1>
+            <p className="text-gray-600">
+              Welcome, {user.name} ({user.employee_id})
             </p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-sm font-semibold text-gray-800">{user.name}</p>
+              <p className="text-xs text-gray-500">{user.role}</p>
+            </div>
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-3 py-2 rounded bg-red-600 text-white
+                         text-sm hover:bg-red-700 transition"
+            >
+              <ArrowRightOnRectangleIcon className="w-4 h-4" />
+              <span>Logout</span>
+            </button>
           </div>
         </header>
 
-      {error && (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+        {error && <div className="text-red-600 mb-4">{error}</div>}
+        {loading && <p>Loading...</p>}
 
-      {loading && (
-        <div className="mb-4 text-sm text-gray-600">
-          Loading dashboard…
-        </div>
-      )}
-
-      {/* Summary Cards */}
-      <section className="mb-8">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <SummaryCard label="Pending Review" value={summary.clPending} />
-          <SummaryCard label="Approved" value={summary.clApproved} />
-          <SummaryCard label="Returned" value={summary.clReturned} />
-        </div>
-      </section>
-
-      {/* Incoming CLs */}
-      {activeView === 'incoming' ? (
-        /* Incoming Competencies View - Single Department Table */
-        <section className="mb-8">
-          <h2 className="mb-3 text-lg font-semibold text-gray-900">
-            {selectedDepartment}
-          </h2>
-
-          {filteredIncomingCLs.length === 0 ? (
-              <p className="text-sm text-gray-600">
-                No competencies for this department.
-              </p>
-            ) : (
-              <div className="overflow-x-auto border border-gray-200 bg-white">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <Th>Employee</Th>
-                      <Th>Position</Th>
-                      <Th>Supervisor</Th>
-                      <Th>Status</Th>
-                      <Th>Submitted At</Th>
-                      <Th>Actions</Th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {filteredIncomingCLs.map((item) => (
-                      <tr key={item.id} className="hover:bg-gray-50">
-                        <Td>{item.employee_name}</Td>
-                        <Td>{item.position_title || '-'}</Td>
-                        <Td>{item.supervisor_name || '-'}</Td>
-                        <Td>
-                          <span className={`px-2 py-1 text-xs font-medium ${
-                            item.status === 'PENDING_HR' ? 'bg-yellow-100 text-yellow-800' :
-                            item.status === 'PENDING_EMPLOYEE' ? 'bg-blue-100 text-blue-800' :
-                            item.status === 'PENDING_MANAGER' ? 'bg-purple-100 text-purple-800' :
-                            item.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
-                            item.status === 'DRAFT' ? 'bg-orange-100 text-orange-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {item.status}
-                          </span>
-                        </Td>
-                        <Td>
-                          {item.submitted_at
-                            ? new Date(item.submitted_at).toLocaleString()
-                            : '-'}
-                        </Td>
-                        <Td>
-                          <button
-                            type="button"
-                            onClick={() => goTo(`/cl/hr/review/${item.id}`)}
-                            className="inline-flex items-center bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                          >
-                            View
-                          </button>
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-        </section>
-      ) : (
-        /* HR Activity Log – APPROVED & RETURNED, one row per action */
-        <section className="mb-8">
-          <h2 className="mb-3 text-lg font-semibold text-gray-900">
-            HR Activity Log (Approvals & Returns)
-          </h2>
-
-          {hrActivity.length === 0 ? (
-            <p className="text-sm text-gray-600">
-              No HR actions recorded yet.
-            </p>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <Th>Employee</Th>
-                    <Th>Supervisor</Th>
-                    <Th>Department</Th>
-                    <Th>HR Decision</Th>
-                    <Th>HR Decided At</Th>
-                    <Th>Actions</Th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {hrActivity.map((item) => (
-                    <tr
-                      key={`${item.id}-${item.hr_decided_at || ''}`}
-                      className="hover:bg-gray-50"
-                    >
-                      <Td>{item.employee_name}</Td>
-                      <Td>{item.supervisor_name}</Td>
-                      <Td>{item.department_name}</Td>
-                      <Td>{item.hr_decision || '-'}</Td>
-                      <Td>
-                        {item.hr_decided_at
-                          ? new Date(item.hr_decided_at).toLocaleString()
-                          : '-'}
-                      </Td>
-                      <Td>
-                        <button
-                          type="button"
-                          onClick={() => goTo(`/cl/hr/review/${item.id}`)}
-                          className="inline-flex items-center rounded-md bg-gray-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700"
-                        >
-                          View Details
-                        </button>
-                      </Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* Department Selector */}
+        <section className="mb-6">
+          <div className="flex items-center gap-4">
+            <div className="flex-1 max-w-md">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Filter by Department
+              </label>
+              <select
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">All Departments</option>
+                {departments.map(dept => {
+                  const deptCount = allIncomingCL.filter(cl => cl.department_name === dept).length;
+                  return (
+                    <option key={dept} value={dept}>
+                      {dept} ({deptCount} CLs)
+                    </option>
+                  );
+                })}
+              </select>
             </div>
+            {selectedDepartment && (
+              <button
+                onClick={() => setSelectedDepartment('')}
+                className="mt-7 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition"
+              >
+                Clear Filter
+              </button>
+            )}
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          <SummaryCard
+            label="CL - Pending HR"
+            value={summary.clPending}
+            gradientClass="from-yellow-400 to-orange-500"
+          />
+          <SummaryCard
+            label="CL - Returns"
+            value={summary.clReturned}
+            gradientClass="from-red-400 to-red-600"
+          />
+          <SummaryCard
+            label="CL – Approved"
+            value={summary.clApproved}
+            gradientClass="from-emerald-400 to-emerald-700"
+          />
+        </section>
+
+        <section>
+          <h2 className="text-xl font-semibold mb-3">
+            {activeLabel}
+            {selectedDepartment && <span className="text-gray-500 text-lg ml-2">- {selectedDepartment}</span>}
+          </h2>
+
+          {activeSection === 'ALL' ? (
+            /* All Sections View */
+            CL_STATUS_SECTIONS.map(({ key, label }) => {
+              const items = filteredIncomingCLs.filter(cl => cl.status === key);
+              return (
+                <div key={key} className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{label}</h3>
+                  {items.length === 0 ? (
+                    <p className="text-gray-400 text-sm italic">No employees in this status.</p>
+                  ) : (
+                    <CLTable data={items} goTo={goTo} onCLClick={handleCLClick} />
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            /* Single Section View */
+            (() => {
+              const items = filteredIncomingCLs.filter(cl => cl.status === activeSection);
+              if (items.length === 0) {
+                return <p className="text-gray-400 text-sm italic">No employees in this status.</p>;
+              }
+              return <CLTable data={items} goTo={goTo} onCLClick={handleCLClick} />;
+            })()
           )}
         </section>
-      )}
       </main>
 
-      {/* RIGHT SIDEBAR - Notifications & Recent Actions */}
-      <aside className="w-72 bg-white border-l border-gray-200 flex flex-col">
+      {/* RIGHT SIDEBAR */}
+      <aside className="w-56 bg-white border-l border-gray-200 flex flex-col">
         <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
-          <button
-            onClick={() => setShowFullNotifications(true)}
-            className="p-4 border-b border-gray-200 flex items-center justify-between hover:bg-gray-50 transition text-left"
-          >
-            <div className="flex items-center gap-2">
-              <BellIcon className="w-5 h-5 text-orange-500" />
-              <span className="text-sm font-semibold text-gray-700">Notifications</span>
-              <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
-            </div>
+          <div className="p-4 border-b border-gray-200">
+            <button
+              onClick={() => setShowFullNotifications(true)}
+              className="w-full flex items-center justify-between hover:bg-gray-50 transition text-left rounded px-2 py-1 -mx-2"
+            >
+              <div className="flex items-center gap-2">
+                <BellIcon className="w-5 h-5 text-orange-500" />
+                <span className="text-sm font-semibold text-gray-700">Notifications</span>
+                <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
+              </div>
 
+              {unreadCount > 0 && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500 text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
             {unreadCount > 0 && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500 text-white">
-                {unreadCount}
-              </span>
+              <button
+                onClick={handleMarkAllAsRead}
+                className="mt-2 w-full text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition text-center"
+              >
+                Mark All as Read
+              </button>
             )}
-          </button>
+          </div>
 
           <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
             {notifications.length === 0 ? (
@@ -620,35 +709,274 @@ function HRDashboard() {
         open={showFullNotifications}
         notifications={notifications}
         onNotificationClick={handleNotificationClick}
+        onMarkAllRead={handleMarkAllAsRead}
         onClose={() => setShowFullNotifications(false)}
       />
+
+      {/* CL Details Modal */}
+      {clDetailsModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 backdrop-blur-sm"
+            onClick={closeCLDetailsModal}
+          />
+
+          <div className="relative z-50 bg-white rounded-lg shadow-xl border border-gray-300 max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-lg font-semibold text-gray-800">
+                Competency Leveling Details {clDetailsModal.details?.id ? `(CL #${clDetailsModal.details.id})` : ''}
+              </h3>
+              <button
+                onClick={closeCLDetailsModal}
+                className="text-gray-400 hover:text-gray-600 transition text-2xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {clDetailsModal.loading && (
+                <div className="text-center py-8 text-gray-500">
+                  Loading CL details...
+                </div>
+              )}
+
+              {!clDetailsModal.loading && !clDetailsModal.details && (
+                <div className="text-center py-8 text-gray-500">
+                  No details available.
+                </div>
+              )}
+
+              {!clDetailsModal.loading && clDetailsModal.details && (
+                <div className="space-y-6">
+                  {/* Basic Info */}
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Basic Information</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-gray-600">CL ID:</span>
+                        <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.id}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Employee:</span>
+                        <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.employee_name}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Supervisor:</span>
+                        <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.supervisor_name}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Status:</span>
+                        <span className="ml-2 font-medium text-blue-600">{clDetailsModal.details.status}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Department:</span>
+                        <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.department_name || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Total Score:</span>
+                        <span className="ml-2 font-medium text-green-600">{clDetailsModal.details.total_score || 'N/A'}</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-gray-600">Created:</span>
+                        <span className="ml-2 font-medium text-gray-800">
+                          {clDetailsModal.details.created_at ? new Date(clDetailsModal.details.created_at).toLocaleString() : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Competency Items */}
+                  {clDetailsModal.details.items && clDetailsModal.details.items.length > 0 && (
+                    <div className="bg-white rounded-lg border border-gray-200">
+                      <h4 className="text-sm font-semibold text-gray-700 p-4 border-b border-gray-200">Competency Assessment Items</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Competency</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Weight (%)</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">MPLR</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Level</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Score</th>
+                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Comments</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {clDetailsModal.details.items.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 text-gray-800">{item.competency_name || 'N/A'}</td>
+                                <td className="px-4 py-3 text-center text-gray-700">{item.weight || 0}%</td>
+                                <td className="px-4 py-3 text-center text-gray-700">{item.mplr || 'N/A'}</td>
+                                <td className="px-4 py-3 text-center font-medium text-blue-600">{item.assigned_level || 'N/A'}</td>
+                                <td className="px-4 py-3 text-center font-semibold text-green-600">
+                                  {((item.weight / 100) * item.assigned_level).toFixed(2)}
+                                </td>
+                                <td className="px-4 py-3 text-gray-700 text-xs">{item.justification || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Remarks */}
+                  {clDetailsModal.details.remarks && (
+                    <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">Remarks</h4>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{clDetailsModal.details.remarks}</p>
+                    </div>
+                  )}
+
+                  {/* Decisions */}
+                  {(clDetailsModal.details.hr_decision || clDetailsModal.details.manager_decision) && (
+                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3">Review Decisions</h4>
+                      <div className="space-y-2 text-sm">
+                        {clDetailsModal.details.hr_decision && (
+                          <div>
+                            <span className="text-gray-600">HR Decision:</span>
+                            <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.hr_decision}</span>
+                            {clDetailsModal.details.hr_remarks && (
+                              <p className="mt-1 text-xs text-gray-600 ml-4">💬 {clDetailsModal.details.hr_remarks}</p>
+                            )}
+                          </div>
+                        )}
+                        {clDetailsModal.details.manager_decision && (
+                          <div>
+                            <span className="text-gray-600">Manager Decision:</span>
+                            <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.manager_decision}</span>
+                            {clDetailsModal.details.manager_remarks && (
+                              <p className="mt-1 text-xs text-gray-600 ml-4">💬 {clDetailsModal.details.manager_remarks}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
+              <button
+                onClick={closeCLDetailsModal}
+                className="px-4 py-2 text-sm rounded-md bg-gray-600 text-white hover:bg-gray-700 transition"
+              >
+                Close
+              </button>
+              {clDetailsModal.details?.id && (
+                <button
+                  onClick={() => {
+                    closeCLDetailsModal();
+                    goTo(`/cl/hr/review/${clDetailsModal.details.id}`);
+                  }}
+                  className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition"
+                >
+                  Go to Review
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function SummaryCard({ label, value }) {
+/* COMPONENTS */
+
+function SummaryCard({ label, value, gradientClass }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-      <h3 className="text-sm font-medium text-gray-600">{label}</h3>
-      <p className="mt-2 text-2xl font-semibold text-gray-900">{value}</p>
+    <div className={`p-4 rounded shadow-md bg-gradient-to-r ${gradientClass}`}>
+      <h3 className="text-sm text-white/80">{label}</h3>
+      <p className="text-3xl font-semibold text-white mt-1">{value}</p>
+    </div>
+  );
+}
+
+function CLTable({ data, goTo, onCLClick }) {
+  return (
+    <div className="bg-white shadow rounded overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <Th>CL ID</Th>
+            <Th>Employee</Th>
+            <Th>Employee ID</Th>
+            <Th>Department</Th>
+            <Th>Position</Th>
+            <Th>Supervisor</Th>
+            <Th>Status</Th>
+            <Th>Submitted At</Th>
+            <Th>Actions</Th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-gray-200">
+          {data.map((item, idx) => (
+            <tr key={`${item.id}-${idx}`} className="hover:bg-gray-50">
+              <Td>{item.id}</Td>
+              <Td>{item.employee_name}</Td>
+              <Td>{item.employee_code || item.employee_id}</Td>
+              <Td>{item.department_name}</Td>
+              <Td>{item.position_title}</Td>
+              <Td>{item.supervisor_name || '-'}</Td>
+              <Td>
+                {item.status === 'DRAFT' 
+                  ? (item.awaiting_approval_from 
+                      ? `Returned from ${item.awaiting_approval_from.replace('PENDING_', '').replace(/_/g, ' ')}` 
+                      : 'Draft - Not Submitted')
+                  : item.status}
+              </Td>
+              <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
+
+              <Td>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => goTo(`/cl/hr/review/${item.id}`)}
+                    className="px-3 py-1 rounded text-white text-xs
+                               bg-gradient-to-r from-blue-500 to-blue-700
+                               hover:from-blue-600 hover:to-blue-800"
+                  >
+                    Review
+                  </button>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCLClick(item.id);
+                    }}
+                    className="px-3 py-1 rounded text-white text-xs
+                               bg-gradient-to-r from-purple-500 to-purple-700
+                               hover:from-purple-600 hover:to-purple-800"
+                  >
+                    Details
+                  </button>
+                </div>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
 function Th({ children }) {
   return (
-    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">
       {children}
     </th>
   );
 }
 
 function Td({ children }) {
-  return (
-    <td className="px-4 py-2 align-top text-sm text-gray-700">
-      {children}
-    </td>
-  );
+  return <td className="px-4 py-2 text-gray-700">{children}</td>;
 }
 
 function NotificationModal({ open, notification, onProceed, onClose }) {
@@ -850,14 +1178,28 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
   );
 }
 
-function FullNotificationsModal({ open, notifications, onNotificationClick, onClose }) {
+function FullNotificationsModal({ open, notifications, onNotificationClick, onClose, onMarkAllRead }) {
   if (!open) return null;
+
+  const unreadCount = notifications.filter(n => String(n.status || '').toLowerCase() === 'unread').length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-gray-800">All Notifications</h3>
+          <div className="flex items-center gap-4">
+            <h3 className="text-xl font-semibold text-gray-800">All Notifications</h3>
+            {unreadCount > 0 && (
+              <button
+                onClick={() => {
+                  onMarkAllRead();
+                }}
+                className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+              >
+                Mark All as Read ({unreadCount})
+              </button>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition"

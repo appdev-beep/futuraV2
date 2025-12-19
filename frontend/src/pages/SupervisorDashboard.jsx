@@ -13,6 +13,10 @@ import {
   CheckCircleIcon,
   PencilSquareIcon,
   ArrowsPointingOutIcon,
+  UsersIcon,
+  MagnifyingGlassIcon,
+  ListBulletIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 import '../index.css';
@@ -32,6 +36,9 @@ function SupervisorDashboard() {
   const [clByStatus, setClByStatus] = useState({});
   const [notifications, setNotifications] = useState([]);
   const [recentActions, setRecentActions] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState('grid');
 
   const [activeSection, setActiveSection] = useState('ALL');
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
@@ -50,6 +57,20 @@ function SupervisorDashboard() {
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
     notification: null,
+  });
+
+  const [employeeDetailsModal, setEmployeeDetailsModal] = useState({
+    open: false,
+    employee: null,
+    history: [],
+    loading: false,
+  });
+
+  const [clDetailsModal, setClDetailsModal] = useState({
+    open: false,
+    clId: null,
+    details: null,
+    loading: false,
   });
 
   const supervisorRoles = ['Supervisor', 'AM', 'Manager', 'HR'];
@@ -83,9 +104,10 @@ function SupervisorDashboard() {
 
     async function loadDashboard() {
       try {
-        const [clSummary, clGrouped] = await Promise.all([
+        const [clSummary, clGrouped, allUsers] = await Promise.all([
           apiRequest('/api/cl/supervisor/summary'),
           apiRequest('/api/cl/supervisor/all'),
+          apiRequest('/api/users'),
         ]);
 
         setSummary({
@@ -95,6 +117,37 @@ function SupervisorDashboard() {
         });
 
         setClByStatus(clGrouped || {});
+        
+        // Filter employees in same department with Employee role
+        const deptEmployees = (allUsers || []).filter(
+          u => u.department_id === user.department_id && u.role === 'Employee'
+        );
+        
+        // Enrich with competency and history data
+        const enriched = await Promise.all(
+          deptEmployees.map(async (emp) => {
+            try {
+              const resp = await apiRequest(`/api/cl/employee/${emp.id}/competencies`);
+              const competencyCount = (resp?.competencies || []).length;
+              
+              const histResp = await apiRequest(`/api/cl/employee/${emp.id}/history`);
+              const histArr = Array.isArray(histResp) ? histResp : (histResp?.history || []);
+              const historyCount = histArr.length;
+              const latestCL = histArr.length > 0 ? histArr[0] : null;
+              
+              return {
+                ...emp,
+                competencyCount,
+                historyCount,
+                latestCL,
+              };
+            } catch {
+              return { ...emp, competencyCount: 0, historyCount: 0, latestCL: null };
+            }
+          })
+        );
+        
+        setEmployees(enriched);
       } catch (err) {
         console.error(err);
         setError('Failed to load Supervisor dashboard data.');
@@ -159,6 +212,76 @@ function SupervisorDashboard() {
     }
     
     window.location.href = url;
+  }
+
+  async function openEmployeeDetails(employee) {
+    setEmployeeDetailsModal({
+      open: true,
+      employee,
+      history: [],
+      loading: true,
+    });
+
+    try {
+      const histResp = await apiRequest(`/api/cl/employee/${employee.id}/history`);
+      const histArr = Array.isArray(histResp) ? histResp : (histResp?.history || []);
+      
+      setEmployeeDetailsModal(prev => ({
+        ...prev,
+        history: histArr,
+        loading: false,
+      }));
+    } catch (err) {
+      console.error('Failed to load employee history:', err);
+      setEmployeeDetailsModal(prev => ({
+        ...prev,
+        history: [],
+        loading: false,
+      }));
+    }
+  }
+
+  function closeEmployeeDetails() {
+    setEmployeeDetailsModal({
+      open: false,
+      employee: null,
+      history: [],
+      loading: false,
+    });
+  }
+
+  async function handleCLClick(clId) {
+    try {
+      setClDetailsModal({
+        open: true,
+        clId,
+        details: null,
+        loading: true,
+      });
+
+      const data = await apiRequest(`/api/cl/${clId}`, { method: 'GET' });
+      
+      setClDetailsModal(prev => ({
+        ...prev,
+        details: data,
+        loading: false,
+      }));
+    } catch (err) {
+      console.error('Failed to load CL details:', err);
+      setClDetailsModal(prev => ({
+        ...prev,
+        loading: false,
+      }));
+    }
+  }
+
+  function closeCLDetailsModal() {
+    setClDetailsModal({
+      open: false,
+      clId: null,
+      details: null,
+      loading: false,
+    });
   }
 
   function openModal(options) {
@@ -239,6 +362,17 @@ function SupervisorDashboard() {
       open: true,
       notification: n,
     });
+  }
+
+  async function handleMarkAllAsRead() {
+    try {
+      await apiRequest('/api/notifications/mark-all-read', { method: 'PATCH' });
+      // Reload notifications to update UI
+      const data = await apiRequest('/api/notifications');
+      setNotifications(data || []);
+    } catch (err) {
+      console.error('Failed to mark all notifications as read:', err);
+    }
   }
 
   async function handleRecentActionClick(action) {
@@ -343,6 +477,15 @@ function SupervisorDashboard() {
             >
               <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-600" />
               <span>Competency Leveling</span>
+            </button>
+            
+            <button
+              onClick={() => setActiveSection('employees')}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded
+                         text-gray-700 hover:bg-gray-100 transition"
+            >
+              <UsersIcon className="w-5 h-5 text-green-600" />
+              <span>View Employees</span>
             </button>
 
             {/* ✅ REPLACE THE "Start" SLOT WITH OPTIONS */}
@@ -462,7 +605,16 @@ function SupervisorDashboard() {
         <section>
           <h2 className="text-xl font-semibold mb-3">{activeLabel}</h2>
 
-          {activeSection === 'ALL' ? (
+          {activeSection === 'employees' ? (
+            <EmployeeCompetenciesView 
+              employees={employees}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              onEmployeeClick={openEmployeeDetails}
+            />
+          ) : activeSection === 'ALL' ? (
             CL_STATUS_SECTIONS.map(({ key, label }) => {
               const items = clByStatus[key] || [];
               return (
@@ -491,22 +643,32 @@ function SupervisorDashboard() {
       {/* RIGHT SIDEBAR */}
       <aside className="w-56 bg-white border-l border-gray-200 flex flex-col">
         <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
-          <button
-            onClick={() => setShowFullNotifications(true)}
-            className="p-4 border-b border-gray-200 flex items-center justify-between hover:bg-gray-50 transition text-left"
-          >
-            <div className="flex items-center gap-2">
-              <BellIcon className="w-5 h-5 text-orange-500" />
-              <span className="text-sm font-semibold text-gray-700">Notifications</span>
-              <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
-            </div>
+          <div className="p-4 border-b border-gray-200">
+            <button
+              onClick={() => setShowFullNotifications(true)}
+              className="w-full flex items-center justify-between hover:bg-gray-50 transition text-left rounded px-2 py-1 -mx-2"
+            >
+              <div className="flex items-center gap-2">
+                <BellIcon className="w-5 h-5 text-orange-500" />
+                <span className="text-sm font-semibold text-gray-700">Notifications</span>
+                <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
+              </div>
 
+              {unreadCount > 0 && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500 text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
             {unreadCount > 0 && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500 text-white">
-                {unreadCount}
-              </span>
+              <button
+                onClick={handleMarkAllAsRead}
+                className="mt-2 w-full text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition text-center"
+              >
+                Mark All as Read
+              </button>
             )}
-          </button>
+          </div>
 
           <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
             {notifications.length === 0 ? (
@@ -623,8 +785,179 @@ function SupervisorDashboard() {
         open={showFullNotifications}
         notifications={notifications}
         onNotificationClick={handleNotificationClick}
+        onMarkAllRead={handleMarkAllAsRead}
         onClose={() => setShowFullNotifications(false)}
       />
+
+      <EmployeeDetailsModal
+        open={employeeDetailsModal.open}
+        employee={employeeDetailsModal.employee}
+        history={employeeDetailsModal.history}
+        loading={employeeDetailsModal.loading}
+        onClose={closeEmployeeDetails}
+        onCLClick={handleCLClick}
+      />
+
+      {/* CL Details Modal */}
+      {clDetailsModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 backdrop-blur-sm"
+            onClick={closeCLDetailsModal}
+          />
+
+          <div className="relative z-50 bg-white rounded-lg shadow-xl border border-gray-300 max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-lg font-semibold text-gray-800">
+                Competency Leveling Details {clDetailsModal.details?.id ? `(CL #${clDetailsModal.details.id})` : ''}
+              </h3>
+              <button
+                onClick={closeCLDetailsModal}
+                className="text-gray-400 hover:text-gray-600 transition text-2xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {clDetailsModal.loading && (
+                <div className="text-center py-8 text-gray-500">
+                  Loading CL details...
+                </div>
+              )}
+
+              {!clDetailsModal.loading && !clDetailsModal.details && (
+                <div className="text-center py-8 text-gray-500">
+                  No details available.
+                </div>
+              )}
+
+              {!clDetailsModal.loading && clDetailsModal.details && (
+                <div className="space-y-6">
+                  {/* Basic Info */}
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Basic Information</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-gray-600">CL ID:</span>
+                        <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.id}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Employee:</span>
+                        <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.employee_name}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Supervisor:</span>
+                        <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.supervisor_name}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Status:</span>
+                        <span className="ml-2 font-medium text-blue-600">{clDetailsModal.details.status}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Department:</span>
+                        <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.department_name || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Total Score:</span>
+                        <span className="ml-2 font-medium text-green-600">{clDetailsModal.details.total_score || 'N/A'}</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-gray-600">Created:</span>
+                        <span className="ml-2 font-medium text-gray-800">
+                          {clDetailsModal.details.created_at ? new Date(clDetailsModal.details.created_at).toLocaleString() : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Competency Items */}
+                  {clDetailsModal.details.items && clDetailsModal.details.items.length > 0 && (
+                    <div className="bg-white rounded-lg border border-gray-200">
+                      <h4 className="text-sm font-semibold text-gray-700 p-4 border-b border-gray-200">Competency Assessment Items</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Competency</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Weight (%)</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">MPLR</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Level</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Score</th>
+                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Comments</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {clDetailsModal.details.items.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 text-gray-800">{item.competency_name || 'N/A'}</td>
+                                <td className="px-4 py-3 text-center text-gray-700">{item.weight || 0}%</td>
+                                <td className="px-4 py-3 text-center text-gray-700">{item.mplr || 'N/A'}</td>
+                                <td className="px-4 py-3 text-center font-medium text-blue-600">{item.assigned_level || 'N/A'}</td>
+                                <td className="px-4 py-3 text-center font-semibold text-green-600">
+                                  {((item.weight / 100) * item.assigned_level).toFixed(2)}
+                                </td>
+                                <td className="px-4 py-3 text-gray-700 text-xs">{item.justification || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Remarks */}
+                  {clDetailsModal.details.remarks && (
+                    <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">Remarks</h4>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{clDetailsModal.details.remarks}</p>
+                    </div>
+                  )}
+
+                  {/* Decisions */}
+                  {(clDetailsModal.details.hr_decision || clDetailsModal.details.manager_decision) && (
+                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3">Review Decisions</h4>
+                      <div className="space-y-2 text-sm">
+                        {clDetailsModal.details.hr_decision && (
+                          <div>
+                            <span className="text-gray-600">HR Decision:</span>
+                            <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.hr_decision}</span>
+                            {clDetailsModal.details.hr_remarks && (
+                              <p className="mt-1 text-xs text-gray-600 ml-4">💬 {clDetailsModal.details.hr_remarks}</p>
+                            )}
+                          </div>
+                        )}
+                        {clDetailsModal.details.manager_decision && (
+                          <div>
+                            <span className="text-gray-600">Manager Decision:</span>
+                            <span className="ml-2 font-medium text-gray-800">{clDetailsModal.details.manager_decision}</span>
+                            {clDetailsModal.details.manager_remarks && (
+                              <p className="mt-1 text-xs text-gray-600 ml-4">💬 {clDetailsModal.details.manager_remarks}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+              <button
+                onClick={closeCLDetailsModal}
+                className="px-4 py-2 text-sm rounded-md bg-gray-600 text-white hover:bg-gray-700 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -958,14 +1291,28 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
   );
 }
 
-function FullNotificationsModal({ open, notifications, onNotificationClick, onClose }) {
+function FullNotificationsModal({ open, notifications, onNotificationClick, onClose, onMarkAllRead }) {
   if (!open) return null;
+
+  const unreadCount = notifications.filter(n => String(n.status || '').toLowerCase() === 'unread').length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-gray-800">All Notifications</h3>
+          <div className="flex items-center gap-4">
+            <h3 className="text-xl font-semibold text-gray-800">All Notifications</h3>
+            {unreadCount > 0 && (
+              <button
+                onClick={() => {
+                  onMarkAllRead();
+                }}
+                className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+              >
+                Mark All as Read ({unreadCount})
+              </button>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition"
@@ -1024,6 +1371,408 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
         </div>
       </div>
     </div>
+  );
+}
+
+// Employee Details Modal Component
+function EmployeeDetailsModal({ open, employee, history, loading, onClose, onCLClick }) {
+  if (!open || !employee) return null;
+
+  const getStatusColor = (status) => {
+    switch (status?.toUpperCase()) {
+      case 'PENDING_SUPERVISOR': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'PENDING_MANAGER': return 'bg-blue-100 text-blue-800 border-blue-300';
+      case 'APPROVED': return 'bg-green-100 text-green-800 border-green-300';
+      case 'PENDING_AM': return 'bg-purple-100 text-purple-800 border-purple-300';
+      case 'PENDING_HR': return 'bg-indigo-100 text-indigo-800 border-indigo-300';
+      case 'RETURNED': return 'bg-red-100 text-red-800 border-red-300';
+      case 'DRAFT': return 'bg-gray-100 text-gray-800 border-gray-300';
+      default: return 'bg-gray-100 text-gray-800 border-gray-300';
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl border border-gray-300 max-w-4xl w-full max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-300 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Employee Details
+            </h2>
+            <p className="text-sm text-gray-600 mt-0.5">
+              {employee.name} ({employee.employee_id})
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded transition text-gray-600"
+            aria-label="Close"
+          >
+            <XMarkIcon className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-4 overflow-y-auto flex-1 space-y-4">
+          {/* Employee Information */}
+          <div className="border border-gray-200 rounded p-4">
+            <h3 className="text-sm font-semibold mb-3 text-gray-900">
+              Employee Information
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-gray-600">Name</p>
+                <p className="text-sm text-gray-900 font-medium">{employee.name || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Employee ID</p>
+                <p className="text-sm text-gray-900 font-medium">{employee.employee_id || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Email</p>
+                <p className="text-sm text-gray-900 font-medium">{employee.email || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Position</p>
+                <p className="text-sm text-gray-900 font-medium">{employee.position_title || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Department</p>
+                <p className="text-sm text-gray-900 font-medium">{employee.department_name || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Competencies</p>
+                <p className="text-sm text-gray-900 font-medium">{employee.competencyCount || 0}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* CL History */}
+          <div className="border border-gray-200 rounded p-4">
+            <h3 className="text-sm font-semibold mb-3 text-gray-900">
+              Competency Leveling History
+            </h3>
+
+            {loading && (
+              <p className="text-xs text-gray-600">Loading history...</p>
+            )}
+
+            {!loading && history.length === 0 && (
+              <p className="text-xs text-gray-600">
+                No competency leveling records found.
+              </p>
+            )}
+
+            {!loading && history.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border border-gray-300">
+                  <thead className="bg-white border-b-2 border-gray-300 text-gray-900">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left border-b border-gray-300">CL ID</th>
+                      <th className="px-2 py-1.5 text-left border-b border-gray-300">Cycle</th>
+                      <th className="px-2 py-1.5 text-left border-b border-gray-300">Status</th>
+                      <th className="px-2 py-1.5 text-left border-b border-gray-300">Date</th>
+                      <th className="px-2 py-1.5 text-left border-b border-gray-300">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    {history.map((cl) => (
+                      <tr
+                        key={cl.id}
+                        onClick={() => onCLClick(cl.id)}
+                        className="border-b border-gray-200 hover:bg-gray-50 cursor-pointer transition"
+                      >
+                        <td className="px-2 py-1.5 text-blue-600 font-medium">{cl.id}</td>
+                        <td className="px-2 py-1.5 text-gray-900">
+                          {cl.cycle_name || cl.cycle_id || '-'}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <span className={`text-[10px] px-2 py-0.5 rounded border ${getStatusColor(cl.status)}`}>
+                            {cl.status || '-'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-gray-900">
+                          {cl.created_at
+                            ? new Date(cl.created_at).toLocaleDateString()
+                            : '-'}
+                        </td>
+                        <td className="px-2 py-1.5 text-gray-900">
+                          {cl.total_score != null ? cl.total_score : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-[11px] text-gray-600 mt-2">
+                  Click on any row to view full CL details
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-300 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm bg-gray-600 text-white rounded hover:bg-gray-700 transition"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Employee Competencies View Component
+function EmployeeCompetenciesView({ employees, searchQuery, setSearchQuery, viewMode, setViewMode, onEmployeeClick }) {
+  const filteredEmployees = useMemo(() => {
+    if (!searchQuery.trim()) return employees;
+    
+    const query = searchQuery.toLowerCase();
+    return employees.filter(emp => 
+      emp.name?.toLowerCase().includes(query) ||
+      emp.employee_id?.toLowerCase().includes(query) ||
+      emp.position_title?.toLowerCase().includes(query)
+    );
+  }, [employees, searchQuery]);
+
+  return (
+    <div>
+      {/* Header with View Toggle */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-slate-800">
+          Department Employees
+        </h2>
+        
+        {/* View Toggle Buttons */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`p-2 rounded transition ${
+              viewMode === 'grid'
+                ? 'bg-blue-100 text-blue-700'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="Grid View"
+          >
+            <Squares2X2Icon className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`p-2 rounded transition ${
+              viewMode === 'list'
+                ? 'bg-blue-100 text-blue-700'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="List View"
+          >
+            <ListBulletIcon className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Search Input */}
+      <div className="mb-4 relative">
+        <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search by name, employee ID, or position..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+        />
+      </div>
+
+      {filteredEmployees.length === 0 ? (
+        <p className="text-sm text-gray-500 text-center py-8">
+          {searchQuery ? 'No employees found matching your search.' : 'No employees found.'}
+        </p>
+      ) : viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {filteredEmployees.map((emp) => (
+            <EmployeeCard key={emp.id} employee={emp} onClick={() => onEmployeeClick(emp)} />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredEmployees.map((emp) => (
+            <EmployeeListItem key={emp.id} employee={emp} onClick={() => onEmployeeClick(emp)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Employee Card Component (Grid View)
+function EmployeeCard({ employee, onClick }) {
+  const latestDate = employee.latestCL?.created_at
+    ? new Date(employee.latestCL.created_at).toLocaleDateString()
+    : null;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative border border-slate-200 border-l-4 border-l-blue-500 rounded-sm pl-3 pr-4 py-4 text-left shadow-sm transition
+        flex gap-3 items-start bg-white hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+    >
+      {/* Avatar / Icon */}
+      <div className="flex-shrink-0 mt-1">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5.5 20.5a7 7 0 0113 0M12 12a4 4 0 100-8 4 4 0 000 8z"
+            />
+          </svg>
+        </div>
+      </div>
+
+      {/* Text content */}
+      <div className="flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-semibold text-sm truncate text-slate-800">
+            {employee.name}
+          </div>
+          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+            {employee.employee_id}
+          </span>
+        </div>
+
+        {employee.position_title && (
+          <div className="text-xs text-slate-700 mt-1">
+            {employee.position_title}
+          </div>
+        )}
+
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+            {employee.competencyCount || 0} competenc{employee.competencyCount === 1 ? 'y' : 'ies'}
+          </span>
+          
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+            {employee.historyCount || 0} CL record(s)
+          </span>
+
+          {employee.latestCL?.status ? (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+              employee.latestCL.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' :
+              employee.latestCL.status === 'PENDING_SUPERVISOR' ? 'bg-yellow-50 text-yellow-700' :
+              employee.latestCL.status === 'PENDING_MANAGER' ? 'bg-yellow-50 text-yellow-700' :
+              employee.latestCL.status === 'PENDING_HR' ? 'bg-blue-50 text-blue-700' :
+              employee.latestCL.status === 'PENDING_AM' ? 'bg-purple-50 text-purple-700' :
+              employee.latestCL.status === 'DRAFT' ? 'bg-slate-50 text-slate-700' :
+              'bg-slate-100 text-slate-600'
+            }`}>
+              Latest: {employee.latestCL.status.replace('PENDING_', '')}
+              {latestDate ? ` • ${latestDate}` : ''}
+            </span>
+          ) : (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              No CL yet
+            </span>
+          )}
+        </div>
+
+        <div className="mt-2 text-[11px] text-slate-500">
+          Click to view employee details
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// Employee List Item Component (List View)
+function EmployeeListItem({ employee, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full border border-slate-200 border-l-4 border-l-blue-500 rounded-sm pl-3 pr-4 py-3 text-left shadow-sm transition
+        flex gap-3 items-center bg-white hover:shadow-md hover:bg-slate-50 cursor-pointer"
+    >
+      {/* Avatar / Icon */}
+      <div className="flex-shrink-0">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5.5 20.5a7 7 0 0113 0M12 12a4 4 0 100-8 4 4 0 000 8z"
+            />
+          </svg>
+        </div>
+      </div>
+
+      {/* Main Content - Horizontal Layout */}
+      <div className="flex-1 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="font-semibold text-sm truncate text-slate-800">
+                {employee.name}
+              </div>
+              <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 flex-shrink-0">
+                {employee.employee_id}
+              </span>
+            </div>
+            
+            {employee.position_title && (
+              <div className="text-xs text-slate-600 mt-0.5 truncate">
+                {employee.position_title}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 whitespace-nowrap">
+              {employee.competencyCount || 0} competenc{employee.competencyCount === 1 ? 'y' : 'ies'}
+            </span>
+            
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 whitespace-nowrap">
+              {employee.historyCount || 0} CL
+            </span>
+
+            {employee.latestCL?.status ? (
+              <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${
+                employee.latestCL.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' :
+                employee.latestCL.status === 'PENDING_SUPERVISOR' ? 'bg-yellow-50 text-yellow-700' :
+                employee.latestCL.status === 'PENDING_MANAGER' ? 'bg-yellow-50 text-yellow-700' :
+                employee.latestCL.status === 'PENDING_HR' ? 'bg-blue-50 text-blue-700' :
+                employee.latestCL.status === 'PENDING_AM' ? 'bg-purple-50 text-purple-700' :
+                employee.latestCL.status === 'DRAFT' ? 'bg-slate-50 text-slate-700' :
+                'bg-slate-100 text-slate-600'
+              }`}>
+                {employee.latestCL.status.replace('PENDING_', '')}
+              </span>
+            ) : (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">
+                No CL
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </button>
   );
 }
 
