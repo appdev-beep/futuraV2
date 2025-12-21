@@ -10,6 +10,7 @@ import {
 } from '@heroicons/react/24/outline';
 import '../index.css';
 import '../App.css'; 
+import { displayStatus } from '../utils/statusHelper';
 
 function EmployeeDashboard() {
   const [user, setUser] = useState(null);
@@ -345,7 +346,7 @@ function EmployeeDashboard() {
                         </Td>
                         <Td>
                           <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800">
-                            {item.status}
+                            {displayStatus(item.status)}
                           </span>
                         </Td>
                         <Td>
@@ -392,7 +393,7 @@ function EmployeeDashboard() {
                       <tr key={cl.id} className="hover:bg-gray-50">
                         <Td>{cl.id}</Td>
                         <Td>{cl.cycle_name || cl.cycle_id || '-'}</Td>
-                        <Td>{cl.status || '-'}</Td>
+                        <Td>{displayStatus(cl.status) || '-'}</Td>
                         <Td>{cl.employee_decision || '-'}</Td>
                         <Td>
                           {cl.employee_decided_at

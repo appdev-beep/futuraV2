@@ -21,6 +21,8 @@ import {
 
 import '../index.css';
 import '../App.css';
+import ProficiencyTable, { getProficiencyFromScore } from '../components/ProficiencyGuide';
+import { displayStatus } from '../utils/statusHelper';
 
 function SupervisorDashboard() {
   const [user, setUser] = useState(null);
@@ -854,7 +856,7 @@ function SupervisorDashboard() {
                       </div>
                       <div>
                         <span className="text-gray-600">Status:</span>
-                        <span className="ml-2 font-medium text-blue-600">{clDetailsModal.details.status}</span>
+                        <span className="ml-2 font-medium text-blue-600">{displayStatus(clDetailsModal.details.status)}</span>
                       </div>
                       <div>
                         <span className="text-gray-600">Department:</span>
@@ -862,7 +864,13 @@ function SupervisorDashboard() {
                       </div>
                       <div>
                         <span className="text-gray-600">Total Score:</span>
-                        <span className="ml-2 font-medium text-green-600">{clDetailsModal.details.total_score || 'N/A'}</span>
+                        <span className="ml-2 font-medium text-green-600">
+                          {clDetailsModal.details.total_score != null ? Number(clDetailsModal.details.total_score).toFixed(2) : 'N/A'}
+                        </span>
+                        {clDetailsModal.details.total_score != null && (() => {
+                          const p = getProficiencyFromScore(clDetailsModal.details.total_score);
+                          return p ? (<div className="text-xs text-slate-600 mt-1">Level {p.level} — {p.proficiency}</div>) : null;
+                        })()}
                       </div>
                       <div className="col-span-2">
                         <span className="text-gray-600">Created:</span>
@@ -907,6 +915,10 @@ function SupervisorDashboard() {
                       </div>
                     </div>
                   )}
+
+                  <div>
+                    <ProficiencyTable />
+                  </div>
 
                   {/* Remarks */}
                   {clDetailsModal.details.remarks && (
@@ -1003,7 +1015,7 @@ function CLTable({ data, goTo, onDelete }) {
                   ? (item.awaiting_approval_from 
                       ? `Returned from ${item.awaiting_approval_from.replace('PENDING_', '').replace(/_/g, ' ')}` 
                       : 'Draft - Not Submitted')
-                  : item.status}
+                  : displayStatus(item.status)}
               </Td>
               <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
 
@@ -1489,7 +1501,7 @@ function EmployeeDetailsModal({ open, employee, history, loading, onClose, onCLC
                         </td>
                         <td className="px-2 py-1.5">
                           <span className={`text-[10px] px-2 py-0.5 rounded border ${getStatusColor(cl.status)}`}>
-                            {cl.status || '-'}
+                            {displayStatus(cl.status) || '-'}
                           </span>
                         </td>
                         <td className="px-2 py-1.5 text-gray-900">
@@ -1676,7 +1688,7 @@ function EmployeeCard({ employee, onClick }) {
               employee.latestCL.status === 'DRAFT' ? 'bg-slate-50 text-slate-700' :
               'bg-slate-100 text-slate-600'
             }`}>
-              Latest: {employee.latestCL.status.replace('PENDING_', '')}
+              Latest: {displayStatus(employee.latestCL.status)}
               {latestDate ? ` • ${latestDate}` : ''}
             </span>
           ) : (
@@ -1762,7 +1774,7 @@ function EmployeeListItem({ employee, onClick }) {
                 employee.latestCL.status === 'DRAFT' ? 'bg-slate-50 text-slate-700' :
                 'bg-slate-100 text-slate-600'
               }`}>
-                {employee.latestCL.status.replace('PENDING_', '')}
+                {displayStatus(employee.latestCL.status)}
               </span>
             ) : (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">

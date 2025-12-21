@@ -18,6 +18,8 @@ import {
 } from '@heroicons/react/24/outline';
 import '../index.css';
 import '../App.css'; 
+import ProficiencyTable, { getProficiencyFromScore } from '../components/ProficiencyGuide';
+import { displayStatus } from '../utils/statusHelper';
 
 function HRDashboard() {
   const [user, setUser] = useState(null);
@@ -769,7 +771,7 @@ function HRDashboard() {
                       </div>
                       <div>
                         <span className="text-gray-600">Status:</span>
-                        <span className="ml-2 font-medium text-blue-600">{clDetailsModal.details.status}</span>
+                        <span className="ml-2 font-medium text-blue-600">{displayStatus(clDetailsModal.details.status)}</span>
                       </div>
                       <div>
                         <span className="text-gray-600">Department:</span>
@@ -931,7 +933,7 @@ function CLTable({ data, goTo, onCLClick }) {
                   ? (item.awaiting_approval_from 
                       ? `Returned from ${item.awaiting_approval_from.replace('PENDING_', '').replace(/_/g, ' ')}` 
                       : 'Draft - Not Submitted')
-                  : item.status}
+                  : displayStatus(item.status)}
               </Td>
               <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
 

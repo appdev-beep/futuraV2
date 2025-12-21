@@ -1,6 +1,7 @@
 // src/pages/ManagerDashboard.jsx
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../api/client';
+import { displayStatus } from '../utils/statusHelper';
 import {
   ClipboardDocumentCheckIcon,
   CheckCircleIcon,
@@ -732,7 +733,7 @@ function PendingTable({ data, goTo }) {
               <Td>{item.employee_code || item.employee_id}</Td>
               <Td>{item.department_name}</Td>
               <Td>{item.position_title}</Td>
-              <Td>{item.status}</Td>
+              <Td>{displayStatus(item.status)}</Td>
               <Td>{new Date(item.submitted_at).toLocaleString()}</Td>
 
               <Td>
@@ -841,7 +842,7 @@ function DepartmentTrackingTable({ data, goTo }) {
                     item.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
                     'bg-gray-100 text-gray-600'
                   }`}>
-                    {item.status.replace('PENDING_', '')}
+                    {displayStatus(item.status)}
                   </span>
                 </td>
                 <td className="px-3 py-2 text-gray-700 text-xs whitespace-nowrap">
@@ -1311,7 +1312,7 @@ function EmployeeCard({ employee, goTo }) {
               employee.latestCL.status === 'DRAFT' ? 'bg-slate-50 text-slate-700' :
               'bg-slate-100 text-slate-600'
             }`}>
-              Latest: {employee.latestCL.status.replace('PENDING_', '')}
+              Latest: {displayStatus(employee.latestCL.status)}
               {latestDate ? ` • ${latestDate}` : ''}
             </span>
           ) : (
@@ -1400,7 +1401,7 @@ function EmployeeListItem({ employee, goTo }) {
                 employee.latestCL.status === 'DRAFT' ? 'bg-slate-50 text-slate-700' :
                 'bg-slate-100 text-slate-600'
               }`}>
-                {employee.latestCL.status.replace('PENDING_', '')}
+                {displayStatus(employee.latestCL.status)}
               </span>
             ) : (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">

@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
+import { displayStatus } from '../utils/statusHelper';
 
 function EmployeeReviewCLPage() {
   const { id } = useParams();
@@ -177,7 +178,7 @@ function EmployeeReviewCLPage() {
                 CL Review – #{clId}
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">
-                Status: <strong>{status}</strong>
+                Status: <strong>{displayStatus(status)}</strong>
               </p>
             </div>
             <button

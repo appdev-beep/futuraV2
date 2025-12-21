@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
 import Modal from '../components/Modal';
+import { displayStatus } from '../utils/statusHelper';
 
 function AMReviewCLPage() {
   const { id } = useParams();
@@ -158,7 +159,7 @@ function AMReviewCLPage() {
                 CL Review – #{header.id}
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">
-                Status: <strong>{header.status}</strong>
+                Status: <strong>{displayStatus(header.status)}</strong>
               </p>
             </div>
             <button

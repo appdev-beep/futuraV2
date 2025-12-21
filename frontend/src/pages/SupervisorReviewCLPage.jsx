@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
 import Modal from '../components/Modal';
+import { displayStatus } from '../utils/statusHelper';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 function SupervisorReviewCLPage() {
   const { id } = useParams();
@@ -206,7 +207,7 @@ function SupervisorReviewCLPage() {
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/80">
             <div>
               <h1 className="text-lg font-semibold text-slate-800">Review CL</h1>
-              <p className="text-xs text-slate-500 mt-0.5">Status: <strong>{status}</strong></p>
+              <p className="text-xs text-slate-500 mt-0.5">Status: <strong>{displayStatus(status)}</strong></p>
             </div>
             <button
               onClick={() => navigate('/supervisor')}
