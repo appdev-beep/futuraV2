@@ -97,7 +97,34 @@ async function getSupervisorForCreation(req, res, next) {
 module.exports = {
   getById,
   create,
+  createWithItems,
   update,
   submit,
   getSupervisorForCreation
 };
+
+// POST /api/idp/create
+// Body: { employeeId, supervisorId, reviewPeriod, nextReviewDate, items: [{ competencyId, currentLevel, targetLevel, developmentArea, developmentActivities: [...] }] }
+async function createWithItems(req, res, next) {
+  try {
+    const { employeeId, supervisorId, reviewPeriod, nextReviewDate, items } = req.body;
+
+    if (!employeeId || !supervisorId) {
+      return res.status(400).json({
+        message: 'employeeId and supervisorId are required'
+      });
+    }
+
+    const result = await idpService.createWithItems({
+      employeeId,
+      supervisorId,
+      reviewPeriod,
+      nextReviewDate,
+      items: items || []
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}

@@ -16,6 +16,13 @@ router.post(
   idpController.create
 );
 
+// POST /api/idp/create (create comprehensive IDP with development plan)
+router.post(
+  '/create',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  idpController.createWithItems
+);
+
 // PUT /api/idp/:id (update IDP items)
 router.put(
   '/:id',

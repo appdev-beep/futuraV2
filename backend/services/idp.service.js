@@ -152,7 +152,81 @@ async function getEmployeesForIDPCreation(supervisorId) {
 module.exports = {
   getById,
   create,
+  createWithItems,
   update,
   submit,
   getEmployeesForIDPCreation
 };
+
+// Create IDP with full development plan
+async function createWithItems(payload) {
+  const conn = await db.getConnection();
+  
+  try {
+    await conn.beginTransaction();
+    
+    // Get the active cycle or create with cycle 1
+    const [cycleRows] = await conn.query('SELECT id FROM cycles WHERE is_active = 1 LIMIT 1');
+    const cycleId = cycleRows.length > 0 ? cycleRows[0].id : 1;
+    
+    // 1. Create IDP header
+    const [headerResult] = await conn.query(
+      `INSERT INTO idp_headers
+        (employee_id, supervisor_id, cycle_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, 'DRAFT', NOW(), NOW())`,
+      [
+        payload.employeeId,
+        payload.supervisorId,
+        cycleId
+      ]
+    );
+    
+    const idpId = headerResult.insertId;
+    
+    // 2. Create IDP items for each competency with development activities
+    if (Array.isArray(payload.items)) {
+      for (const item of payload.items) {
+        // Create one entry per development activity (since we can have multiple activities per competency)
+        if (Array.isArray(item.developmentActivities)) {
+          for (const activity of item.developmentActivities) {
+            await conn.query(
+              `INSERT INTO idp_items
+                (idp_header_id, competency_id, target_level, development_activity, timeline_months, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, 'PLANNED', NOW(), NOW())`,
+              [
+                idpId,
+                item.competencyId,
+                item.targetLevel || item.currentLevel + 1,
+                JSON.stringify({
+                  type: activity.type,
+                  activity: activity.activity,
+                  targetDate: activity.targetCompletionDate,
+                  actualDate: activity.actualCompletionDate,
+                  status: activity.completionStatus,
+                  expectedResults: activity.expectedResults,
+                  sharingMethod: activity.sharingMethod,
+                  applicationMethod: activity.applicationMethod,
+                  score: activity.score,
+                  currentLevel: item.currentLevel,
+                  developmentArea: item.developmentArea
+                }),
+                12 // Default 12 months timeline
+              ]
+            );
+          }
+        }
+      }
+    }
+    
+    await conn.commit();
+    logInfo('Created comprehensive IDP', { idpId, employeeId: payload.employeeId });
+    
+    return { id: idpId };
+    
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
