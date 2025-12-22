@@ -6,6 +6,7 @@ const path = require('path');
 const { logInfo } = require('../utils/logger');
 const { logRecentAction } = require('./recentActions.service');
 const { sendCLNotificationEmail } = require('./email.service');
+const { createNotification } = require('./notification.service');
 
 
 // =====================
@@ -343,7 +344,35 @@ async function submit(id, supervisorRemarks = null) {
     requiresEmployeeAction: false
   }).catch(err => console.error('Failed to send email:', err));
 
-  // 8) Return latest CL data
+  // 8) Create in-app notification for employee
+  await createNotification({
+    recipient_id: clHeader.employee_id,
+    message: `CL #${id} ${isResubmission ? 'resubmitted' : 'created'} for you by ${supervisorName}`,
+    module: 'Competency Leveling'
+  }).catch(err => console.error('Failed to create notification:', err));
+
+  // 9) Create notification for the next approver (Manager or AM)
+  const hasAM = !!clHeader.has_am;
+  const approverRole = hasAM ? 'AM' : 'Manager';
+  
+  // Find the approver in the department
+  const [approverRows] = await db.query(
+    `SELECT id, name FROM users 
+     WHERE department_id = ? AND role = ? 
+     LIMIT 1`,
+    [clHeader.department_id, approverRole]
+  );
+
+  if (approverRows.length > 0) {
+    const approver = approverRows[0];
+    await createNotification({
+      recipient_id: approver.id,
+      message: `CL #${id} for ${employeeName} ${isResubmission ? 'resubmitted' : 'submitted'} by ${supervisorName} is awaiting your approval`,
+      module: 'Competency Leveling'
+    }).catch(err => console.error('Failed to create notification for approver:', err));
+  }
+
+  // 10) Return latest CL data
   return await getById(id);
 }
 
@@ -764,6 +793,25 @@ async function managerApprove(id, approverId, remarks) {
         remarks: remarks,
         requiresEmployeeAction: true
       }).catch(err => console.error('Failed to send email:', err));
+
+      // Create in-app notification
+      await createNotification({
+        recipient_id: employee_id,
+        message: `CL #${id} approved by Manager ${managerRows[0].name}. Please review and approve.`,
+        module: 'Competency Leveling'
+      }).catch(err => console.error('Failed to create notification:', err));
+      
+      // Log recent action
+      await logRecentAction({
+        actor_id: approverId,
+        module: 'CL',
+        action_type: 'CL_APPROVED',
+        cl_id: id,
+        employee_id: employee_id,
+        title: `Approved form for ${employee_name}`,
+        description: `CL #${id}`,
+        url: `/cl/submissions/${id}`,
+      }).catch(err => console.error('Failed to log recent action:', err));
     }
 
     return { success: true, message: 'Manager approved CL, moved to Employee' };
@@ -834,6 +882,34 @@ async function managerReturn(id, approverId, remarks) {
         remarks: remarks,
         requiresEmployeeAction: false
       }).catch(err => console.error('Failed to send email:', err));
+    }
+
+    // Notify supervisor
+    const [supRows] = await conn.query(
+      `SELECT supervisor_id FROM cl_headers WHERE id = ?`,
+      [id]
+    );
+    if (supRows.length > 0 && supRows[0].supervisor_id && managerRows.length > 0) {
+      await createNotification({
+        recipient_id: supRows[0].supervisor_id,
+        message: `CL #${id} was returned by Manager ${managerRows[0].name}. Reason: ${remarks || 'No reason provided'}`,
+        module: 'Competency Leveling'
+      }).catch(err => console.error('Failed to create notification:', err));
+    }
+    
+    // Log recent action
+    if (clRows.length > 0 && managerRows.length > 0) {
+      const { employee_id, employee_name } = clRows[0];
+      await logRecentAction({
+        actor_id: approverId,
+        module: 'CL',
+        action_type: 'CL_RETURNED',
+        cl_id: id,
+        employee_id: employee_id,
+        title: `Returned form for ${employee_name}`,
+        description: `CL #${id}`,
+        url: `/cl/submissions/${id}`,
+      }).catch(err => console.error('Failed to log recent action:', err));
     }
 
     return { success: true, message: 'Manager returned CL to Supervisor' };
@@ -1150,6 +1226,33 @@ async function employeeApprove(id, approverId, remarks) {
       }).catch(err => console.error('Failed to send email:', err));
     }
 
+    // Get HR users to notify
+    const [hrUsers] = await conn.query(
+      `SELECT id FROM users WHERE role = 'HR' LIMIT 1`
+    );
+    if (hrUsers.length > 0 && empRows.length > 0) {
+      await createNotification({
+        recipient_id: hrUsers[0].id,
+        message: `CL #${id} for ${empRows[0].employee_name} approved by employee. Pending HR approval.`,
+        module: 'Competency Leveling'
+      }).catch(err => console.error('Failed to create notification:', err));
+    }
+
+    // Log recent action
+    if (empRows.length > 0) {
+      const { employee_name } = empRows[0];
+      await logRecentAction({
+        actor_id: approverId,
+        module: 'CL',
+        action_type: 'CL_APPROVED',
+        cl_id: id,
+        employee_id: approverId,
+        title: `Approved my CL form`,
+        description: `CL #${id}`,
+        url: `/cl/employee/review/${id}`,
+      }).catch(err => console.error('Failed to log recent action:', err));
+    }
+
     return { success: true, message: 'Employee approved CL, moved to HR' };
   } catch (err) {
     await conn.rollback();
@@ -1217,6 +1320,21 @@ async function employeeReturn(id, approverId, remarks) {
         remarks: remarks,
         requiresEmployeeAction: false
       }).catch(err => console.error('Failed to send email:', err));
+    }
+
+    // Log recent action
+    if (clRows.length > 0 && empRows.length > 0) {
+      const { employee_name } = clRows[0];
+      await logRecentAction({
+        actor_id: approverId,
+        module: 'CL',
+        action_type: 'CL_RETURNED',
+        cl_id: id,
+        employee_id: approverId,
+        title: `Returned my CL form`,
+        description: `CL #${id}`,
+        url: `/cl/employee/review/${id}`,
+      }).catch(err => console.error('Failed to log recent action:', err));
     }
 
     return { success: true, message: 'Employee returned CL to Supervisor' };
@@ -1290,6 +1408,38 @@ async function hrApprove(id, approverId, remarks) {
         remarks: remarks,
         requiresEmployeeAction: false
       }).catch(err => console.error('Failed to send email:', err));
+
+      // Create in-app notification for employee
+      await createNotification({
+        recipient_id: employee_id,
+        message: `CL #${id} has been approved by HR ${hrRows[0].name}! You can now proceed with IDP.`,
+        module: 'Competency Leveling'
+      }).catch(err => console.error('Failed to create notification:', err));
+
+      // Also notify supervisor
+      const [supRows] = await conn.query(
+        `SELECT supervisor_id FROM cl_headers WHERE id = ?`,
+        [id]
+      );
+      if (supRows.length > 0 && supRows[0].supervisor_id) {
+        await createNotification({
+          recipient_id: supRows[0].supervisor_id,
+          message: `CL #${id} for ${employee_name} has been approved by HR.`,
+          module: 'Competency Leveling'
+        }).catch(err => console.error('Failed to create notification:', err));
+      }
+      
+      // Log recent action
+      await logRecentAction({
+        actor_id: approverId,
+        module: 'CL',
+        action_type: 'CL_APPROVED',
+        cl_id: id,
+        employee_id: employee_id,
+        title: `Approved form for ${employee_name}`,
+        description: `CL #${id}`,
+        url: `/cl/hr/review/${id}`,
+      }).catch(err => console.error('Failed to log recent action:', err));
     }
 
     return { success: true, message: 'HR approved CL - IDP enabled' };
@@ -1359,6 +1509,34 @@ async function hrReturn(id, approverId, remarks) {
         remarks: remarks,
         requiresEmployeeAction: false
       }).catch(err => console.error('Failed to send email:', err));
+    }
+
+    // Notify supervisor
+    const [supRows] = await conn.query(
+      `SELECT supervisor_id FROM cl_headers WHERE id = ?`,
+      [id]
+    );
+    if (supRows.length > 0 && supRows[0].supervisor_id && hrRows.length > 0) {
+      await createNotification({
+        recipient_id: supRows[0].supervisor_id,
+        message: `CL #${id} was returned by HR ${hrRows[0].name}. Reason: ${remarks || 'No reason provided'}`,
+        module: 'Competency Leveling'
+      }).catch(err => console.error('Failed to create notification:', err));
+    }
+
+    // Log recent action
+    if (clRows.length > 0 && hrRows.length > 0) {
+      const { employee_name } = clRows[0];
+      await logRecentAction({
+        actor_id: approverId,
+        module: 'CL',
+        action_type: 'CL_RETURNED',
+        cl_id: id,
+        employee_id: clRows[0].employee_id,
+        title: `Returned form for ${employee_name}`,
+        description: `CL #${id}`,
+        url: `/cl/hr/review/${id}`,
+      }).catch(err => console.error('Failed to log recent action:', err));
     }
 
     return { success: true, message: 'HR returned CL to Supervisor' };

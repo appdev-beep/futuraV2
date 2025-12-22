@@ -29,10 +29,19 @@ function SupervisorDashboard() {
     clReturned: 0,
   });
 
+  const [idpSummary, setIdpSummary] = useState({
+    idpCreation: 0,
+    idpPending: 0,
+    idpApproved: 0,
+    idpReturned: 0,
+  });
+
   const [clByStatus, setClByStatus] = useState({});
+  const [idpEmployees, setIdpEmployees] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [recentActions, setRecentActions] = useState([]);
 
+  const [activePage, setActivePage] = useState('CL'); // 'CL' or 'IDP'
   const [activeSection, setActiveSection] = useState('ALL');
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
   const [showFullNotifications, setShowFullNotifications] = useState(false);
@@ -59,7 +68,7 @@ function SupervisorDashboard() {
     { key: 'PENDING_EMPLOYEE', label: 'For Approval by Employee', icon: UserIcon },
     { key: 'PENDING_HR', label: 'For Approval by HR', icon: BriefcaseIcon },
     { key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon },
-    { key: 'APPROVED', label: 'Approved by Manager', icon: CheckCircleIcon },
+    { key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon },
   ];
 
   useEffect(() => {
@@ -83,9 +92,10 @@ function SupervisorDashboard() {
 
     async function loadDashboard() {
       try {
-        const [clSummary, clGrouped] = await Promise.all([
+        const [clSummary, clGrouped, idpData] = await Promise.all([
           apiRequest('/api/cl/supervisor/summary'),
           apiRequest('/api/cl/supervisor/all'),
+          apiRequest('/api/idp/supervisor/for-creation'),
         ]);
 
         setSummary({
@@ -95,6 +105,15 @@ function SupervisorDashboard() {
         });
 
         setClByStatus(clGrouped || {});
+        
+        // Set IDP employees and summary
+        setIdpEmployees(idpData || []);
+        setIdpSummary({
+          idpCreation: (idpData || []).length,
+          idpPending: 0,
+          idpApproved: 0,
+          idpReturned: 0,
+        });
       } catch (err) {
         console.error(err);
         setError('Failed to load Supervisor dashboard data.');
@@ -337,9 +356,9 @@ function SupervisorDashboard() {
           {/* Competency Leveling */}
           <div className="space-y-1">
             <button
-              onClick={() => goTo('/supervisor')}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded
-                         text-gray-700 hover:bg-gray-100 transition"
+              onClick={() => setActivePage('CL')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded transition
+                ${activePage === 'CL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
             >
               <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-600" />
               <span>Competency Leveling</span>
@@ -351,60 +370,60 @@ function SupervisorDashboard() {
                 CL Sections
               </p>
 
-              <button
-                type="button"
-                onClick={() => setActiveSection('ALL')}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                  ${activeSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-              >
-                <span className="flex items-center gap-2">
-                  <Squares2X2Icon className="w-4 h-4" />
-                  All
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                  {sectionCounts.ALL || 0}
-                </span>
-              </button>
+            <button
+              type="button"
+              onClick={() => setActiveSection('ALL')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                ${activeSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+            >
+              <span className="flex items-center gap-2">
+                <Squares2X2Icon className="w-4 h-4" />
+                All
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                {sectionCounts.ALL || 0}
+              </span>
+            </button>
 
-              <div className="mt-1 space-y-1">
-                {CL_STATUS_SECTIONS.map(({ key, label, icon }) => {
-                  const Icon = icon;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setActiveSection(key)}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                        ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Icon className="w-4 h-4" />
-                        {label}
-                      </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                        {sectionCounts[key] || 0}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="mt-1 space-y-1">
+              {CL_STATUS_SECTIONS.map(({ key, label, icon }) => {
+                const Icon = icon;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActiveSection(key)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                      ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Icon className="w-4 h-4" />
+                      {label}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                      {sectionCounts[key] || 0}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
 
-              {/* Keep Start button, but place it AFTER the options */}
-              <button
-                onClick={() => goTo('/cl/start')}
-                className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded
-                           text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 transition"
-              >
-                <span>➤ Start Competency Leveling</span>
-              </button>
+            {/* Keep Start button, but place it AFTER the options */}
+            <button
+              onClick={() => goTo('/cl/start')}
+              className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded
+                         text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 transition"
+            >
+              <span>➤ Start Competency Leveling</span>
+            </button>
             </div>
           </div>
 
           {/* IDP */}
           <button
-            onClick={() => goTo('/idp')}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded
-                       text-gray-700 hover:bg-gray-100 transition"
+            onClick={() => setActivePage('IDP')}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded transition
+              ${activePage === 'IDP' ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'}`}
           >
             <BookOpenIcon className="w-5 h-5 text-green-600" />
             <span>IDP Leveling</span>
@@ -416,7 +435,9 @@ function SupervisorDashboard() {
       <main className="flex-1 overflow-y-auto p-8">
         <header className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Supervisor Dashboard</h1>
+            <h1 className="text-2xl font-bold text-gray-800">
+              {activePage === 'CL' ? 'Competency Levelling' : 'IDP Leveling'}
+            </h1>
             <p className="text-gray-600">
               Welcome, {user.name} ({user.employee_id})
             </p>
@@ -439,53 +460,126 @@ function SupervisorDashboard() {
         </header>
 
         {error && <div className="text-red-600 mb-4">{error}</div>}
-        {loading && <p>Loading...</p>}
+        
+        {activePage === 'CL' && (
+          <>
+            {loading && <p>Loading...</p>}
 
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          <SummaryCard
-            label="CL - Approval"
-            value={summary.clPending}
-            gradientClass="from-yellow-400 to-orange-500"
-          />
-          <SummaryCard
-            label="CL - Returns"
-            value={summary.clReturned}
-            gradientClass="from-red-400 to-red-600"
-          />
-          <SummaryCard
-            label="CL – Approved"
-            value={summary.clApproved}
-            gradientClass="from-emerald-400 to-emerald-700"
-          />
-        </section>
+            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+              <SummaryCard
+                label="Competencies Levelling For Approval"
+                value={summary.clPending}
+                gradientClass="from-yellow-400 to-orange-500"
+              />
+              <SummaryCard
+                label="Returned Competency Levelling"
+                value={summary.clReturned}
+                gradientClass="from-red-400 to-red-600"
+              />
+              <SummaryCard
+                label="Approved Competency Levelling"
+                value={summary.clApproved}
+                gradientClass="from-emerald-400 to-emerald-700"
+              />
+            </section>
 
-        <section>
-          <h2 className="text-xl font-semibold mb-3">{activeLabel}</h2>
+            <section>
+              <h2 className="text-xl font-semibold mb-3">{activeLabel}</h2>
 
-          {activeSection === 'ALL' ? (
-            CL_STATUS_SECTIONS.map(({ key, label }) => {
-              const items = clByStatus[key] || [];
-              return (
-                <div key={key} className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{label}</h3>
-                  {items.length === 0 ? (
-                    <p className="text-gray-400 text-sm italic">No employees in this status.</p>
-                  ) : (
-                    <CLTable data={items} goTo={goTo} onDelete={handleDeleteCL} />
-                  )}
+              {activeSection === 'ALL' ? (
+                CL_STATUS_SECTIONS.map(({ key, label }) => {
+                  const items = clByStatus[key] || [];
+                  return (
+                    <div key={key} className="mb-6">
+                      <h3 className="text-lg font-semibold text-gray-700 mb-2">{label}</h3>
+                      {items.length === 0 ? (
+                        <p className="text-gray-400 text-sm italic">No employees in this status.</p>
+                      ) : (
+                        <CLTable data={items} goTo={goTo} onDelete={handleDeleteCL} />
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                (() => {
+                  const items = clByStatus[activeSection] || [];
+                  if (items.length === 0) {
+                    return <p className="text-gray-400 text-sm italic">No employees in this status.</p>;
+                  }
+                  return <CLTable data={items} goTo={goTo} onDelete={handleDeleteCL} />;
+                })()
+              )}
+            </section>
+          </>
+        )}
+
+        {activePage === 'IDP' && (
+          <>
+            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <SummaryCard
+                label="FOR IDP CREATION"
+                value={idpSummary.idpCreation}
+                gradientClass="from-blue-400 to-blue-600"
+              />
+              <SummaryCard
+                label="IDP For Approval"
+                value={idpSummary.idpPending}
+                gradientClass="from-yellow-400 to-orange-500"
+              />
+              <SummaryCard
+                label="IDP Returns"
+                value={idpSummary.idpReturned}
+                gradientClass="from-red-400 to-red-600"
+              />
+              <SummaryCard
+                label="IDP Approved"
+                value={idpSummary.idpApproved}
+                gradientClass="from-emerald-400 to-emerald-700"
+              />
+            </section>
+
+            <section className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">Employees Requiring IDP Creation</h2>
+              {idpEmployees.length === 0 ? (
+                <p className="text-gray-400 text-sm italic">No employees require IDP creation at this time.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CL Approved Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {idpEmployees.map((emp) => (
+                        <tr key={emp.employee_id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{emp.employee_id}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{emp.name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{emp.position || 'N/A'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {emp.cl_approved_date ? new Date(emp.cl_approved_date).toLocaleDateString() : 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <button
+                              onClick={() => window.location.href = `/idp/create/${emp.employee_id}`}
+                              className="text-blue-600 hover:text-blue-900 font-medium"
+                            >
+                              Create IDP
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              );
-            })
-          ) : (
-            (() => {
-              const items = clByStatus[activeSection] || [];
-              if (items.length === 0) {
-                return <p className="text-gray-400 text-sm italic">No employees in this status.</p>;
-              }
-              return <CLTable data={items} goTo={goTo} onDelete={handleDeleteCL} />;
-            })()
-          )}
-        </section>
+              )}
+            </section>
+          </>
+        )}
       </main>
 
       {/* RIGHT SIDEBAR */}
@@ -1028,3 +1122,5 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
 }
 
 export default SupervisorDashboard;
+
+

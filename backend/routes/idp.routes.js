@@ -30,4 +30,15 @@ router.put(
   idpController.submit
 );
 
+// =====================================
+// SUPERVISOR DASHBOARD ROUTES
+// =====================================
+
+// GET /api/idp/supervisor/for-creation
+router.get(
+  '/supervisor/for-creation',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  idpController.getSupervisorForCreation
+);
+
 module.exports = router;

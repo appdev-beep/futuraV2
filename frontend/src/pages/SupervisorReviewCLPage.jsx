@@ -183,6 +183,22 @@ function SupervisorReviewCLPage() {
   if (error) return <div className="p-8 text-red-600">{error}</div>;
   if (!cl) return <div className="p-8">CL not found</div>;
 
+  // ==========================
+  // COMPUTE TOTAL SCORE & PROFICIENCY LEVEL
+  // ==========================
+  const items = cl?.items || [];
+  const totalScore = items.reduce((sum, it) => sum + (Number(it.score) || 0), 0);
+
+  const getProficiencyLevel = (score) => {
+    if (score >= 4.5) return { level: 5, name: 'Expert', color: 'bg-purple-100 border-purple-400' };
+    if (score >= 3.5) return { level: 4, name: 'Advanced', color: 'bg-green-100 border-green-400' };
+    if (score >= 2.5) return { level: 3, name: 'Intermediate', color: 'bg-blue-100 border-blue-400' };
+    if (score >= 1.5) return { level: 2, name: 'Novice', color: 'bg-yellow-100 border-yellow-400' };
+    return { level: 1, name: 'Fundamental Awareness', color: 'bg-orange-100 border-orange-400' };
+  };
+
+  const proficiency = getProficiencyLevel(totalScore);
+
   // Normalize / destructure for readability
   const {
     status,
@@ -191,7 +207,6 @@ function SupervisorReviewCLPage() {
     employee_email,
     department_name,
     position_title,
-    items = [],
     supervisor_remarks,
     manager_remarks,
     employee_remarks,
@@ -355,6 +370,21 @@ function SupervisorReviewCLPage() {
               </div>
             )}
 
+            {/* TOTAL SCORE CARD */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 border border-blue-800 rounded-lg p-3 mb-3 shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">TOTAL FINAL SCORE</p>
+                  <p className="text-2xl font-bold text-white">{totalScore.toFixed(2)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">PROFICIENCY LEVEL</p>
+                  <p className="text-xl font-bold text-white">Level {proficiency.level}</p>
+                  <p className="text-xs font-semibold text-blue-100">{proficiency.name}</p>
+                </div>
+              </div>
+            </div>
+
             {/* COMPETENCIES TABLE */}
             <div className="bg-white border border-slate-200 rounded-lg p-3">
               <h3 className="text-sm font-semibold mb-2 text-slate-700">Competency Assessment</h3>
@@ -452,6 +482,48 @@ function SupervisorReviewCLPage() {
               </div>
             </div>
 
+            {/* PROFICIENCY LEVEL GUIDE TABLE */}
+            <div className="bg-white border border-slate-200 rounded-lg p-3 mb-3">
+              <h3 className="text-sm font-semibold mb-2 text-slate-700">Proficiency Level Guide</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border border-slate-200 rounded-md overflow-hidden">
+                  <thead className="bg-slate-100 uppercase text-[11px] text-slate-700">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Level</th>
+                      <th className="px-2 py-1 text-left">Proficiency</th>
+                      <th className="px-2 py-1 text-left">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    <tr className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-semibold text-purple-600">5</td>
+                      <td className="px-2 py-1 font-semibold text-purple-600">Expert</td>
+                      <td className="px-2 py-1 text-slate-700">Advanced mastery; recognized authority; can innovate and lead others</td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-semibold text-green-600">4</td>
+                      <td className="px-2 py-1 font-semibold text-green-600">Advanced</td>
+                      <td className="px-2 py-1 text-slate-700">Can apply independently in complex scenarios; mentors others</td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-semibold text-blue-600">3</td>
+                      <td className="px-2 py-1 font-semibold text-blue-600">Intermediate</td>
+                      <td className="px-2 py-1 text-slate-700">Solid working knowledge; can perform tasks with minimal guidance</td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-semibold text-yellow-600">2</td>
+                      <td className="px-2 py-1 font-semibold text-yellow-600">Novice</td>
+                      <td className="px-2 py-1 text-slate-700">Basic understanding; requires supervision and support</td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-semibold text-orange-600">1</td>
+                      <td className="px-2 py-1 font-semibold text-orange-600">Fundamental Awareness</td>
+                      <td className="px-2 py-1 text-slate-700">Limited exposure; general familiarity with concepts</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
             {/* ACTIONS - DRAFT (resubmit) */}
             {status === 'DRAFT' && !viewOnly && (
@@ -488,38 +560,10 @@ function SupervisorReviewCLPage() {
 
             {/* ACTIONS - PENDING_MANAGER (approve/return) */}
             {status === 'PENDING_MANAGER' && !viewOnly && (
-              <div className="bg-white border border-slate-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold mb-2 text-slate-700">Approval Actions</h3>
-
-                <div className="mb-3">
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Remarks (required for returning)
-                  </label>
-                  <textarea
-                    value={returnRemarks}
-                    onChange={(e) => setReturnRemarks(e.target.value)}
-                    placeholder="Enter remarks if you're returning this CL..."
-                    className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    rows="3"
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={confirmApprove}
-                    disabled={actionLoading}
-                    className="flex-1 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50 shadow-sm"
-                  >
-                    {actionLoading ? 'Processing...' : 'Approve'}
-                  </button>
-                  <button
-                    onClick={confirmReturn}
-                    disabled={actionLoading}
-                    className="flex-1 px-4 py-2 text-sm bg-yellow-600 hover:bg-yellow-700 text-white rounded-md disabled:opacity-50 shadow-sm"
-                  >
-                    {actionLoading ? 'Processing...' : 'Return'}
-                  </button>
-                </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+                <p className="text-sm text-slate-600">
+                  This CL is pending manager approval. View only mode.
+                </p>
               </div>
             )}
 

@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
-import { displayStatus } from '../utils/statusHelper';
 
 function EmployeeReviewCLPage() {
   const { id } = useParams();
@@ -60,6 +59,22 @@ function EmployeeReviewCLPage() {
   function goBack() {
     window.location.href = '/employee';
   }
+
+  // ==========================
+  // COMPUTE TOTAL SCORE & PROFICIENCY LEVEL
+  // ==========================
+  const items = cl?.items || [];
+  const totalScore = items.reduce((sum, it) => sum + (Number(it.score) || 0), 0);
+
+  const getProficiencyLevel = (score) => {
+    if (score >= 4.5) return { level: 5, name: 'Expert', color: 'bg-purple-100 border-purple-400' };
+    if (score >= 3.5) return { level: 4, name: 'Advanced', color: 'bg-green-100 border-green-400' };
+    if (score >= 2.5) return { level: 3, name: 'Intermediate', color: 'bg-blue-100 border-blue-400' };
+    if (score >= 1.5) return { level: 2, name: 'Novice', color: 'bg-yellow-100 border-yellow-400' };
+    return { level: 1, name: 'Fundamental Awareness', color: 'bg-orange-100 border-orange-400' };
+  };
+
+  const proficiency = getProficiencyLevel(totalScore);
 
   // ==========================
   // ACTION HANDLERS
@@ -154,18 +169,9 @@ function EmployeeReviewCLPage() {
     status,
     employee_name,
     employee_id,
-    employee_email,
-    department_name,
-    position_title,
-    items,
     supervisor_remarks,
     manager_remarks,
   } = cl;
-
-  const totalScore = (items || []).reduce(
-    (sum, it) => sum + (Number(it.score) || 0),
-    0
-  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
@@ -178,7 +184,7 @@ function EmployeeReviewCLPage() {
                 CL Review – #{clId}
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">
-                Status: <strong>{displayStatus(status)}</strong>
+                Status: <strong>{status}</strong>
               </p>
             </div>
             <button
@@ -203,18 +209,6 @@ function EmployeeReviewCLPage() {
                 <div>
                   <p className="text-slate-500">Employee ID</p>
                   <p className="font-medium text-slate-800">{employee_id || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500">Email</p>
-                  <p className="font-medium text-slate-800">{employee_email || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500">Position</p>
-                  <p className="font-medium text-slate-800">{position_title || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500">Department</p>
-                  <p className="font-medium text-slate-800">{department_name || 'N/A'}</p>
                 </div>
               </div>
             </div>
@@ -241,6 +235,21 @@ function EmployeeReviewCLPage() {
                 </p>
               </div>
             )}
+
+            {/* TOTAL SCORE CARD */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 border border-blue-800 rounded-lg p-3 mb-3 shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">TOTAL FINAL SCORE</p>
+                  <p className="text-2xl font-bold text-white">{totalScore.toFixed(2)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">PROFICIENCY LEVEL</p>
+                  <p className="text-xl font-bold text-white">Level {proficiency.level}</p>
+                  <p className="text-xs font-semibold text-blue-100">{proficiency.name}</p>
+                </div>
+              </div>
+            </div>
 
             {/* Competencies Table */}
             <div className="bg-white border border-slate-200 rounded-lg p-3">
@@ -288,11 +297,51 @@ function EmployeeReviewCLPage() {
                   </tbody>
                 </table>
               </div>
-
-              <p className="mt-3 text-xs text-slate-700">
-                <strong>Total Score:</strong> {totalScore.toFixed(2)}
-              </p>
             </div>
+
+            {/* PROFICIENCY LEVEL GUIDE TABLE */}
+            <div className="bg-white border border-slate-200 rounded-lg p-3 mb-3">
+              <h3 className="text-sm font-semibold mb-2 text-slate-700">Proficiency Level Guide</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border border-slate-200 rounded-md overflow-hidden">
+                  <thead className="bg-slate-100 uppercase text-[11px] text-slate-700">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Level</th>
+                      <th className="px-2 py-1 text-left">Proficiency</th>
+                      <th className="px-2 py-1 text-left">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    <tr className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-semibold text-purple-600">5</td>
+                      <td className="px-2 py-1 font-semibold text-purple-600">Expert</td>
+                      <td className="px-2 py-1 text-slate-700">Advanced mastery; recognized authority; can innovate and lead others</td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-semibold text-green-600">4</td>
+                      <td className="px-2 py-1 font-semibold text-green-600">Advanced</td>
+                      <td className="px-2 py-1 text-slate-700">Can apply independently in complex scenarios; mentors others</td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-semibold text-blue-600">3</td>
+                      <td className="px-2 py-1 font-semibold text-blue-600">Intermediate</td>
+                      <td className="px-2 py-1 text-slate-700">Solid working knowledge; can perform tasks with minimal guidance</td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-semibold text-yellow-600">2</td>
+                      <td className="px-2 py-1 font-semibold text-yellow-600">Novice</td>
+                      <td className="px-2 py-1 text-slate-700">Basic understanding; requires supervision and support</td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-semibold text-orange-600">1</td>
+                      <td className="px-2 py-1 font-semibold text-orange-600">Fundamental Awareness</td>
+                      <td className="px-2 py-1 text-slate-700">Limited exposure; general familiarity with concepts</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* Remarks Section (Employee) */}
             {!viewOnly && (
               <div className="bg-white border border-slate-200 rounded-lg p-3">

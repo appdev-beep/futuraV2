@@ -115,9 +115,44 @@ async function submit(id) {
   return await getById(id);
 }
 
+// =====================================
+// SUPERVISOR DASHBOARD
+// =====================================
+
+// Get employees whose CL was approved by HR but have no IDP
+async function getEmployeesForIDPCreation(supervisorId) {
+  const [employees] = await db.query(
+    `SELECT 
+      u.id AS employee_id,
+      u.name,
+      p.title AS position,
+      cl.id AS cl_id,
+      cl.status AS cl_status,
+      cl.updated_at AS cl_approved_date
+    FROM cl_headers cl
+    JOIN users u ON cl.employee_id = u.id
+    JOIN positions p ON u.position_id = p.id
+    LEFT JOIN idp_headers idp ON idp.cl_header_id = cl.id
+    WHERE cl.supervisor_id = ?
+      AND cl.status = 'APPROVED'
+      AND idp.id IS NULL
+    ORDER BY cl.updated_at DESC`,
+    [supervisorId]
+  );
+
+  return employees.map(emp => ({
+    employee_id: emp.employee_id,
+    name: emp.name,
+    position: emp.position,
+    cl_id: emp.cl_id,
+    cl_approved_date: emp.cl_approved_date
+  }));
+}
+
 module.exports = {
   getById,
   create,
   update,
-  submit
+  submit,
+  getEmployeesForIDPCreation
 };

@@ -88,6 +88,46 @@ function EmployeeDashboard() {
     loadDashboard();
   }, [user]);
 
+  // ==========================
+  // LOAD NOTIFICATIONS
+  // ==========================
+  useEffect(() => {
+    if (!user) return;
+    let timer;
+
+    async function loadNotifications() {
+      try {
+        const data = await apiRequest('/api/notifications');
+        setNotifications(data || []);
+      } catch (err) {
+        console.error('Failed to load notifications', err);
+      }
+    }
+
+    loadNotifications();
+    timer = setInterval(loadNotifications, 15000);
+
+    return () => clearInterval(timer);
+  }, [user]);
+
+  // ==========================
+  // LOAD RECENT ACTIONS
+  // ==========================
+  useEffect(() => {
+    if (!user) return;
+
+    async function loadRecentActions() {
+      try {
+        const data = await apiRequest('/api/recent-actions');
+        setRecentActions(data || []);
+      } catch (err) {
+        console.error('Failed to load recent actions', err);
+      }
+    }
+
+    loadRecentActions();
+  }, [user]);
+
   // Load competencies for employee and split into current (in-flow) and approved
   useEffect(() => {
     if (!user) return;

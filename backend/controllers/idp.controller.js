@@ -78,9 +78,26 @@ async function submit(req, res, next) {
   }
 }
 
+// =====================================
+// SUPERVISOR DASHBOARD
+// =====================================
+
+// GET /api/idp/supervisor/for-creation
+// Returns employees whose CL was approved by HR but have no IDP
+async function getSupervisorForCreation(req, res, next) {
+  try {
+    const supervisorId = req.user.id;
+    const employees = await idpService.getEmployeesForIDPCreation(supervisorId);
+    res.json(employees);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getById,
   create,
   update,
-  submit
+  submit,
+  getSupervisorForCreation
 };

@@ -171,12 +171,22 @@ function ManagerReviewCLPage() {
   } = cl;
 
   // ==========================
-  // COMPUTE TOTAL SCORE
+  // COMPUTE TOTAL SCORE & PROFICIENCY LEVEL
   // ==========================
   const totalScore = (items || []).reduce(
     (sum, it) => sum + (Number(it.score) || 0),
     0
   );
+
+  const getProficiencyLevel = (score) => {
+    if (score >= 4.5) return { level: 5, name: 'Expert', color: 'bg-purple-100 border-purple-400' };
+    if (score >= 3.5) return { level: 4, name: 'Advanced', color: 'bg-green-100 border-green-400' };
+    if (score >= 2.5) return { level: 3, name: 'Intermediate', color: 'bg-blue-100 border-blue-400' };
+    if (score >= 1.5) return { level: 2, name: 'Novice', color: 'bg-yellow-100 border-yellow-400' };
+    return { level: 1, name: 'Fundamental Awareness', color: 'bg-orange-100 border-orange-400' };
+  };
+
+  const proficiency = getProficiencyLevel(totalScore);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
@@ -260,6 +270,21 @@ function ManagerReviewCLPage() {
               </div>
             )}
 
+            {/* TOTAL SCORE CARD */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 border border-blue-800 rounded-lg p-3 mb-3 shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">TOTAL FINAL SCORE</p>
+                  <p className="text-2xl font-bold text-white">{totalScore.toFixed(2)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">PROFICIENCY LEVEL</p>
+                  <p className="text-xl font-bold text-white">Level {proficiency.level}</p>
+                  <p className="text-xs font-semibold text-blue-100">{proficiency.name}</p>
+                </div>
+              </div>
+            </div>
+
             {/* COMPETENCY TABLE */}
             <div className="bg-white border border-slate-200 rounded-lg p-3">
               <h3 className="text-sm font-semibold mb-2 text-slate-700">Competency Assessment</h3>
@@ -306,11 +331,6 @@ function ManagerReviewCLPage() {
                   </tbody>
                 </table>
               </div>
-
-              {/* TOTAL SCORE */}
-              <p className="mt-3 text-xs text-slate-700">
-                <strong>Total Final Score:</strong> {totalScore.toFixed(2)}
-              </p>
             </div>
 
             {/* PROFICIENCY LEVEL GUIDE */}
