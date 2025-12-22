@@ -506,10 +506,8 @@ async function getSupervisorSummary(supervisorId) {
       SUM(ch.status = 'APPROVED') AS clApproved
     FROM cl_headers ch
       JOIN users e ON ch.employee_id   = e.id
-      JOIN users s ON ch.supervisor_id = s.id
     WHERE
-      s.id = ?
-      AND e.department_id = s.department_id
+      ch.supervisor_id = ?
     `,
     [supervisorId]
   );
@@ -546,12 +544,10 @@ async function getSupervisorAllCL(supervisorId) {
         ch.created_at AS submitted_at
       FROM cl_headers ch
         JOIN users e       ON ch.employee_id   = e.id
-        JOIN users s       ON ch.supervisor_id = s.id
         JOIN departments d ON e.department_id  = d.id
         JOIN positions   p ON e.position_id    = p.id
       WHERE
-        s.id = ?
-        AND e.department_id = s.department_id
+        ch.supervisor_id = ?
       ORDER BY ch.status ASC, ch.created_at DESC
       `,
       [supervisorId]
@@ -591,12 +587,10 @@ async function getSupervisorPending(supervisorId) {
       ch.created_at AS submitted_at
     FROM cl_headers ch
       JOIN users e       ON ch.employee_id   = e.id
-      JOIN users s       ON ch.supervisor_id = s.id
       JOIN departments d ON e.department_id  = d.id
       JOIN positions   p ON e.position_id    = p.id
     WHERE
-      s.id = ?
-      AND e.department_id = s.department_id
+      ch.supervisor_id = ?
       AND ch.status IN ('DRAFT', 'IN_PROGRESS', 'PENDING_AM', 'PENDING_MANAGER')
     ORDER BY ch.created_at DESC
     `,

@@ -111,10 +111,11 @@ function StartCLPage() {
 
         const data = await apiRequest("/api/users", { method: "GET" });
 
+        // Filter employees who are directly supervised by current user
         const filtered = (data || []).filter(
           (u) =>
             u.role === "Employee" &&
-            Number(u.department_id) === Number(currentUser.department_id)
+            Number(u.supervisor_id) === Number(currentUser.id)
         );
 
         const enriched = await Promise.all(

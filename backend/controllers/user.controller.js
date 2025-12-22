@@ -1,4 +1,4 @@
-const { createUser, listUsers, deleteUser, getUserById } = require('../services/user.service');
+const { createUser, listUsers, deleteUser, getUserById, updateUser } = require('../services/user.service');
 
 // GET /api/users
 async function getAll(req, res, next) {
@@ -20,13 +20,21 @@ async function create(req, res, next) {
       position_id,
       department_id,
       role,
-      password
+      password,
+      supervisor_id
     } = req.body;
 
     if (!employee_id || !email || !position_id || !department_id || !role || !password) {
       return res.status(400).json({
         message:
           'employee_id, email, position_id, department_id, role, and password are required'
+      });
+    }
+
+    // Validate that Employee role has a supervisor
+    if (role === 'Employee' && !supervisor_id) {
+      return res.status(400).json({
+        message: 'Employees must have a supervisor assigned'
       });
     }
 
@@ -37,7 +45,8 @@ async function create(req, res, next) {
       position_id,
       department_id,
       role,
-      password
+      password,
+      supervisor_id: supervisor_id || null
     });
 
     res.status(201).json(user);
@@ -79,9 +88,55 @@ async function getById(req, res, next) {
   }
 }
 
+// PUT /api/users/:id
+async function update(req, res, next) {
+  try {
+    const { id } = req.params;
+    const {
+      employee_id,
+      name,
+      email,
+      position_id,
+      department_id,
+      role,
+      password,
+      supervisor_id
+    } = req.body;
+
+    if (!employee_id || !email || !position_id || !department_id || !role) {
+      return res.status(400).json({
+        message: 'employee_id, email, position_id, department_id, and role are required'
+      });
+    }
+
+    // Validate that Employee role has a supervisor
+    if (role === 'Employee' && !supervisor_id) {
+      return res.status(400).json({
+        message: 'Employees must have a supervisor assigned'
+      });
+    }
+
+    const user = await updateUser(id, {
+      employee_id,
+      name: name || null,
+      email,
+      position_id,
+      department_id,
+      role,
+      password: password || undefined,
+      supervisor_id: supervisor_id || null
+    });
+
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getAll,
   create,
-  deleteById
-  ,getById
+  deleteById,
+  getById,
+  update
 };

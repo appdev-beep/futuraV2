@@ -35,6 +35,9 @@ function ManagerDashboard() {
   const [activeSection, setActiveSection] = useState('pending'); // 'pending', 'approved', 'returned', 'all', 'department', 'employees'
   const [departmentStatusFilter, setDepartmentStatusFilter] = useState('ALL'); // Filter for department tracking
   const [employees, setEmployees] = useState([]); // All employees in department
+  const [supervisors, setSupervisors] = useState([]); // All supervisors in department
+  const [expandedSupervisors, setExpandedSupervisors] = useState({}); // Track which supervisors are expanded
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState(null); // Selected supervisor to view employees
   const [searchQuery, setSearchQuery] = useState(''); // Search for employees
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   // ✅ NEW: notifications + recent actions (right sidebar)
@@ -104,8 +107,16 @@ function ManagerDashboard() {
         setAllCL(clAll || []);
         setDepartmentCLs(deptCLs || []);
         
-        // Fetch all users and filter by department and Employee role
+        // Fetch all users and filter by department
         const allUsers = await apiRequest('/api/users');
+        
+        // Get supervisors in the department
+        const deptSupervisors = (allUsers || []).filter(
+          u => u.department_id === user.department_id && u.role === 'Supervisor'
+        );
+        setSupervisors(deptSupervisors);
+        
+        // Get employees in the department
         const deptEmployees = (allUsers || []).filter(
           u => u.department_id === user.department_id && u.role === 'Employee'
         );
@@ -338,7 +349,7 @@ function ManagerDashboard() {
   return (
     <div className="flex h-screen bg-white">
       {/* SIDEBAR */}
-      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
+      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
         {/* HEADER */}
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-800">FUTURA</h2>
@@ -346,7 +357,7 @@ function ManagerDashboard() {
         </div>
 
         {/* NAVIGATION */}
-        <nav className="p-4 space-y-4 overflow-y-auto">
+        <nav className="flex-1 p-4 space-y-4 overflow-y-auto overflow-x-hidden">
           {/* Competency Leveling */}
           <div className="space-y-1">
             <button
@@ -358,14 +369,64 @@ function ManagerDashboard() {
               <span>All Competencies</span>
             </button>
 
-            <button
-              onClick={() => setActiveSection('employees')}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded
-                         text-gray-700 hover:bg-gray-100 transition"
-            >
-              <UsersIcon className="w-5 h-5 text-green-600" />
-              <span>View Employees</span>
-            </button>
+            {/* View Employees Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setExpandedSupervisors(prev => ({ ...prev, main: !prev.main }))}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded
+                           text-gray-700 hover:bg-gray-100 transition"
+              >
+                <div className="flex items-center gap-3">
+                  <UsersIcon className="w-5 h-5 text-green-600" />
+                  <span>View Employees</span>
+                </div>
+                <svg
+                  className={`w-4 h-4 transition-transform duration-200 ${expandedSupervisors.main ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              {expandedSupervisors.main && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                  <div className="py-1">
+                    {supervisors.length === 0 ? (
+                      <p className="text-xs text-gray-500 px-3 py-2">No supervisors found</p>
+                    ) : (
+                      supervisors.map(sup => {
+                        const supervisedEmployees = employees.filter(e => e.supervisor_id === sup.id);
+                        return (
+                          <button
+                            key={sup.id}
+                            onClick={() => {
+                              setSelectedSupervisorId(sup.id);
+                              setActiveSection('employees');
+                              setExpandedSupervisors({ main: false });
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm transition ${
+                              selectedSupervisorId === sup.id && activeSection === 'employees'
+                                ? 'bg-blue-50 text-blue-700'
+                                : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="truncate">{sup.name}</span>
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                                {supervisedEmployees.length}
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">{sup.employee_id}</div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* CL Sections */}
             <div className="pr-0">
@@ -544,7 +605,9 @@ function ManagerDashboard() {
             </>
           ) : activeSection === 'employees' ? (
             <EmployeeCompetenciesView 
-              employees={employees} 
+              employees={employees}
+              supervisors={supervisors}
+              selectedSupervisorId={selectedSupervisorId}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               viewMode={viewMode}
@@ -1164,25 +1227,43 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
 }
 
 // Employee Competencies View Component
-function EmployeeCompetenciesView({ employees, searchQuery, setSearchQuery, viewMode, setViewMode, goTo }) {
+function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId, searchQuery, setSearchQuery, viewMode, setViewMode, goTo }) {
+  // Filter employees by selected supervisor
+  const employeesForSupervisor = useMemo(() => {
+    if (!selectedSupervisorId) return [];
+    return employees.filter(emp => emp.supervisor_id === selectedSupervisorId);
+  }, [employees, selectedSupervisorId]);
+
+  // Find the selected supervisor's name
+  const selectedSupervisor = useMemo(() => {
+    return supervisors.find(s => s.id === selectedSupervisorId);
+  }, [supervisors, selectedSupervisorId]);
+
   const filteredEmployees = useMemo(() => {
-    if (!searchQuery.trim()) return employees;
+    if (!searchQuery.trim()) return employeesForSupervisor;
     
     const query = searchQuery.toLowerCase();
-    return employees.filter(emp => 
+    return employeesForSupervisor.filter(emp => 
       emp.name?.toLowerCase().includes(query) ||
       emp.employee_id?.toLowerCase().includes(query) ||
       emp.position_title?.toLowerCase().includes(query)
     );
-  }, [employees, searchQuery]);
+  }, [employeesForSupervisor, searchQuery]);
 
   return (
     <div>
       {/* Header with View Toggle */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-slate-800">
-          Department Employees
-        </h2>
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">
+            {selectedSupervisor ? `Employees under ${selectedSupervisor.name}` : 'Select a Supervisor'}
+          </h2>
+          {selectedSupervisor && (
+            <p className="text-sm text-slate-600">
+              Supervisor ID: {selectedSupervisor.employee_id}
+            </p>
+          )}
+        </div>
         
         {/* View Toggle Buttons */}
         <div className="flex items-center gap-2">
@@ -1223,7 +1304,11 @@ function EmployeeCompetenciesView({ employees, searchQuery, setSearchQuery, view
         />
       </div>
 
-      {filteredEmployees.length === 0 ? (
+      {!selectedSupervisorId ? (
+        <p className="text-sm text-gray-500 text-center py-8">
+          Please select a supervisor from the sidebar to view their employees.
+        </p>
+      ) : filteredEmployees.length === 0 ? (
         <p className="text-sm text-gray-500 text-center py-8">
           {searchQuery ? 'No employees found matching your search.' : 'No employees found.'}
         </p>

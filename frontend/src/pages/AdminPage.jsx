@@ -11,15 +11,18 @@ function AdminPage() {
   const [positionId, setPositionId] = useState('');
   const [role, setRole] = useState('Employee');
   const [password, setPassword] = useState('');
+  const [supervisorId, setSupervisorId] = useState('');
 
   const [departments, setDepartments] = useState([]);
   const [positions, setPositions] = useState([]);
+  const [supervisors, setSupervisors] = useState([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   // NEW: users list state
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
+  const [editingUser, setEditingUser] = useState(null);
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
 
   const showModal = (title, message, type = 'info') => {
@@ -68,12 +71,14 @@ function AdminPage() {
   useEffect(() => {
     async function loadLookups() {
       try {
-        const [deps, pos] = await Promise.all([
+        const [deps, pos, allUsers] = await Promise.all([
           apiRequest('/api/lookup/departments', { method: 'GET' }),
-          apiRequest('/api/lookup/positions', { method: 'GET' })
+          apiRequest('/api/lookup/positions', { method: 'GET' }),
+          apiRequest('/api/users', { method: 'GET' })
         ]);
         setDepartments(deps);
         setPositions(pos);
+        setSupervisors(allUsers.filter(u => u.role === 'Supervisor'));
       } catch (err) {
         console.error(err);
         setError('Failed to load lookups. Check your backend /lookup routes.');
@@ -89,11 +94,17 @@ function AdminPage() {
     const value = e.target.value;
     setDepartmentId(value);
     setPositionId('');
+    setSupervisorId('');
   }
 
   // Filter positions based on selected department
   const filteredPositions = departmentId
     ? positions.filter((p) => String(p.department_id) === String(departmentId))
+    : [];
+
+  // Filter supervisors based on selected department
+  const filteredSupervisors = departmentId
+    ? supervisors.filter((s) => String(s.department_id) === String(departmentId))
     : [];
 
   function handleLogout() {
@@ -115,23 +126,42 @@ function AdminPage() {
         position_id: Number(positionId),
         department_id: Number(departmentId),
         role,
-        password
+        supervisor_id: supervisorId ? Number(supervisorId) : null
       };
 
-      const created = await apiRequest('/api/users', {
-        method: 'POST',
-        body: JSON.stringify(body)
-      });
+      if (editingUser) {
+        // Update existing user
+        if (password) {
+          body.password = password;
+        }
+        
+        await apiRequest(`/api/users/${editingUser.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(body)
+        });
+        
+        setMessage(`User "${name}" was updated successfully`);
+        setEditingUser(null);
+      } else {
+        // Create new user
+        body.password = password;
+        
+        const created = await apiRequest('/api/users', {
+          method: 'POST',
+          body: JSON.stringify(body)
+        });
 
-      // Check if this was a reactivation or new creation
-      const isReactivation = created.created_at !== created.updated_at;
+        // Check if this was a reactivation or new creation
+        const isReactivation = created.created_at !== created.updated_at;
+        
+        setMessage(
+          isReactivation 
+            ? `User "${created.name}" was reactivated successfully` 
+            : `User created successfully with ID ${created.id || created.employee_id || 'N/A'}`
+        );
+      }
       
-      setMessage(
-        isReactivation 
-          ? `User "${created.name}" was reactivated successfully` 
-          : `User created successfully with ID ${created.id || created.employee_id || 'N/A'}`
-      );
-      // Optional: clear form
+      // Clear form
       setEmployeeId('');
       setName('');
       setEmail('');
@@ -139,13 +169,40 @@ function AdminPage() {
       setPositionId('');
       setRole('Employee');
       setPassword('');
+      setSupervisorId('');
 
-      // NEW: refresh users list after creating a user
+      // Refresh users list
       await fetchUsers();
     } catch (err) {
       console.error(err);
-      setError(err.message || 'Failed to create user.');
+      setError(err.message || `Failed to ${editingUser ? 'update' : 'create'} user.`);
     }
+  }
+
+  // Handle edit user
+  function handleEditUser(user) {
+    setEditingUser(user);
+    setEmployeeId(user.employee_id);
+    setName(user.name || '');
+    setEmail(user.email);
+    setDepartmentId(String(user.department_id));
+    setPositionId(String(user.position_id));
+    setRole(user.role);
+    setSupervisorId(user.supervisor_id ? String(user.supervisor_id) : '');
+    setPassword('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function handleCancelEdit() {
+    setEditingUser(null);
+    setEmployeeId('');
+    setName('');
+    setEmail('');
+    setDepartmentId('');
+    setPositionId('');
+    setRole('Employee');
+    setPassword('');
+    setSupervisorId('');
   }
 
   // Handle delete user
@@ -200,6 +257,20 @@ function AdminPage() {
 
         {/* Create user form */}
         <div className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-gray-900">
+              {editingUser ? 'Edit User' : 'Create New User'}
+            </h2>
+            {editingUser && (
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="text-sm text-gray-600 hover:text-gray-900"
+              >
+                Cancel Edit
+              </button>
+            )}
+          </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">
@@ -301,15 +372,41 @@ function AdminPage() {
               </select>
             </div>
 
+            {role === 'Employee' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Supervisor
+                </label>
+                <select
+                  value={supervisorId}
+                  onChange={(e) => setSupervisorId(e.target.value)}
+                  required={role === 'Employee'}
+                  disabled={!departmentId}
+                  className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100"
+                >
+                  <option value="">
+                    {departmentId
+                      ? '-- Select Supervisor --'
+                      : 'Select department first'}
+                  </option>
+                  {filteredSupervisors.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.employee_id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Password
+                Password {editingUser && <span className="text-xs text-gray-500">(leave blank to keep current)</span>}
               </label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
+                required={!editingUser}
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -319,7 +416,7 @@ function AdminPage() {
                 type="submit"
                 className="inline-flex w-full justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
               >
-                Create User
+                {editingUser ? 'Update User' : 'Create User'}
               </button>
             </div>
           </form>
@@ -359,6 +456,9 @@ function AdminPage() {
                       Role
                     </th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">
+                      Supervisor
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">
                       Actions
                     </th>
                   </tr>
@@ -377,12 +477,27 @@ function AdminPage() {
                       </td>
                       <td className="px-3 py-2">{u.role}</td>
                       <td className="px-3 py-2">
-                        <button
-                          onClick={() => handleDeleteUser(u.id, u.name)}
-                          className="inline-flex items-center rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1"
-                        >
-                          Delete
-                        </button>
+                        {u.role === 'Employee' && (!u.supervisor_name && !u.supervisor_id) ? (
+                          <span className="text-red-600 font-medium">⚠ Missing</span>
+                        ) : (
+                          u.supervisor_name || '-'
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEditUser(u)}
+                            className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(u.id, u.name)}
+                            className="inline-flex items-center rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -16,6 +16,9 @@ router.get('/', userController.getAll);
 // POST /api/users
 router.post('/', userController.create);
 
+// PUT /api/users/:id
+router.put('/:id', userController.update);
+
 // DELETE /api/users/:id
 router.delete('/:id', userController.deleteById);
 

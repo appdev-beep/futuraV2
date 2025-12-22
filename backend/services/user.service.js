@@ -10,7 +10,8 @@ async function createUser({
   position_id,
   department_id,
   role,
-  password
+  password,
+  supervisor_id
 }) {
   if (!ALLOWED_ROLES.includes(role)) {
     const err = new Error('Invalid role');
@@ -39,10 +40,10 @@ async function createUser({
         `
         UPDATE users
         SET employee_id = ?, name = ?, position_id = ?, department_id = ?, 
-            role = ?, password = ?, is_active = 1, updated_at = NOW()
+            role = ?, password = ?, supervisor_id = ?, is_active = 1, updated_at = NOW()
         WHERE id = ?
         `,
-        [employee_id, name, position_id, department_id, role, passwordHash, existingUser.id]
+        [employee_id, name, position_id, department_id, role, passwordHash, supervisor_id || null, existingUser.id]
       );
 
       const userId = existingUser.id;
@@ -81,10 +82,10 @@ async function createUser({
   const [result] = await db.query(
     `
     INSERT INTO users
-      (employee_id, name, email, position_id, department_id, role, password, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
+      (employee_id, name, email, position_id, department_id, role, password, supervisor_id, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
     `,
-    [employee_id, name, email, position_id, department_id, role, passwordHash]
+    [employee_id, name, email, position_id, department_id, role, passwordHash, supervisor_id || null]
   );
 
   const userId = result.insertId;
@@ -128,13 +129,16 @@ async function listUsers() {
       u.department_id,
       u.role,
       u.is_active,
+      u.supervisor_id,
       d.name  AS department_name,
       p.title AS position_title,
+      s.name  AS supervisor_name,
       u.created_at,
       u.updated_at
     FROM users u
     LEFT JOIN departments d ON u.department_id = d.id
     LEFT JOIN positions   p ON u.position_id = p.id
+    LEFT JOIN users       s ON u.supervisor_id = s.id
     WHERE u.is_active = 1
     ORDER BY u.created_at DESC
     `
@@ -143,7 +147,7 @@ async function listUsers() {
 }
 
 async function getUserById(userId) {
-  // First, fetch user with department and position names (avoid joining on supervisor_id which may not exist)
+  // Fetch user with department, position, and supervisor names
   const [rows] = await db.query(
     `
     SELECT
@@ -155,13 +159,16 @@ async function getUserById(userId) {
       u.department_id,
       u.role,
       u.is_active,
+      u.supervisor_id,
       d.name  AS department_name,
       p.title AS position_title,
+      s.name  AS supervisor_name,
       u.created_at,
       u.updated_at
     FROM users u
     LEFT JOIN departments d ON u.department_id = d.id
     LEFT JOIN positions   p ON u.position_id = p.id
+    LEFT JOIN users       s ON u.supervisor_id = s.id
     WHERE u.id = ?
     `,
     [userId]
@@ -169,24 +176,7 @@ async function getUserById(userId) {
 
   if (!rows || rows.length === 0) return null;
 
-  const user = rows[0];
-
-  // Try to determine supervisor name:
-  // 1) If users table has supervisor_id column, a previous join would have returned it; but since schema may not include it,
-  //    fall back to finding a user with role='Supervisor' in the same department.
-  try {
-    const [srows] = await db.query(
-      `SELECT name FROM users WHERE role = 'Supervisor' AND department_id = ? LIMIT 1`,
-      [user.department_id]
-    );
-
-    user.supervisor_name = (srows && srows[0] && srows[0].name) ? srows[0].name : null;
-  } catch (err) {
-    // If query fails for any reason, just set supervisor_name null and continue
-    user.supervisor_name = null;
-  }
-
-  return user;
+  return rows[0];
 }
 
 async function deleteUser(userId) {
@@ -205,9 +195,87 @@ async function deleteUser(userId) {
   return { message: 'User deleted successfully', userId };
 }
 
+async function updateUser(userId, {
+  employee_id,
+  name,
+  email,
+  position_id,
+  department_id,
+  role,
+  password,
+  supervisor_id
+}) {
+  if (!ALLOWED_ROLES.includes(role)) {
+    const err = new Error('Invalid role');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Check if email is being changed and if it conflicts with another user
+  const [existingUsers] = await db.query(
+    'SELECT id FROM users WHERE email = ? AND id != ?',
+    [email, userId]
+  );
+
+  if (existingUsers.length > 0) {
+    const err = new Error('A user with this email already exists');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let updateQuery = `
+    UPDATE users
+    SET employee_id = ?, name = ?, email = ?, position_id = ?, 
+        department_id = ?, role = ?, supervisor_id = ?, updated_at = NOW()
+  `;
+  let params = [employee_id, name, email, position_id, department_id, role, supervisor_id || null];
+
+  // Only update password if provided
+  if (password) {
+    const passwordHash = await bcrypt.hash(password, 10);
+    updateQuery += ', password = ?';
+    params.push(passwordHash);
+  }
+
+  updateQuery += ' WHERE id = ?';
+  params.push(userId);
+
+  await db.query(updateQuery, params);
+
+  // Return updated user
+  const [rows] = await db.query(
+    `
+    SELECT
+      u.id,
+      u.employee_id,
+      u.name,
+      u.email,
+      u.position_id,
+      u.department_id,
+      u.role,
+      u.is_active,
+      u.supervisor_id,
+      d.name  AS department_name,
+      p.title AS position_title,
+      s.name  AS supervisor_name,
+      u.created_at,
+      u.updated_at
+    FROM users u
+    LEFT JOIN departments d ON u.department_id = d.id
+    LEFT JOIN positions   p ON u.position_id = p.id
+    LEFT JOIN users       s ON u.supervisor_id = s.id
+    WHERE u.id = ?
+    `,
+    [userId]
+  );
+
+  return rows[0];
+}
+
 module.exports = {
   createUser,
   listUsers,
   deleteUser,
-  getUserById
+  getUserById,
+  updateUser
 };
