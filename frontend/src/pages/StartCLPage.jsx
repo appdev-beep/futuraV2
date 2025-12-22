@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../api/client";
 import Modal from '../components/Modal';
-import { displayStatus } from '../utils/statusHelper';
 import { 
   MagnifyingGlassIcon, 
   Squares2X2Icon, 
@@ -80,60 +79,6 @@ function StartCLPage() {
     });
 
     return sorted[0];
-  }
-
-  // Map total score (weighted average level) to proficiency level
-  function getProficiencyFromScore(score) {
-    const s = Number(score);
-    if (!s && s !== 0) return null;
-
-    let level = 1;
-    if (s >= 4.5) level = 5;
-    else if (s >= 3.5) level = 4;
-    else if (s >= 2.5) level = 3;
-    else if (s >= 1.5) level = 2;
-    else level = 1;
-
-    const defs = {
-      1: { proficiency: 'Fundamental Awareness', definition: 'Limited or basic understanding of concepts; awareness of the subject matter but lacks practical experience.' },
-      2: { proficiency: 'Novice', definition: 'Basic understanding and limited experience; able to perform tasks with guidance and supervision.' },
-      3: { proficiency: 'Intermediate', definition: 'Competent in the subject matter with moderate experience; can work independently with occasional guidance.' },
-      4: { proficiency: 'Advanced', definition: 'Highly skilled with extensive experience; capable of handling complex tasks independently and providing guidance to others.' },
-      5: { proficiency: 'Expert', definition: 'Highest level of proficiency; possesses exceptional skills, knowledge, and experience; considered a subject matter expert and may provide strategic leadership in the field.' },
-    };
-
-    return { level, ...defs[level] };
-  }
-
-  function ProficiencyTable() {
-    return (
-      <div className="mt-3 text-xs text-slate-700">
-        <h4 className="font-semibold mb-2">Proficiency Guide</h4>
-        <div className="overflow-x-auto border border-slate-200 rounded-md bg-white">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-slate-700">
-              <tr>
-                <th className="px-2 py-2 text-left">Level</th>
-                <th className="px-2 py-2 text-left">Proficiency</th>
-                <th className="px-2 py-2 text-left">Definition</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[1,2,3,4,5].map((lv)=>{
-                const p = getProficiencyFromScore(lv);
-                return (
-                  <tr key={lv} className="border-t border-slate-100">
-                    <td className="px-2 py-2 font-semibold">{lv}</td>
-                    <td className="px-2 py-2">{p.proficiency}</td>
-                    <td className="px-2 py-2 text-slate-600">{p.definition}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
   }
 
   // ===============================
@@ -643,12 +588,12 @@ function StartCLPage() {
                           {emp.historyCount || 0} CL record(s)
                         </span>
 
-                                {latest?.status ? (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                                    Latest: {displayStatus(latest.status)}
-                                    {latestDate ? ` • ${latestDate}` : ""}
-                                  </span>
-                                ) : (
+                        {latest?.status ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                            Latest: {latest.status}
+                            {latestDate ? ` • ${latestDate}` : ""}
+                          </span>
+                        ) : (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                             No CL yet
                           </span>
@@ -797,9 +742,6 @@ function StartCLPage() {
                       <strong>Name:</strong> {employeeInfo.name}
                     </p>
                     <p className="text-sm text-slate-700">
-                      <strong>Email:</strong> {employeeInfo.email || "N/A"}
-                    </p>
-                    <p className="text-sm text-slate-700">
                       <strong>Position:</strong>{" "}
                       {employeeInfo.position_title || "N/A"}
                     </p>
@@ -850,7 +792,7 @@ function StartCLPage() {
                                 {cl.cycle_name || cl.cycle_id || "-"}
                               </td>
                               <td className="px-2 py-1 text-slate-700">
-                                {displayStatus(cl.status) || "-"}
+                                {cl.status || "-"}
                               </td>
                               <td className="px-2 py-1 text-slate-700">
                                 {cl.created_at
@@ -858,19 +800,7 @@ function StartCLPage() {
                                   : "-"}
                               </td>
                               <td className="px-2 py-1 text-slate-700">
-                                {cl.total_score != null ? (
-                                  <>
-                                    <div className="font-medium text-slate-800">{Number(cl.total_score).toFixed(2)}</div>
-                                    {(() => {
-                                      const p = getProficiencyFromScore(cl.total_score);
-                                      return p ? (
-                                        <div className="text-[11px] text-slate-500">Level {p.level} — {p.proficiency}</div>
-                                      ) : null;
-                                    })()}
-                                  </>
-                                ) : (
-                                  "-"
-                                )}
+                                {cl.total_score != null ? cl.total_score : "-"}
                               </td>
                             </tr>
                           ))}
@@ -998,20 +928,10 @@ function StartCLPage() {
                       </table>
                     </div>
 
-                    <div className="mt-3 text-xs text-slate-700">
-                      <p>
-                        <strong>Total Final Score:</strong>{" "}
-                        <span className="font-medium">{totalFinalScore.toFixed(2)}</span>
-                      </p>
-                      {(() => {
-                        const p = getProficiencyFromScore(totalFinalScore);
-                        return p ? (
-                          <p className="text-[12px] text-slate-600 mt-1">Level {p.level} — {p.proficiency}</p>
-                        ) : null;
-                      })()}
-
-                      <ProficiencyTable />
-                    </div>
+                    <p className="mt-3 text-xs text-slate-700">
+                      <strong>Total Final Score:</strong>{" "}
+                      {totalFinalScore.toFixed(2)}
+                    </p>
                   </div>
                 )}
 
@@ -1119,7 +1039,7 @@ function StartCLPage() {
                         </div>
                         <div>
                           <span className="text-gray-600">Status:</span>
-                          <span className="ml-2 font-medium text-blue-600">{displayStatus(selectedCLDetails.status)}</span>
+                          <span className="ml-2 font-medium text-blue-600">{selectedCLDetails.status}</span>
                         </div>
                         <div>
                           <span className="text-gray-600">Department:</span>
@@ -1127,17 +1047,7 @@ function StartCLPage() {
                         </div>
                         <div>
                           <span className="text-gray-600">Total Score:</span>
-                          <span className="ml-2 font-medium text-green-600">
-                            {selectedCLDetails.total_score != null ? Number(selectedCLDetails.total_score).toFixed(2) : 'N/A'}
-                          </span>
-                          {selectedCLDetails.total_score != null && (
-                            (() => {
-                              const p = getProficiencyFromScore(selectedCLDetails.total_score);
-                              return p ? (
-                                <div className="text-xs text-slate-600 mt-1">Level {p.level} — {p.proficiency}</div>
-                              ) : null;
-                            })()
-                          )}
+                          <span className="ml-2 font-medium text-green-600">{selectedCLDetails.total_score || 'N/A'}</span>
                         </div>
                         <div className="col-span-2">
                           <span className="text-gray-600">Created:</span>
@@ -1162,6 +1072,7 @@ function StartCLPage() {
                                 <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Level</th>
                                 <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Score</th>
                                 <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Comments (Justification / Trainings / Certificates, Etc)</th>
+                                <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">PDF</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
@@ -1175,6 +1086,20 @@ function StartCLPage() {
                                     {((item.weight / 100) * item.assigned_level).toFixed(2)}
                                   </td>
                                   <td className="px-4 py-3 text-gray-700 text-xs">{item.justification || '-'}</td>
+                                  <td className="px-4 py-3 text-center">
+                                    {item.pdf_path ? (
+                                      <a
+                                        href={`${import.meta.env.VITE_API_BASE_URL}${item.pdf_path}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:text-blue-800 underline text-xs"
+                                      >
+                                        View
+                                      </a>
+                                    ) : (
+                                      <span className="text-gray-400 text-xs">-</span>
+                                    )}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>

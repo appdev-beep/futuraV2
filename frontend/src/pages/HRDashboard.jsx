@@ -56,10 +56,10 @@ function HRDashboard() {
   });
 
   const CL_STATUS_SECTIONS = [
-    { key: 'DRAFT', label: 'Returns', icon: PencilSquareIcon },
-    { key: 'PENDING_EMPLOYEE', label: 'Pending – Employee', icon: UserIcon },
-    { key: 'PENDING_HR', label: 'Pending – HR', icon: BriefcaseIcon },
-    { key: 'PENDING_MANAGER', label: 'Pending – Manager', icon: ClockIcon },
+    { key: 'DRAFT', label: 'Returned for Review', icon: PencilSquareIcon },
+    { key: 'PENDING_EMPLOYEE', label: 'For Approval by Employee', icon: UserIcon },
+    { key: 'PENDING_HR', label: 'For Approval by HR', icon: BriefcaseIcon },
+    { key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon },
     { key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon },
   ];
 
@@ -803,7 +803,8 @@ function HRDashboard() {
                               <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">MPLR</th>
                               <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Level</th>
                               <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Score</th>
-                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Comments</th>
+                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Comments (Justification / Trainings / Certificates, Etc)</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase">PDF</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200">
@@ -817,6 +818,20 @@ function HRDashboard() {
                                   {((item.weight / 100) * item.assigned_level).toFixed(2)}
                                 </td>
                                 <td className="px-4 py-3 text-gray-700 text-xs">{item.justification || '-'}</td>
+                                <td className="px-4 py-3 text-center">
+                                  {item.pdf_path ? (
+                                    <a
+                                      href={`${import.meta.env.VITE_API_BASE_URL}${item.pdf_path}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:text-blue-800 underline text-xs"
+                                    >
+                                      View
+                                    </a>
+                                  ) : (
+                                    <span className="text-gray-400 text-xs">-</span>
+                                  )}
+                                </td>
                               </tr>
                             ))}
                           </tbody>

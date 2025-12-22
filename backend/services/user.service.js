@@ -190,9 +190,9 @@ async function getUserById(userId) {
 }
 
 async function deleteUser(userId) {
-  // Soft delete by setting is_active = 0
+  // Hard delete - permanently remove from database
   const [result] = await db.query(
-    'UPDATE users SET is_active = 0, updated_at = NOW() WHERE id = ?',
+    'DELETE FROM users WHERE id = ?',
     [userId]
   );
 

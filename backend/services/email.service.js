@@ -10,11 +10,11 @@ let transporter = nodemailer.createTransport({
   port: 587,
   secure: false,
   auth: false,
-  pool: true, // Use pooled connections
-  maxConnections: 1, // Limit concurrent connections
-  maxMessages: 10, // Max messages per connection
-  rateDelta: 1000, // Time window for rate limiting (1 second)
-  rateLimit: 5 // Max messages per rateDelta
+  pool: true,
+  maxConnections: 1,
+  maxMessages: 10,
+  rateDelta: 1000,
+  rateLimit: 5
 });
 
 // Utility function to delay execution
@@ -92,6 +92,16 @@ async function getSupervisorEmail(clId) {
 }
 
 // =====================================================
+// GET HR EMAILS (ALL HR USERS)
+// =====================================================
+async function getHREmails() {
+  const [rows] = await db.query(
+    `SELECT id, email, name FROM users WHERE role = 'HR'`
+  );
+  return rows || [];
+}
+
+// =====================================================
 // SEND CL NOTIFICATION EMAIL TO EMPLOYEE (AND SUPERVISOR FOR FINAL APPROVAL)
 // =====================================================
 async function sendCLNotificationEmail({ 
@@ -116,12 +126,15 @@ async function sendCLNotificationEmail({
     }
     console.log(`[EMAIL] Sending to: ${employee.name} (${employee.email})`);
     
-    // Get supervisor email for FINAL_APPROVED
-    let supervisor = null;
-    if (actionType === 'FINAL_APPROVED') {
-      supervisor = await getSupervisorEmail(clId);
-      if (supervisor) {
-        console.log(`[EMAIL] Also sending to supervisor: ${supervisor.name} (${supervisor.email})`);
+    // Get supervisor email
+    const supervisor = await getSupervisorEmail(clId);
+    
+    // Get HR emails for CREATED action
+    let hrUsers = [];
+    if (actionType === 'CREATED') {
+      hrUsers = await getHREmails();
+      if (hrUsers.length > 0) {
+        console.log(`[EMAIL] Also notifying ${hrUsers.length} HR user(s)`);
       }
     }
 
@@ -144,6 +157,7 @@ async function sendCLNotificationEmail({
           <h3>Competency Leveling Form Created</h3>
           <p>Hello <strong>${employee.name}</strong>,</p>
           <p>Your Competency Leveling form <strong>#${clId}</strong> has been successfully created by your supervisor.</p>
+          <p><strong>Employee:</strong> ${employeeInfo}</p>
           <p><strong>Created by:</strong> ${actorName} (${actorRole})</p>
           <p><strong>Date & Time:</strong> ${currentDateTime}</p>
           <p><strong>Status:</strong> The form is now under review process.</p>
@@ -172,11 +186,13 @@ async function sendCLNotificationEmail({
         break;
 
       case 'RETURNED':
+        // Email to EMPLOYEE
         subject = `Your CL Form #${clId} Has Been Returned for Revision`;
         htmlContent = `
           <h3>CL Form Returned for Revision</h3>
           <p>Hello <strong>${employee.name}</strong>,</p>
           <p>Your CL form <strong>#${clId}</strong> has been returned for revision.</p>
+          <p><strong>Employee:</strong> ${employeeInfo}</p>
           <p><strong>Returned by:</strong> ${actorName} (${actorRole})</p>
           <p><strong>Date & Time:</strong> ${currentDateTime}</p>
           ${remarks ? `<p><strong>Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
@@ -184,7 +200,7 @@ async function sendCLNotificationEmail({
           <hr/>
           <p style="font-size: 12px; color: #666;">This is an automated notification from Futura CL System.</p>
         `;
-        textContent = `Your CL Form Has Been Returned for Revision\n\nHello ${employee.name},\n\nYour CL form #${clId} has been returned for revision.\n\nReturned by: ${actorName} (${actorRole})\nDate & Time: ${currentDateTime}\n${remarks ? `\nRemarks: ${remarks}` : ''}\n\nYour supervisor will revise the form and resubmit it.`;
+        textContent = `Your CL Form Has Been Returned for Revision\n\nHello ${employee.name},\n\nYour CL form #${clId} has been returned for revision.\n\nEmployee: ${employeeInfo}\nReturned by: ${actorName} (${actorRole})\nDate & Time: ${currentDateTime}\n${remarks ? `\nRemarks: ${remarks}` : ''}\n\nYour supervisor will revise the form and resubmit it.`;
         break;
 
       case 'APPROVED':
@@ -246,6 +262,74 @@ async function sendCLNotificationEmail({
       console.log(`[EMAIL] Failed to send notification for CL #${clId} to employee, but continuing...`);
     }
 
+    // For CREATED, also send to HR
+    if (actionType === 'CREATED' && hrUsers.length > 0) {
+      const hrSubject = `New CL #${clId} Created for ${employeeInfo}`;
+      const hrHtmlContent = `
+        <h3>New Competency Leveling Form Created</h3>
+        <p>Hello,</p>
+        <p>A new Competency Leveling form has been created:</p>
+        <p><strong>CL Number:</strong> #${clId}</p>
+        <p><strong>Employee:</strong> ${employeeInfo}</p>
+        <p><strong>Created by:</strong> ${actorName} (${actorRole})</p>
+        <p><strong>Date & Time:</strong> ${currentDateTime}</p>
+        <p><strong>Status:</strong> The form is now in the approval workflow.</p>
+        <p>You will be notified when the form reaches your approval stage.</p>
+        <hr/>
+        <p style="font-size: 12px; color: #666;">This is an automated notification from Futura CL System.</p>
+      `;
+      const hrTextContent = `New Competency Leveling Form Created\n\nA new Competency Leveling form has been created:\n\nCL Number: #${clId}\nEmployee: ${employeeInfo}\nCreated by: ${actorName} (${actorRole})\nDate & Time: ${currentDateTime}\nStatus: The form is now in the approval workflow.\n\nYou will be notified when the form reaches your approval stage.`;
+      
+      // Send to all HR users in parallel (don't wait)
+      hrUsers.forEach(hr => {
+        sendEmail({
+          to: hr.email,
+          subject: hrSubject,
+          text: hrTextContent,
+          html: hrHtmlContent
+        }).then(result => {
+          if (result) {
+            console.log(`[EMAIL] Successfully sent HR notification for CL #${clId} to ${hr.email}`);
+          } else {
+            console.log(`[EMAIL] Failed to send HR notification for CL #${clId} to ${hr.email}, but continuing...`);
+          }
+        }).catch(err => {
+          console.log(`[EMAIL] Error sending HR notification to ${hr.email}:`, err.message);
+        });
+      });
+    }
+
+    // For RETURNED, also send to supervisor
+    if (actionType === 'RETURNED' && supervisor) {
+      const supervisorSubject = `CL #${clId} for ${employeeInfo} Has Been Returned`;
+      const supervisorHtmlContent = `
+        <h3>CL Form Returned for Revision</h3>
+        <p>Hello <strong>${supervisor.name}</strong>,</p>
+        <p>The CL form <strong>#${clId}</strong> for <strong>${employeeInfo}</strong> has been returned for revision.</p>
+        <p><strong>Employee:</strong> ${employeeInfo}</p>
+        <p><strong>Returned by:</strong> ${actorName} (${actorRole})</p>
+        <p><strong>Date & Time:</strong> ${currentDateTime}</p>
+        ${remarks ? `<p><strong>Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
+        <p><strong>⚠️ Action Required:</strong> Please review the remarks and make necessary revisions to the form.</p>
+        <hr/>
+        <p style="font-size: 12px; color: #666;">This is an automated notification from Futura CL System.</p>
+      `;
+      const supervisorTextContent = `CL Form Returned for Revision\n\nHello ${supervisor.name},\n\nThe CL form #${clId} for ${employeeInfo} has been returned for revision.\n\nEmployee: ${employeeInfo}\nReturned by: ${actorName} (${actorRole})\nDate & Time: ${currentDateTime}\n${remarks ? `\nRemarks: ${remarks}` : ''}\n\n⚠️ Action Required: Please review the remarks and make necessary revisions to the form.`;
+      
+      const supervisorResult = await sendEmail({
+        to: supervisor.email,
+        subject: supervisorSubject,
+        text: supervisorTextContent,
+        html: supervisorHtmlContent
+      });
+
+      if (supervisorResult) {
+        console.log(`[EMAIL] Successfully sent supervisor notification for CL #${clId} to ${supervisor.email}`);
+      } else {
+        console.log(`[EMAIL] Failed to send supervisor notification for CL #${clId}, but continuing...`);
+      }
+    }
+
     // For FINAL_APPROVED, also send to supervisor
     if (actionType === 'FINAL_APPROVED' && supervisor) {
       const supervisorSubject = `CL #${clId} for ${employeeInfo} Has Been Approved and Locked`;
@@ -287,5 +371,6 @@ module.exports = {
   sendEmail,
   sendCLNotificationEmail,
   getUserEmail,
-  getSupervisorEmail
+  getSupervisorEmail,
+  getHREmails
 };

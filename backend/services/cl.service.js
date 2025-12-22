@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { logInfo } = require('../utils/logger');
 const { logRecentAction } = require('./recentActions.service');
+const { sendCLNotificationEmail } = require('./email.service');
 
 
 // =====================
@@ -323,7 +324,26 @@ async function submit(id, supervisorRemarks = null) {
     url: `/cl/supervisor/review/${id}`,
   });
 
-  // 7) Return latest CL data
+  // 7) Send email notification to employee
+  const [supervisorRows] = await db.query(
+    `SELECT name FROM users WHERE id = ?`,
+    [clHeader.supervisor_id]
+  );
+  const supervisorName = supervisorRows[0]?.name || 'Supervisor';
+  
+  await sendCLNotificationEmail({
+    clId: id,
+    employeeId: clHeader.employee_id,
+    actionType: isResubmission ? 'RESUBMITTED' : 'CREATED',
+    actorName: supervisorName,
+    actorRole: 'Supervisor',
+    employeeName: employeeName,
+    employeeCode: empRows[0]?.employee_id || '',
+    remarks: supervisorRemarks,
+    requiresEmployeeAction: false
+  }).catch(err => console.error('Failed to send email:', err));
+
+  // 8) Return latest CL data
   return await getById(id);
 }
 
@@ -721,6 +741,37 @@ async function managerApprove(id, approverId, remarks) {
     );
 
     await conn.commit();
+
+    // Get CL and employee details for email
+    const [clRows] = await conn.query(
+      `SELECT ch.employee_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers ch
+       JOIN users e ON ch.employee_id = e.id
+       WHERE ch.id = ?`,
+      [id]
+    );
+
+    const [managerRows] = await conn.query(
+      `SELECT name FROM users WHERE id = ?`,
+      [approverId]
+    );
+
+    // Send email notification to employee
+    if (clRows.length > 0 && managerRows.length > 0) {
+      const { employee_id, employee_name, employee_code } = clRows[0];
+      await sendCLNotificationEmail({
+        clId: id,
+        employeeId: employee_id,
+        actionType: 'APPROVED',
+        actorName: managerRows[0].name,
+        actorRole: 'Manager',
+        employeeName: employee_name,
+        employeeCode: employee_code,
+        remarks: remarks,
+        requiresEmployeeAction: true
+      }).catch(err => console.error('Failed to send email:', err));
+    }
+
     return { success: true, message: 'Manager approved CL, moved to Employee' };
 
   } catch (err) {
@@ -760,6 +811,37 @@ async function managerReturn(id, approverId, remarks) {
     );
 
     await conn.commit();
+
+    // Get CL and employee details for email
+    const [clRows] = await conn.query(
+      `SELECT ch.employee_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers ch
+       JOIN users e ON ch.employee_id = e.id
+       WHERE ch.id = ?`,
+      [id]
+    );
+
+    const [managerRows] = await conn.query(
+      `SELECT name FROM users WHERE id = ?`,
+      [approverId]
+    );
+
+    // Send email notification to employee
+    if (clRows.length > 0 && managerRows.length > 0) {
+      const { employee_id, employee_name, employee_code } = clRows[0];
+      await sendCLNotificationEmail({
+        clId: id,
+        employeeId: employee_id,
+        actionType: 'RETURNED',
+        actorName: managerRows[0].name,
+        actorRole: 'Manager',
+        employeeName: employee_name,
+        employeeCode: employee_code,
+        remarks: remarks,
+        requiresEmployeeAction: false
+      }).catch(err => console.error('Failed to send email:', err));
+    }
+
     return { success: true, message: 'Manager returned CL to Supervisor' };
 
   } catch (err) {
@@ -857,7 +939,7 @@ async function getHRSummary(hrId, departmentName = null) {
   let query = `SELECT
        SUM(ch.status = 'PENDING_HR') as clPending,
        SUM(ch.status = 'APPROVED') as clApproved,
-       SUM(ch.status = 'REJECTED') as clReturned
+       SUM(ch.status = 'DRAFT') as clReturned
      FROM cl_headers ch`;
   
   const params = [];
@@ -914,6 +996,17 @@ async function amApprove(id, approverId, remarks) {
   try {
     await conn.beginTransaction();
 
+    // Get CL and employee details
+    const [clRows] = await conn.query(
+      `SELECT ch.employee_id, e.name as employee_name, e.employee_id as employee_code,
+              u.name as am_name
+       FROM cl_headers ch
+       JOIN users e ON ch.employee_id = e.id
+       JOIN users u ON u.id = ?
+       WHERE ch.id = ?`,
+      [approverId, id]
+    );
+
     // Update CL status to PENDING_EMPLOYEE
     await conn.query(
       `UPDATE cl_headers 
@@ -923,6 +1016,23 @@ async function amApprove(id, approverId, remarks) {
     );
 
     await conn.commit();
+
+    // Send email notification to employee
+    if (clRows.length > 0) {
+      const { employee_id, employee_name, employee_code, am_name } = clRows[0];
+      await sendCLNotificationEmail({
+        clId: id,
+        employeeId: employee_id,
+        actionType: 'APPROVED',
+        actorName: am_name || 'Assistant Manager',
+        actorRole: 'AM',
+        employeeName: employee_name,
+        employeeCode: employee_code,
+        remarks: remarks,
+        requiresEmployeeAction: true
+      }).catch(err => console.error('Failed to send email:', err));
+    }
+
     return { success: true, message: 'AM approved CL, moved to Employee' };
   } catch (err) {
     await conn.rollback();
@@ -942,6 +1052,17 @@ async function amReturn(id, approverId, remarks) {
   try {
     await conn.beginTransaction();
 
+    // Get CL and employee details
+    const [clRows] = await conn.query(
+      `SELECT ch.employee_id, e.name as employee_name, e.employee_id as employee_code,
+              ch.supervisor_id, u.name as am_name
+       FROM cl_headers ch
+       JOIN users e ON ch.employee_id = e.id
+       JOIN users u ON u.id = ?
+       WHERE ch.id = ?`,
+      [approverId, id]
+    );
+
     // Update CL status back to DRAFT and mark where it should go on resubmit
     await conn.query(
       `UPDATE cl_headers 
@@ -951,6 +1072,23 @@ async function amReturn(id, approverId, remarks) {
     );
 
     await conn.commit();
+
+    // Send email notification to employee
+    if (clRows.length > 0) {
+      const { employee_id, employee_name, employee_code, am_name } = clRows[0];
+      await sendCLNotificationEmail({
+        clId: id,
+        employeeId: employee_id,
+        actionType: 'RETURNED',
+        actorName: am_name || 'Assistant Manager',
+        actorRole: 'AM',
+        employeeName: employee_name,
+        employeeCode: employee_code,
+        remarks: remarks,
+        requiresEmployeeAction: false
+      }).catch(err => console.error('Failed to send email:', err));
+    }
+
     return { success: true, message: 'AM returned CL to Supervisor' };
   } catch (err) {
     await conn.rollback();
@@ -976,6 +1114,13 @@ async function employeeApprove(id, approverId, remarks) {
   try {
     await conn.beginTransaction();
 
+    // Get employee details
+    const [empRows] = await conn.query(
+      `SELECT e.name as employee_name, e.employee_id as employee_code
+       FROM users e WHERE e.id = ?`,
+      [approverId]
+    );
+
     // 1) Insert into EMPLOYEE LOGS (activity history)
     await conn.query(
       `INSERT INTO cl_employee_logs (cl_id, employee_id, action, remarks)
@@ -994,6 +1139,23 @@ async function employeeApprove(id, approverId, remarks) {
     );
 
     await conn.commit();
+
+    // Send email notification to employee
+    if (empRows.length > 0) {
+      const { employee_name, employee_code } = empRows[0];
+      await sendCLNotificationEmail({
+        clId: id,
+        employeeId: approverId,
+        actionType: 'APPROVED',
+        actorName: employee_name,
+        actorRole: 'Employee',
+        employeeName: employee_name,
+        employeeCode: employee_code,
+        remarks: remarks,
+        requiresEmployeeAction: false
+      }).catch(err => console.error('Failed to send email:', err));
+    }
+
     return { success: true, message: 'Employee approved CL, moved to HR' };
   } catch (err) {
     await conn.rollback();
@@ -1032,6 +1194,37 @@ async function employeeReturn(id, approverId, remarks) {
     );
 
     await conn.commit();
+
+    // Get employee details for email
+    const [clRows] = await conn.query(
+      `SELECT ch.employee_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers ch
+       JOIN users e ON ch.employee_id = e.id
+       WHERE ch.id = ?`,
+      [id]
+    );
+
+    // Send email notification to employee
+    const [empRows] = await conn.query(
+      `SELECT name FROM users WHERE id = ?`,
+      [approverId]
+    );
+
+    if (clRows.length > 0 && empRows.length > 0) {
+      const { employee_id, employee_name, employee_code } = clRows[0];
+      await sendCLNotificationEmail({
+        clId: id,
+        employeeId: employee_id,
+        actionType: 'RETURNED',
+        actorName: empRows[0].name,
+        actorRole: 'Employee',
+        employeeName: employee_name,
+        employeeCode: employee_code,
+        remarks: remarks,
+        requiresEmployeeAction: false
+      }).catch(err => console.error('Failed to send email:', err));
+    }
+
     return { success: true, message: 'Employee returned CL to Supervisor' };
   } catch (err) {
     await conn.rollback();
@@ -1074,6 +1267,37 @@ async function hrApprove(id, approverId, remarks) {
     );
 
     await conn.commit();
+
+    // Get CL and employee details for email
+    const [clRows] = await conn.query(
+      `SELECT ch.employee_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers ch
+       JOIN users e ON ch.employee_id = e.id
+       WHERE ch.id = ?`,
+      [id]
+    );
+
+    const [hrRows] = await conn.query(
+      `SELECT name FROM users WHERE id = ?`,
+      [approverId]
+    );
+
+    // Send email notification to employee
+    if (clRows.length > 0 && hrRows.length > 0) {
+      const { employee_id, employee_name, employee_code } = clRows[0];
+      await sendCLNotificationEmail({
+        clId: id,
+        employeeId: employee_id,
+        actionType: 'APPROVED',
+        actorName: hrRows[0].name,
+        actorRole: 'HR',
+        employeeName: employee_name,
+        employeeCode: employee_code,
+        remarks: remarks,
+        requiresEmployeeAction: false
+      }).catch(err => console.error('Failed to send email:', err));
+    }
+
     return { success: true, message: 'HR approved CL - IDP enabled' };
   } catch (err) {
     await conn.rollback();
@@ -1112,6 +1336,37 @@ async function hrReturn(id, approverId, remarks) {
     );
 
     await conn.commit();
+
+    // Get CL and employee details for email
+    const [clRows] = await conn.query(
+      `SELECT ch.employee_id, e.name as employee_name, e.employee_id as employee_code
+       FROM cl_headers ch
+       JOIN users e ON ch.employee_id = e.id
+       WHERE ch.id = ?`,
+      [id]
+    );
+
+    const [hrRows] = await conn.query(
+      `SELECT name FROM users WHERE id = ?`,
+      [approverId]
+    );
+
+    // Send email notification to employee
+    if (clRows.length > 0 && hrRows.length > 0) {
+      const { employee_id, employee_name, employee_code } = clRows[0];
+      await sendCLNotificationEmail({
+        clId: id,
+        employeeId: employee_id,
+        actionType: 'RETURNED',
+        actorName: hrRows[0].name,
+        actorRole: 'HR',
+        employeeName: employee_name,
+        employeeCode: employee_code,
+        remarks: remarks,
+        requiresEmployeeAction: false
+      }).catch(err => console.error('Failed to send email:', err));
+    }
+
     return { success: true, message: 'HR returned CL to Supervisor' };
   } catch (err) {
     await conn.rollback();

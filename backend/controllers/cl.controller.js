@@ -248,58 +248,59 @@ async function uploadJustificationFile(req, res, next) {
 // =====================================
 // =====================================
 // DELETE CL (Supervisor can delete their own CLs)
-// but ONLY if there is no manager history
 // =====================================
 async function deleteCL(req, res, next) {
+  const conn = await db.getConnection();
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: 'Invalid CL id' });
 
-    // Get CL to check ownership + status
-    const [rows] = await db.query(
-      `SELECT id, supervisor_id, status FROM cl_headers WHERE id = ?`,
+    // Get CL details before deleting for logging
+    const [clRows] = await conn.query(
+      `SELECT ch.id, ch.status, e.id as employee_id, e.name as employee_name
+       FROM cl_headers ch
+       JOIN users e ON ch.employee_id = e.id
+       WHERE ch.id = ?`,
       [id]
     );
 
-    if (!rows.length) {
+    if (!clRows.length) {
       return res.status(404).json({ message: 'CL not found' });
     }
 
-    const cl = rows[0];
+    const cl = clRows[0];
 
-    // Only allow supervisor to delete their own CLs
-    if (cl.supervisor_id !== req.user.id) {
-      return res
-        .status(403)
-        .json({ message: 'You can only delete your own CLs' });
-    }
+    await conn.beginTransaction();
 
-    // Only allow deleting DRAFT CLs (still on supervisor’s side)
-    if (cl.status !== 'DRAFT') {
-      return res.status(400).json({
-        message: 'You can only delete CLs that are still in DRAFT status.'
-      });
-    }
+    // Delete all related records first to avoid foreign key constraint errors
+    await conn.query('DELETE FROM cl_employee_logs WHERE cl_id = ?', [id]);
+    await conn.query('DELETE FROM cl_manager_logs WHERE cl_id = ?', [id]);
+    await conn.query('DELETE FROM cl_hr_logs WHERE cl_id = ?', [id]);
+    await conn.query('DELETE FROM cl_items WHERE cl_header_id = ?', [id]);
+    await conn.query('DELETE FROM cl_approvals WHERE cl_header_id = ?', [id]);
+    await conn.query('DELETE FROM notifications WHERE message LIKE ?', [`%CL #${id}%`]);
+    await conn.query('DELETE FROM recent_actions WHERE cl_id = ?', [id]);
+    await conn.query('DELETE FROM cl_headers WHERE id = ?', [id]);
 
-    // Check if there is any manager history for this CL
-    const [logRows] = await db.query(
-      `SELECT 1 FROM cl_manager_logs WHERE cl_id = ? LIMIT 1`,
-      [id]
+    // Log deletion to recent actions
+    await conn.query(
+      `INSERT INTO recent_actions (actor_id, module, action_type, cl_id, employee_id, title, description, url, created_at)
+       VALUES (?, 'CL', 'CL_DELETED', NULL, ?, ?, ?, NULL, NOW())`,
+      [
+        req.user.id,
+        cl.employee_id,
+        `Deleted CL for ${cl.employee_name}`,
+        `CL #${id} (was in ${cl.status} status)`
+      ]
     );
 
-    if (logRows.length > 0) {
-      return res.status(400).json({
-        message:
-          'This CL already has Manager actions (approve/return). It cannot be deleted because there is history attached.'
-      });
-    }
-
-    // No manager logs, OK to delete header (and cl_items will cascade via FK)
-    await db.query(`DELETE FROM cl_headers WHERE id = ?`, [id]);
-
+    await conn.commit();
     res.json({ message: 'CL deleted successfully', id });
   } catch (err) {
+    await conn.rollback();
     next(err);
+  } finally {
+    conn.release();
   }
 }
 
@@ -378,7 +379,8 @@ async function getAMPending(req, res, next) {
 // =====================================
 async function getHRSummary(req, res, next) {
   try {
-    const summary = await clService.getHRSummary(req.user.id);
+    const department = req.query.department || null;
+    const summary = await clService.getHRSummary(req.user.id, department);
     res.json(summary);
   } catch (err) {
     next(err);

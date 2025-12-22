@@ -134,17 +134,6 @@ function AMDashboard() {
     });
   }
 
-  async function handleMarkAllAsRead() {
-    try {
-      await apiRequest('/api/notifications/mark-all-read', { method: 'PATCH' });
-      // Reload notifications to update UI
-      const data = await apiRequest('/api/notifications');
-      setNotifications(data || []);
-    } catch (err) {
-      console.error('Failed to mark all notifications as read:', err);
-    }
-  }
-
   async function proceedToNotificationLink(n) {
     setNotificationModalState({ open: false, notification: null });
     

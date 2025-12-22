@@ -5,6 +5,7 @@ const { db } = require('../config/db');
 async function getMyNotifications(req, res, next) {
   try {
     const userId = req.user.id;
+    const userRole = req.user.role;
 
     const [rows] = await db.query(
       `SELECT id, recipient_id, message, module, status, read_at, created_at
@@ -16,17 +17,70 @@ async function getMyNotifications(req, res, next) {
     );
 
     // Your frontend expects: id, title, url, created_at
-    // DB has only: message/module. So we map them.
-    const mapped = rows.map((n) => ({
-      id: n.id,
-      title: n.module || 'Notification',
-      url: '/supervisor',          // ✅ default (you can improve later)
-      created_at: n.created_at,
-      message: n.message,
-      module: n.module,
-      status: n.status,
-      read_at: n.read_at,
-    }));
+    // DB has only: message/module. So we map them and determine the correct URL
+    const mapped = rows.map((n) => {
+      // Extract CL ID from message (format: "CL #123 for...")
+      const clIdMatch = n.message?.match(/CL #(\d+)/);
+      const clId = clIdMatch ? clIdMatch[1] : null;
+      
+      // Determine URL based on user role and CL ID
+      let url = '/';
+      if (clId) {
+        switch(userRole) {
+          case 'Supervisor':
+            url = `/cl/supervisor/review/${clId}`;
+            break;
+          case 'Manager':
+            url = `/cl/submissions/${clId}`;
+            break;
+          case 'Employee':
+            url = `/cl/employee/review/${clId}`;
+            break;
+          case 'AM':
+            url = `/cl/am/review/${clId}`;
+            break;
+          case 'HR':
+          case 'Admin':
+            url = `/cl/hr/review/${clId}`;
+            break;
+          default:
+            url = `/${userRole.toLowerCase()}`;
+        }
+      } else {
+        // Fallback to dashboard if no CL ID found
+        switch(userRole) {
+          case 'Supervisor':
+            url = '/supervisor';
+            break;
+          case 'Manager':
+            url = '/manager';
+            break;
+          case 'Employee':
+            url = '/employee';
+            break;
+          case 'AM':
+            url = '/am';
+            break;
+          case 'HR':
+          case 'Admin':
+            url = '/hr';
+            break;
+          default:
+            url = '/';
+        }
+      }
+
+      return {
+        id: n.id,
+        title: n.module || 'Notification',
+        url: url,
+        created_at: n.created_at,
+        message: n.message,
+        module: n.module,
+        status: n.status,
+        read_at: n.read_at,
+      };
+    });
 
     res.json(mapped);
   } catch (err) {
@@ -64,22 +118,4 @@ async function markAsRead(req, res, next) {
   }
 }
 
-// PATCH /api/notifications/mark-all-read
-async function markAllAsRead(req, res, next) {
-  try {
-    const userId = req.user.id;
-
-    await db.query(
-      `UPDATE notifications
-       SET status = 'Read', read_at = NOW()
-       WHERE recipient_id = ? AND status = 'Unread'`,
-      [userId]
-    );
-
-    res.json({ ok: true, message: 'All notifications marked as read' });
-  } catch (err) {
-    next(err);
-  }
-}
-
-module.exports = { getMyNotifications, markAsRead, markAllAsRead };
+module.exports = { getMyNotifications, markAsRead };
