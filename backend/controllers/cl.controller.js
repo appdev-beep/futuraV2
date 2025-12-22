@@ -279,7 +279,7 @@ async function deleteCL(req, res, next) {
     await conn.query('DELETE FROM cl_items WHERE cl_header_id = ?', [id]);
     await conn.query('DELETE FROM cl_approvals WHERE cl_header_id = ?', [id]);
     await conn.query('DELETE FROM notifications WHERE message LIKE ?', [`%CL #${id}%`]);
-    await conn.query('DELETE FROM recent_actions WHERE cl_id = ?', [id]);
+    // ✅ DO NOT DELETE recent_actions - they are permanent audit logs
     await conn.query('DELETE FROM cl_headers WHERE id = ?', [id]);
 
     // Log deletion to recent actions
