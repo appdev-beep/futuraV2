@@ -142,6 +142,53 @@ async function listUsers() {
   return rows;
 }
 
+async function getUserById(userId) {
+  // First, fetch user with department and position names (avoid joining on supervisor_id which may not exist)
+  const [rows] = await db.query(
+    `
+    SELECT
+      u.id,
+      u.employee_id,
+      u.name,
+      u.email,
+      u.position_id,
+      u.department_id,
+      u.role,
+      u.is_active,
+      d.name  AS department_name,
+      p.title AS position_title,
+      u.created_at,
+      u.updated_at
+    FROM users u
+    LEFT JOIN departments d ON u.department_id = d.id
+    LEFT JOIN positions   p ON u.position_id = p.id
+    WHERE u.id = ?
+    `,
+    [userId]
+  );
+
+  if (!rows || rows.length === 0) return null;
+
+  const user = rows[0];
+
+  // Try to determine supervisor name:
+  // 1) If users table has supervisor_id column, a previous join would have returned it; but since schema may not include it,
+  //    fall back to finding a user with role='Supervisor' in the same department.
+  try {
+    const [srows] = await db.query(
+      `SELECT name FROM users WHERE role = 'Supervisor' AND department_id = ? LIMIT 1`,
+      [user.department_id]
+    );
+
+    user.supervisor_name = (srows && srows[0] && srows[0].name) ? srows[0].name : null;
+  } catch (err) {
+    // If query fails for any reason, just set supervisor_name null and continue
+    user.supervisor_name = null;
+  }
+
+  return user;
+}
+
 async function deleteUser(userId) {
   // Soft delete by setting is_active = 0
   const [result] = await db.query(
@@ -161,5 +208,6 @@ async function deleteUser(userId) {
 module.exports = {
   createUser,
   listUsers,
-  deleteUser
+  deleteUser,
+  getUserById
 };

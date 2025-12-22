@@ -5,6 +5,9 @@ const { requireAuth, requireRole } = require('../middleware/auth.middleware');
 const router = express.Router();
 
 router.use(requireAuth);
+// Allow authenticated users to fetch their own profile; role checks apply to other user management routes
+router.get('/:id', userController.getById);
+
 router.use(requireRole('Admin', 'Supervisor', 'Manager', 'HR')); // Admin, Supervisor, Manager, and HR can access users
 
 // GET /api/users

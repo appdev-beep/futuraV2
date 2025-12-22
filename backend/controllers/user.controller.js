@@ -1,4 +1,4 @@
-const { createUser, listUsers, deleteUser } = require('../services/user.service');
+const { createUser, listUsers, deleteUser, getUserById } = require('../services/user.service');
 
 // GET /api/users
 async function getAll(req, res, next) {
@@ -57,8 +57,31 @@ async function deleteById(req, res, next) {
   }
 }
 
+// GET /api/users/:id
+async function getById(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    // Allow access if requesting own profile or admin
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    if (String(req.user.id) !== String(id) && req.user.role !== 'Admin') {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const user = await getUserById(id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getAll,
   create,
   deleteById
+  ,getById
 };
