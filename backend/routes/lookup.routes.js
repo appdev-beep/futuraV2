@@ -7,7 +7,7 @@ const router = express.Router();
 
 // If only admins can see the lookups, keep this
 router.use(requireAuth);
-router.use(requireRole('Admin', 'Supervisor', 'HR', 'Manager'));
+router.use(requireRole('Admin', 'Supervisor', 'HR', 'Manager', 'AM'));
 
 // GET /api/lookup/departments
 router.get('/departments', lookupController.getDepartments);

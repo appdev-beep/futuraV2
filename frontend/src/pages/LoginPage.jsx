@@ -19,31 +19,39 @@ function LoginPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
-
-try {
-  const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password })
-  });
-
+    console.log('LOGIN: submitting', { email, password });
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      console.log('LOGIN: response status', res.status);
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Login failed');
+        let errMsg = 'Login failed';
+        try {
+          const err = await res.json();
+          errMsg = err.message || errMsg;
+        } catch (e) { /* ignore error */ }
+        console.error('LOGIN: error response', errMsg);
+        throw new Error(errMsg);
       }
-
       const data = await res.json();
-
+      console.log('LOGIN: response data', data);
       // save token + user to localStorage
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-
+      // Debug: log user and token
+      console.log('LOGIN DEBUG:', { user: data.user, token: data.token });
+        // Show localStorage contents before redirect
+        alert('DEBUG: localStorage user=' + localStorage.getItem('user') + '\ntoken=' + localStorage.getItem('token'));
       const role = data.user.role;
       const redirectTo = ROLE_REDIRECTS[role] || '/';
-
+      console.log('LOGIN: redirecting to', redirectTo);
       window.location.href = redirectTo;
     } catch (err) {
       setError(err.message);
+      console.error('LOGIN: catch error', err);
     }
   }
 
@@ -54,6 +62,11 @@ try {
           <h2 className="text-3xl font-bold text-gray-800 mb-2">FUTURA</h2>
           <p className="text-gray-500 text-sm">Sign in to your account</p>
         </div>
+        {error && (
+          <div className="mb-4 text-red-600 text-center font-semibold">
+            {error}
+          </div>
+        )}
         
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">

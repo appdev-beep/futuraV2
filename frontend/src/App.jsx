@@ -2,9 +2,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPageSeparate from './pages/LoginPage';
 import AdminCreateUserPage from './pages/AdminPage';
-import SupervisorDashboard from './pages/SupervisorDashboard';
-import SupervisorReviewCLPage from './pages/SupervisorReviewCLPage';
-import StartCLPage from './pages/StartCLPage';
+import SupervisorDashboard from './pages/Supervisor/SupervisorDashboard';
+import SupervisorReviewCLPage from './pages/Supervisor/SupervisorReviewCLPage';
+import StartCLPage from './pages/Supervisor/StartCLPage';
 import ManagerDashboard from './pages/ManagerDashboard';
 import ManagerReviewCLPage from './pages/ManagerReviewCLPage';
 import EmployeeDashboard from './pages/EmployeeDashboard';

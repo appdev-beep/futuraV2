@@ -39,7 +39,9 @@ async function getById(id) {
     `SELECT 
         ci.*,
         c.name AS competency_name,
-        c.description AS competency_description
+        c.description AS competency_description,
+        c.competency_area,
+        c.category
      FROM cl_items ci
      JOIN competencies c ON ci.competency_id = c.id
      WHERE ci.cl_header_id = ?`,
@@ -53,6 +55,8 @@ async function getById(id) {
       id: item.id,
       competency_id: item.competency_id,
       competency_name: item.competency_name,
+      competency_area: item.competency_area,
+      category: item.category,
       mplr: item.mplr_level,
       required_level: item.mplr_level,
       assigned_level: item.assigned_level,

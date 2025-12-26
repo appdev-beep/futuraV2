@@ -18,7 +18,7 @@ import {
 } from '@heroicons/react/24/outline';
 import '../index.css';
 import '../App.css'; 
-import ProficiencyTable, { getProficiencyFromScore } from '../components/ProficiencyGuide';
+import ProficiencyTable from '../components/ProficiencyGuide';
 import { displayStatus } from '../utils/statusHelper';
 
 function HRDashboard() {
@@ -42,7 +42,6 @@ function HRDashboard() {
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
   const [showFullNotifications, setShowFullNotifications] = useState(false);
-
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
     notification: null,
@@ -55,13 +54,22 @@ function HRDashboard() {
     loading: false,
   });
 
-  const CL_STATUS_SECTIONS = [
-    { key: 'DRAFT', label: 'Returned for Review', icon: PencilSquareIcon },
-    { key: 'PENDING_EMPLOYEE', label: 'For Approval by Employee', icon: UserIcon },
-    { key: 'PENDING_HR', label: 'For Approval by HR', icon: BriefcaseIcon },
-    { key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon },
-    { key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon },
-  ];
+  // Dynamically build CL status sections based on selected department's has_am
+  const CL_STATUS_SECTIONS = useMemo(() => {
+    const sections = [
+      { key: 'DRAFT', label: 'Returned for Review', icon: PencilSquareIcon },
+      { key: 'PENDING_EMPLOYEE', label: 'For Approval by Employee', icon: UserIcon },
+      { key: 'PENDING_HR', label: 'For Approval by HR', icon: BriefcaseIcon },
+    ];
+    // Find the selected department object
+    const deptObj = allDepartments.find(d => d.name === selectedDepartment);
+    if (deptObj && deptObj.has_am) {
+      sections.push({ key: 'PENDING_AM', label: 'For Approval by Assistant Manager', icon: ClockIcon });
+    }
+    sections.push({ key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon });
+    sections.push({ key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon });
+    return sections;
+  }, [allDepartments, selectedDepartment]);
 
   // Auth check – must be logged in and HR
   useEffect(() => {
@@ -79,14 +87,13 @@ function HRDashboard() {
     }
 
     setUser(parsed);
-  }, []);
+  }, [CL_STATUS_SECTIONS]);
 
   // Load dashboard
   useEffect(() => {
     if (!user) return;
 
     async function loadDashboard() {
-      setLoading(true);
       setError('');
 
       try {
@@ -132,7 +139,7 @@ function HRDashboard() {
       }
     }
 
-    loadDashboard();
+  }, [user, CL_STATUS_SECTIONS]);
   }, [user]);
 
   // Notifications (polling)
@@ -170,7 +177,7 @@ function HRDashboard() {
     }
 
     loadRecentActions();
-  }, [user]);
+  }, [user, CL_STATUS_SECTIONS]);
 
   function goTo(url) {
     const currentPath = window.location.pathname;

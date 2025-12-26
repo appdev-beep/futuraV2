@@ -377,10 +377,22 @@ async function getAMPending(req, res, next) {
 // =====================================
 // HR DASHBOARD
 // =====================================
+// AM DASHBOARD: Use manager logic for now
+async function getAMAllCL(req, res, next) {
+  // Reuse manager logic for AM
+  return getManagerAllCL(req, res, next);
+}
+
+async function getAMDepartmentCL(req, res, next) {
+  // Reuse manager logic for AM
+  return getManagerDepartmentCL(req, res, next);
+}
 async function getHRSummary(req, res, next) {
   try {
     const department = req.query.department || null;
     const summary = await clService.getHRSummary(req.user.id, department);
+  getAMAllCL,
+  getAMDepartmentCL,
     res.json(summary);
   } catch (err) {
     next(err);
@@ -595,6 +607,8 @@ module.exports = {
   // AM
   getAMSummary,
   getAMPending,
+  getAMAllCL,
+  getAMDepartmentCL,
 
   // HR
   getHRSummary,

@@ -17,7 +17,26 @@ import {
   ListBulletIcon,
 } from '@heroicons/react/24/outline';
 
-function ManagerDashboard() {
+// Only these roles can access Manager dashboard
+const MANAGER_ROLES = ['Manager', 'HR', 'Admin'];
+
+
+// Dynamically build CL status sections based on department.has_am
+const getCLStatusSections = (department) => {
+  const sections = [
+    { key: 'pending', label: 'For Approval by Manager', icon: ClockIcon },
+    { key: 'returned', label: 'Returned to Supervisor', icon: PencilSquareIcon },
+    { key: 'approved', label: 'Approved by Manager', icon: CheckCircleIcon },
+    { key: 'department', label: 'Department CL Tracking', icon: Squares2X2Icon },
+  ];
+  if (department && department.has_am) {
+    // Insert AM section before Manager
+    sections.splice(1, 0, { key: 'pending_am', label: 'For Approval by Assistant Manager', icon: ClockIcon });
+  }
+  return sections;
+};
+
+function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -36,6 +55,7 @@ function ManagerDashboard() {
   const [departmentStatusFilter, setDepartmentStatusFilter] = useState('ALL'); // Filter for department tracking
   const [employees, setEmployees] = useState([]); // All employees in department
   const [supervisors, setSupervisors] = useState([]); // All supervisors in department
+
   const [expandedSupervisors, setExpandedSupervisors] = useState({}); // Track which supervisors are expanded
   const [selectedSupervisorId, setSelectedSupervisorId] = useState(null); // Selected supervisor to view employees
   const [searchQuery, setSearchQuery] = useState(''); // Search for employees
@@ -52,15 +72,25 @@ function ManagerDashboard() {
   const [showFullNotifications, setShowFullNotifications] = useState(false);
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
 
-  // Only these roles can access Manager dashboard
-  const managerRoles = ['Manager', 'HR', 'Admin'];
+  // Department info for dynamic AM section
+  const [department, setDepartment] = useState(null);
+  // Fetch department info for the user
+  useEffect(() => {
+    if (!user) return;
+    async function fetchDepartment() {
+      try {
+        const departments = await apiRequest('/api/lookup/departments');
+        const dept = departments.find((d) => d.id === user.department_id);
+        setDepartment(dept || null);
+      } catch {
+        setDepartment(null);
+      }
+    }
+    fetchDepartment();
+  }, [user]);
 
-  const CL_STATUS_SECTIONS = [
-    { key: 'pending', label: 'For Approval by Manager', icon: ClockIcon },
-    { key: 'returned', label: 'Returned to Supervisor', icon: PencilSquareIcon },
-    { key: 'approved', label: 'Approved by Manager', icon: CheckCircleIcon },
-    { key: 'department', label: 'Department CL Tracking', icon: Squares2X2Icon },
-  ];
+  // Only these roles can access Manager dashboard
+  // If AM dashboard, restrict to AM role
 
   // ==========================
   // AUTH GUARD & LOAD USER
@@ -73,13 +103,20 @@ function ManagerDashboard() {
     }
 
     const parsed = JSON.parse(stored);
-    if (!managerRoles.includes(parsed.role)) {
-      window.location.href = '/';
-      return;
+    if (isAMDashboard) {
+      if (parsed.role !== 'AM') {
+        window.location.href = '/';
+        return;
+      }
+    } else {
+      if (!MANAGER_ROLES.includes(parsed.role)) {
+        window.location.href = '/';
+        return;
+      }
     }
 
     setUser(parsed);
-  }, []);
+  }, [isAMDashboard]);
 
   // ==========================
   // LOAD DASHBOARD DATA
@@ -89,12 +126,22 @@ function ManagerDashboard() {
 
     async function loadDashboard() {
       try {
-        const [clSummary, clPending, clAll, deptCLs] = await Promise.all([
-          apiRequest('/api/cl/manager/summary'),
-          apiRequest('/api/cl/manager/pending'),
-          apiRequest('/api/cl/manager/all'),
-          apiRequest('/api/cl/manager/department'), // All CLs in manager's department
-        ]);
+        let clSummary, clPending, clAll, deptCLs;
+        if (isAMDashboard) {
+          [clSummary, clPending, clAll, deptCLs] = await Promise.all([
+            apiRequest('/api/cl/am/summary'),
+            apiRequest('/api/cl/am/pending'),
+            apiRequest('/api/cl/am/all'),
+            apiRequest('/api/cl/am/department'),
+          ]);
+        } else {
+          [clSummary, clPending, clAll, deptCLs] = await Promise.all([
+            apiRequest('/api/cl/manager/summary'),
+            apiRequest('/api/cl/manager/pending'),
+            apiRequest('/api/cl/manager/all'),
+            apiRequest('/api/cl/manager/department'),
+          ]);
+        }
 
         setSummary({
           clPending: clSummary.clPending || 0,
@@ -106,33 +153,33 @@ function ManagerDashboard() {
         setPendingCL(clPending || []);
         setAllCL(clAll || []);
         setDepartmentCLs(deptCLs || []);
-        
+
         // Fetch all users and filter by department
         const allUsers = await apiRequest('/api/users');
-        
+
         // Get supervisors in the department
         const deptSupervisors = (allUsers || []).filter(
           u => u.department_id === user.department_id && u.role === 'Supervisor'
         );
         setSupervisors(deptSupervisors);
-        
+
         // Get employees in the department
         const deptEmployees = (allUsers || []).filter(
           u => u.department_id === user.department_id && u.role === 'Employee'
         );
-        
+
         // Enrich with competency data
         const enriched = await Promise.all(
           deptEmployees.map(async (emp) => {
             try {
               const resp = await apiRequest(`/api/cl/employee/${emp.id}/competencies`);
               const competencyCount = (resp?.competencies || []).length;
-              
+
               const histResp = await apiRequest(`/api/cl/employee/${emp.id}/history`);
               const histArr = Array.isArray(histResp) ? histResp : (histResp?.history || []);
               const historyCount = histArr.length;
               const latestCL = histArr.length > 0 ? histArr[0] : null;
-              
+
               return {
                 ...emp,
                 competencyCount,
@@ -144,18 +191,18 @@ function ManagerDashboard() {
             }
           })
         );
-        
+
         setEmployees(enriched);
       } catch (err) {
         console.error(err);
-        setError('Failed to load Manager dashboard data.');
+        setError(isAMDashboard ? 'Failed to load Assistant Manager dashboard data.' : 'Failed to load Manager dashboard data.');
       } finally {
         setLoading(false);
       }
     }
 
     loadDashboard();
-  }, [user]);
+  }, [user, isAMDashboard]);
 
   // ==========================
   // LOAD NOTIFICATIONS (polling)
@@ -207,16 +254,18 @@ function ManagerDashboard() {
   }
 
   function goTo(url) {
+    // For AM dashboard, rewrite review links to AM review page
+    if (isAMDashboard && url.startsWith('/cl/submissions/')) {
+      const id = url.split('/').pop();
+      url = `/cl/am/review/${id}`;
+    }
     const currentPath = window.location.pathname;
     const targetPath = url.split('?')[0];
-    
     // If already on the target page, just reload data instead of full refresh
     if (currentPath === targetPath) {
-      // Reload dashboard data without page refresh
       window.location.reload();
       return;
     }
-    
     window.location.href = url;
   }
 
@@ -338,11 +387,15 @@ function ManagerDashboard() {
     };
   }, [pendingCL, approvedCLs, returnedCLs, departmentCLs]);
 
+
+  // Dynamically build CL status sections based on department
+  const CL_STATUS_SECTIONS = useMemo(() => getCLStatusSections(department), [department]);
+
   const activeSectionLabel = useMemo(() => {
     if (activeSection === 'all') return 'All Competency Levelings';
     const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
     return section ? section.label : 'Competency Levelings';
-  }, [activeSection]);
+  }, [activeSection, CL_STATUS_SECTIONS]);
 
   if (!user) return null;
 
@@ -492,7 +545,7 @@ function ManagerDashboard() {
       <main className="flex-1 overflow-y-auto p-8">
         <header className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Manager Dashboard</h1>
+            <h1 className="text-2xl font-bold text-gray-800">{isAMDashboard ? 'Assistant Manager Dashboard' : 'Manager Dashboard'}</h1>
             <p className="text-gray-600">
               Welcome, {user.name} ({user.employee_id})
             </p>
@@ -509,7 +562,7 @@ function ManagerDashboard() {
         {/* SUMMARY CARDS */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           <SummaryCard
-            label="For Approval by Manager"
+            label={isAMDashboard ? "For Approval by Assistant Manager" : "For Approval by Manager"}
             value={summary.clPending}
             gradientClass="from-yellow-400 to-orange-500"
           />
@@ -519,7 +572,7 @@ function ManagerDashboard() {
             gradientClass="from-red-400 to-red-600"
           />
           <SummaryCard
-            label="Approved by Manager"
+            label={isAMDashboard ? "Approved by Assistant Manager" : "Approved by Manager"}
             value={summary.clApproved}
             gradientClass="from-emerald-400 to-emerald-700"
           />
@@ -534,7 +587,7 @@ function ManagerDashboard() {
               {/* Pending Section */}
               {pendingCL.length > 0 && (
                 <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">For Approval by Manager</h3>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{isAMDashboard ? 'For Approval by Assistant Manager' : 'For Approval by Manager'}</h3>
                   <PendingTable data={pendingCL} goTo={goTo} />
                 </div>
               )}
@@ -1234,7 +1287,7 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
     return employees.filter(emp => emp.supervisor_id === selectedSupervisorId);
   }, [employees, selectedSupervisorId]);
 
-  // Find the selected supervisor's name
+  // Find the selected supervisor's name    
   const selectedSupervisor = useMemo(() => {
     return supervisors.find(s => s.id === selectedSupervisorId);
   }, [supervisors, selectedSupervisorId]);
@@ -1417,9 +1470,7 @@ function EmployeeCard({ employee, goTo }) {
 
 // Employee List Item Component (List View)
 function EmployeeListItem({ employee, goTo }) {
-  const latestDate = employee.latestCL?.created_at
-    ? new Date(employee.latestCL.created_at).toLocaleDateString()
-    : null;
+  
 
   return (
     <button

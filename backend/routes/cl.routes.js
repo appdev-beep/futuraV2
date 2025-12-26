@@ -9,6 +9,40 @@ const router = express.Router();
 // All CL routes require authentication
 router.use(requireAuth);
 
+// GET /api/cl/am/all (history)
+router.get(
+  '/am/all',
+  requireRole('AM'),
+  clController.getAMAllCL
+);
+
+// GET /api/cl/am/department - Track ALL CLs in department
+router.get(
+  '/am/department',
+  requireRole('AM'),
+  clController.getAMDepartmentCL
+);
+// =====================================
+// AM DASHBOARD ROUTES
+// =====================================
+
+// GET /api/cl/am/summary
+router.get(
+  '/am/summary',
+  requireRole('AM'),
+  clController.getAMSummary
+);
+
+// GET /api/cl/am/pending
+router.get(
+  '/am/pending',
+  requireRole('AM'),
+  clController.getAMPending
+);
+
+// All CL routes require authentication
+router.use(requireAuth);
+
 // =====================================
 // SUPERVISOR DASHBOARD ROUTES
 // =====================================
