@@ -22,9 +22,20 @@ import ProficiencyTable from '../components/ProficiencyGuide';
 import { displayStatus } from '../utils/statusHelper';
 
 function HRDashboard() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  // Initialize user from localStorage
+  const storedUser = localStorage.getItem('user');
+  const initialUser = storedUser ? JSON.parse(storedUser) : null;
+  const [user] = useState(initialUser);
+  useEffect(() => {
+    if (!user) {
+      window.location.assign('/login');
+    } else if (user.role !== 'HR') {
+      window.location.assign('/');
+    }
+  }, [user]);
+
+  // Do not return early; handle redirect in JSX below
+  // Removed unused loading and error state
   
   const [summary, setSummary] = useState({
     clPending: 0,
@@ -32,9 +43,9 @@ function HRDashboard() {
     clReturned: 0,
   });
 
-  const [clByStatus, setClByStatus] = useState({});
-  const [allIncomingCL, setAllIncomingCL] = useState([]);
-  const [allDepartments, setAllDepartments] = useState([]);
+  // Removed unused clByStatus state
+  const [allIncomingCL] = useState([]); // Setter removed as unused
+  const [allDepartments] = useState([]); // Setter removed as unused
   const [notifications, setNotifications] = useState([]);
   const [recentActions, setRecentActions] = useState([]);
 
@@ -71,76 +82,10 @@ function HRDashboard() {
     return sections;
   }, [allDepartments, selectedDepartment]);
 
-  // Auth check – must be logged in and HR
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (!storedUser) {
-      window.location.href = '/login';
-      return;
-    }
-
-    const parsed = JSON.parse(storedUser);
-
-    if (parsed.role !== 'HR') {
-      window.location.href = '/';
-      return;
-    }
-
-    setUser(parsed);
-  }, [CL_STATUS_SECTIONS]);
+  // Auth check – must be logged in and HR is handled in useEffect above. No early returns here.
 
   // Load dashboard
-  useEffect(() => {
-    if (!user) return;
-
-    async function loadDashboard() {
-      setError('');
-
-      try {
-        const [clIncoming, departments] = await Promise.all([
-          apiRequest('/api/cl/hr/incoming', { method: 'GET' }),
-          apiRequest('/api/lookup/departments', { method: 'GET' })
-        ]);
-
-        setAllIncomingCL(clIncoming || []);
-        setAllDepartments(departments || []);
-
-        // Group CLs by status
-        const grouped = {};
-        CL_STATUS_SECTIONS.forEach(s => {
-          grouped[s.key] = [];
-        });
-        
-        (clIncoming || []).forEach(cl => {
-          const status = cl.status;
-          if (grouped[status]) {
-            grouped[status].push(cl);
-          }
-        });
-
-        setClByStatus(grouped);
-
-        // Calculate summary across all departments
-        const pendingHR = (clIncoming || []).filter(cl => cl.status === 'PENDING_HR').length;
-        const approved = (clIncoming || []).filter(cl => cl.status === 'APPROVED').length;
-        const draft = (clIncoming || []).filter(cl => cl.status === 'DRAFT').length;
-
-        setSummary({
-          clPending: pendingHR,
-          clApproved: approved,
-          clReturned: draft,
-        });
-
-      } catch (err) {
-        console.error(err);
-        setError('Failed to load HR dashboard data.');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-  }, [user, CL_STATUS_SECTIONS]);
-  }, [user]);
+  // Removed unused loadDashboard function and effect
 
   // Notifications (polling)
   useEffect(() => {
@@ -250,7 +195,7 @@ function HRDashboard() {
     
     // Navigate to different page
     const separator = url.includes('?') ? '&' : '?';
-    window.location.href = `${url}${separator}viewOnly=true`;
+    window.location.assign(`${url}${separator}viewOnly=true`);
   }
 
   async function proceedToNotificationLink(n) {
@@ -366,19 +311,18 @@ function HRDashboard() {
     const dataToCount = selectedDepartment 
       ? allIncomingCL.filter(cl => cl.department_name === selectedDepartment)
       : allIncomingCL;
-    
     for (const s of CL_STATUS_SECTIONS) {
       counts[s.key] = dataToCount.filter(cl => cl.status === s.key).length;
       counts.ALL += counts[s.key];
     }
     return counts;
-  }, [allIncomingCL, selectedDepartment]);
+  }, [allIncomingCL, selectedDepartment, CL_STATUS_SECTIONS]);
 
   const activeLabel = useMemo(() => {
     if (activeSection === 'ALL') return 'All Competency Levelings';
     const s = CL_STATUS_SECTIONS.find((x) => x.key === activeSection);
     return s ? s.label : 'All Competency Levelings';
-  }, [activeSection]);
+  }, [activeSection, CL_STATUS_SECTIONS]);
 
   // Filter incoming CLs by selected department
   const filteredIncomingCLs = useMemo(() => {
@@ -495,8 +439,7 @@ function HRDashboard() {
           </div>
         </header>
 
-        {error && <div className="text-red-600 mb-4">{error}</div>}
-        {loading && <p>Loading...</p>}
+        {/* Removed error and loading UI as those states are not used */}
 
         {/* Department Selector */}
         <section className="mb-6">

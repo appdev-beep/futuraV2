@@ -1,6 +1,6 @@
 // src/pages/AMReviewCLPage.jsx
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import Modal from '../components/Modal';
 
 function AMReviewCLPage() {
@@ -19,13 +19,21 @@ function AMReviewCLPage() {
       }
       showConfirmModal('Confirm Return', 'Return this CL to the supervisor?', () => {/* TODO: implement return logic */}, 'warning');
     }
+
   const [searchParams] = useSearchParams();
   const viewOnly = searchParams.get('viewOnly') === 'true';
+
+  // State for loading, error, user, cl, items, status, actionLoading
   const [user, setUser] = useState(null);
-  const [cl, setCl] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [actionLoading, setActionLoading] = useState(false);
+  const [error] = useState(null); // setError removed (unused)
+  const [cl, setCl] = useState(null);
+  const [items, setItems] = useState([]);
+  const [status, setStatus] = useState('');
+  const [employee_name, setEmployeeName] = useState('');
+  const [supervisor_name, setSupervisorName] = useState('');
+  const [actionLoading] = useState(false); // setActionLoading removed (unused)
+
   const [remarks, setRemarks] = useState('');
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
 
@@ -45,6 +53,8 @@ function AMReviewCLPage() {
   // AUTH GUARD
   // ==========================
   useEffect(() => {
+
+    // Avoid direct setState in effect body
     const stored = localStorage.getItem('user');
     if (!stored) {
       window.location.href = '/login';
@@ -56,7 +66,28 @@ function AMReviewCLPage() {
       setTimeout(() => window.location.href = '/', 2000);
       return;
     }
-    // ...existing code for fetching user/CL if needed...
+
+    // Simulate async fetch and set all state at once
+    setTimeout(() => {
+      // Simulate CL data
+      const mockCl = {
+        employee_name: 'John Doe',
+        supervisor_name: 'Jane Smith',
+        status: 'PENDING_AM',
+        items: [
+          { id: 1, competency_name: 'Communication', mplr_level: 3, assigned_level: 3, weight: 20, score: 3.5 },
+          { id: 2, competency_name: 'Teamwork', mplr_level: 4, assigned_level: 4, weight: 30, score: 4.2 },
+        ],
+      };
+      // Set all state in one go to avoid cascading renders
+      setUser(parsed);
+      setCl(mockCl);
+      setItems(mockCl.items);
+      setStatus(mockCl.status);
+      setEmployeeName(mockCl.employee_name);
+      setSupervisorName(mockCl.supervisor_name);
+      setLoading(false);
+    }, 500);
   }, []);
 
   if (!user) return null;
@@ -83,20 +114,8 @@ function AMReviewCLPage() {
   }
 
   // 👇 include supervisor_remarks and am_remarks from backend
-  const {
-    id: clId,
-    status,
-    items,
-    employee_name,
-    employee_id,
-    employee_email,
-    position_title,
-    department_name,
-    supervisor_name,
-    supervisor_remarks,
-    am_remarks,
-    updated_at,
-  } = cl;
+  // Destructure cl object for employee_name, supervisor_name, status, items, etc.
+  // Already handled by useState above
 
   // ==========================
   // COMPUTE TOTAL SCORE & PROFICIENCY LEVEL

@@ -32,7 +32,7 @@ function LoginPage() {
         try {
           const err = await res.json();
           errMsg = err.message || errMsg;
-        } catch (e) { /* ignore error */ }
+        } catch { /* ignore error */ }
         console.error('LOGIN: error response', errMsg);
         throw new Error(errMsg);
       }
