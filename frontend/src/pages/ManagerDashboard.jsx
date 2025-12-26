@@ -389,13 +389,30 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
 
   // Dynamically build CL status sections based on department
-  const CL_STATUS_SECTIONS = useMemo(() => getCLStatusSections(department), [department]);
+  const CL_STATUS_SECTIONS = useMemo(() => {
+    // For AM dashboard, override the section labels
+    if (isAMDashboard) {
+      return [
+        { key: 'pending', label: 'For Approval by Assistant Manager', icon: ClockIcon },
+        { key: 'returned', label: 'Returned to Supervisor', icon: PencilSquareIcon },
+        { key: 'approved', label: 'Approved by Assistant Manager', icon: CheckCircleIcon },
+        { key: 'department', label: 'Department CL Tracking', icon: Squares2X2Icon },
+      ];
+    }
+    return getCLStatusSections(department);
+  }, [department, isAMDashboard]);
 
   const activeSectionLabel = useMemo(() => {
     if (activeSection === 'all') return 'All Competency Levelings';
     const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
-    return section ? section.label : 'Competency Levelings';
-  }, [activeSection, CL_STATUS_SECTIONS]);
+    if (section) return section.label;
+    // Fallback for AM dashboard
+    if (isAMDashboard) {
+      if (activeSection === 'pending') return 'For Approval by Assistant Manager';
+      if (activeSection === 'approved') return 'Approved by Assistant Manager';
+    }
+    return 'Competency Levelings';
+  }, [activeSection, CL_STATUS_SECTIONS, isAMDashboard]);
 
   if (!user) return null;
 
@@ -585,10 +602,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
           {activeSection === 'all' ? (
             <>
               {/* Pending Section */}
+
               {pendingCL.length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-lg font-semibold text-gray-700 mb-2">{isAMDashboard ? 'For Approval by Assistant Manager' : 'For Approval by Manager'}</h3>
-                  <PendingTable data={pendingCL} goTo={goTo} />
+                  <PendingTable data={pendingCL} goTo={goTo} isAMDashboard={isAMDashboard} />
                 </div>
               )}
 
@@ -596,15 +614,15 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               {returnedCLs.length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-lg font-semibold text-gray-700 mb-2">Returned to Supervisor</h3>
-                  <HistoryTable data={returnedCLs} goTo={goTo} />
+                  <HistoryTable data={returnedCLs} goTo={goTo} isAMDashboard={isAMDashboard} />
                 </div>
               )}
 
               {/* Approved Section */}
               {approvedCLs.length > 0 && (
                 <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Approved by Manager</h3>
-                  <HistoryTable data={approvedCLs} goTo={goTo} />
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{isAMDashboard ? 'Approved by Assistant Manager' : 'Approved by Manager'}</h3>
+                  <HistoryTable data={approvedCLs} goTo={goTo} isAMDashboard={isAMDashboard} />
                 </div>
               )}
 
@@ -824,7 +842,7 @@ function SummaryCard({ label, value, gradientClass }) {
   );
 }
 
-function PendingTable({ data, goTo }) {
+function PendingTable({ data, goTo, isAMDashboard }) {
   return (
     <div className="bg-white shadow rounded overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -835,7 +853,7 @@ function PendingTable({ data, goTo }) {
             <Th>Employee ID</Th>
             <Th>Department</Th>
             <Th>Position</Th>
-            <Th>Status</Th>
+            <Th>{isAMDashboard ? 'For AM Approval' : 'Status'}</Th>
             <Th>Submitted At</Th>
             <Th>Actions</Th>
           </tr>
@@ -849,7 +867,7 @@ function PendingTable({ data, goTo }) {
               <Td>{item.employee_code || item.employee_id}</Td>
               <Td>{item.department_name}</Td>
               <Td>{item.position_title}</Td>
-              <Td>{displayStatus(item.status)}</Td>
+              <Td>{isAMDashboard ? 'For AM Approval' : displayStatus(item.status)}</Td>
               <Td>{new Date(item.submitted_at).toLocaleString()}</Td>
 
               <Td>
@@ -871,7 +889,7 @@ function PendingTable({ data, goTo }) {
 }
 
 // History table – MANAGER ACTIVITY LOG (APPROVED / RETURNED)
-function HistoryTable({ data, goTo }) {
+function HistoryTable({ data, goTo, isAMDashboard }) {
   return (
     <div className="bg-white shadow rounded overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -882,8 +900,8 @@ function HistoryTable({ data, goTo }) {
             <Th>Employee ID</Th>
             <Th>Department</Th>
             <Th>Position</Th>
-            <Th>Manager Decision</Th>
-            <Th>Manager Decided At</Th>
+            <Th>{isAMDashboard ? 'AM Decision' : 'Manager Decision'}</Th>
+            <Th>{isAMDashboard ? 'AM Decided At' : 'Manager Decided At'}</Th>
             <Th>Actions</Th>
           </tr>
         </thead>
@@ -896,11 +914,11 @@ function HistoryTable({ data, goTo }) {
               <Td>{item.employee_code || item.employee_id}</Td>
               <Td>{item.department_name}</Td>
               <Td>{item.position_title}</Td>
-              <Td>{item.manager_decision || '-'}</Td>
+              <Td>{isAMDashboard ? (item.am_decision || '-') : (item.manager_decision || '-')}</Td>
               <Td>
-                {item.manager_decided_at
-                  ? new Date(item.manager_decided_at).toLocaleString()
-                  : '-'}
+                {isAMDashboard
+                  ? (item.am_decided_at ? new Date(item.am_decided_at).toLocaleString() : '-')
+                  : (item.manager_decided_at ? new Date(item.manager_decided_at).toLocaleString() : '-')}
               </Td>
               <Td>
                 <button

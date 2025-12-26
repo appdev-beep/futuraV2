@@ -44,8 +44,32 @@ function HRDashboard() {
   });
 
   // Removed unused clByStatus state
-  const [allIncomingCL] = useState([]); // Setter removed as unused
-  const [allDepartments] = useState([]); // Setter removed as unused
+  const [allIncomingCL, setAllIncomingCL] = useState([]);
+    // Fetch all incoming CLs for HR on mount
+    useEffect(() => {
+      async function fetchIncomingCLs() {
+        try {
+          const data = await apiRequest('/api/cl/hr/incoming', { method: 'GET' });
+          setAllIncomingCL(data || []);
+        } catch (err) {
+          console.error('Failed to load incoming CLs', err);
+        }
+      }
+      fetchIncomingCLs();
+    }, []);
+  const [allDepartments, setAllDepartments] = useState([]);
+    // Fetch departments on mount (restore if removed)
+    useEffect(() => {
+      async function fetchDepartments() {
+        try {
+          const deps = await apiRequest('/api/lookup/departments', { method: 'GET' });
+          setAllDepartments(deps || []);
+        } catch (err) {
+          console.error('Failed to load departments', err);
+        }
+      }
+      fetchDepartments();
+    }, []);
   const [notifications, setNotifications] = useState([]);
   const [recentActions, setRecentActions] = useState([]);
 

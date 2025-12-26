@@ -1,16 +1,38 @@
 // src/pages/AMReviewCLPage.jsx
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { apiRequest } from '../api/client';
 import Modal from '../components/Modal';
 
-function AMReviewCLPage() {
-    function goBack() {
-      window.location.href = '/am';
-    }
 
-    function confirmApprove() {
-      showConfirmModal('Confirm Approval', 'Approve this CL?', () => {/* TODO: implement approve logic */}, 'info');
+function AMReviewCLPage() {
+  const { id } = useParams();
+  function goBack() {
+    window.location.href = '/am';
+  }
+
+
+  function confirmApprove() {
+    showConfirmModal('Confirm Approval', 'Approve this CL?', executeApprove, 'info');
+  }
+
+  async function executeApprove() {
+    closeModal();
+    try {
+      setActionLoading(true);
+      await apiRequest(`/api/cl/${id}/am/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ remarks }),
+      });
+      showModal('Success', 'CL approved successfully. Sent to Manager for approval.', 'success');
+      setTimeout(() => goBack(), 2000);
+    } catch (err) {
+      console.error(err);
+      showModal('Error', err.message || 'Failed to approve CL.', 'error');
+    } finally {
+      setActionLoading(false);
     }
+  }
 
     function confirmReturn() {
       if (!remarks.trim()) {
@@ -23,16 +45,17 @@ function AMReviewCLPage() {
   const [searchParams] = useSearchParams();
   const viewOnly = searchParams.get('viewOnly') === 'true';
 
+
   // State for loading, error, user, cl, items, status, actionLoading
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error] = useState(null); // setError removed (unused)
+  const [error, setError] = useState(null);
   const [cl, setCl] = useState(null);
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState('');
   const [employee_name, setEmployeeName] = useState('');
   const [supervisor_name, setSupervisorName] = useState('');
-  const [actionLoading] = useState(false); // setActionLoading removed (unused)
+  const [actionLoading, setActionLoading] = useState(false);
 
   const [remarks, setRemarks] = useState('');
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
@@ -53,8 +76,6 @@ function AMReviewCLPage() {
   // AUTH GUARD
   // ==========================
   useEffect(() => {
-
-    // Avoid direct setState in effect body
     const stored = localStorage.getItem('user');
     if (!stored) {
       window.location.href = '/login';
@@ -66,29 +87,29 @@ function AMReviewCLPage() {
       setTimeout(() => window.location.href = '/', 2000);
       return;
     }
-
-    // Simulate async fetch and set all state at once
-    setTimeout(() => {
-      // Simulate CL data
-      const mockCl = {
-        employee_name: 'John Doe',
-        supervisor_name: 'Jane Smith',
-        status: 'PENDING_AM',
-        items: [
-          { id: 1, competency_name: 'Communication', mplr_level: 3, assigned_level: 3, weight: 20, score: 3.5 },
-          { id: 2, competency_name: 'Teamwork', mplr_level: 4, assigned_level: 4, weight: 30, score: 4.2 },
-        ],
-      };
-      // Set all state in one go to avoid cascading renders
-      setUser(parsed);
-      setCl(mockCl);
-      setItems(mockCl.items);
-      setStatus(mockCl.status);
-      setEmployeeName(mockCl.employee_name);
-      setSupervisorName(mockCl.supervisor_name);
-      setLoading(false);
-    }, 500);
+    setUser(parsed);
   }, []);
+
+  // Fetch CL details when user and id are available
+  useEffect(() => {
+    if (!user || !id) return;
+    setLoading(true);
+    async function loadCL() {
+      try {
+        const data = await apiRequest(`/api/cl/${id}`, { method: 'GET' });
+        setCl(data);
+        setItems(data.items || []);
+        setStatus(data.status);
+        setEmployeeName(data.employee_name);
+        setSupervisorName(data.supervisor_name);
+      } catch (err) {
+        setError('Failed to load CL details.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadCL();
+  }, [user, id]);
 
   if (!user) return null;
   if (loading) return <p className="p-4">Loading...</p>;
@@ -196,7 +217,7 @@ function AMReviewCLPage() {
                   {(items || []).map((it) => (
                     <tr key={it.id} className="border-t border-slate-100">
                       <td className="px-2 py-1 text-slate-800">{it.competency_name}</td>
-                      <td className="px-2 py-1 text-slate-700">{it.mplr_level}</td>
+                      <td className="px-2 py-1 text-slate-700">{it.mplr ?? it.required_level ?? ''}</td>
                       <td className="px-2 py-1 text-slate-700">{it.assigned_level}</td>
                       <td className="px-2 py-1 text-slate-700">{it.weight}</td>
                       <td className="px-2 py-1 font-semibold text-blue-600">{Number(it.score || 0).toFixed(2)}</td>

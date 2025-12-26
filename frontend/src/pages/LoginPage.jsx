@@ -44,7 +44,7 @@ function LoginPage() {
       // Debug: log user and token
       console.log('LOGIN DEBUG:', { user: data.user, token: data.token });
         // Show localStorage contents before redirect
-        alert('DEBUG: localStorage user=' + localStorage.getItem('user') + '\ntoken=' + localStorage.getItem('token'));
+        // alert removed: no popup on login
       const role = data.user.role;
       const redirectTo = ROLE_REDIRECTS[role] || '/';
       console.log('LOGIN: redirecting to', redirectTo);

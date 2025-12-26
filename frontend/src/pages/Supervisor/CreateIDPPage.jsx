@@ -402,17 +402,15 @@ function CreateIDPPage() {
 
                     {item.developmentActivities.map((activity, activityIndex) => (
                       <div key={activityIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                        <div className="flex justify-end mb-4">
-                          {item.developmentActivities.length > 1 && (
-                            <button
-                              onClick={() => removeDevelopmentActivity(itemIndex, activityIndex)}
-                              className="text-white bg-red-600 hover:bg-red-800 rounded px-2 py-1"
-                            >
-                              <TrashIcon className="h-4 w-4" />
-                            </button>
-                          )}
+                        <div className="flex justify-end mb-2">
+                          <button
+                            onClick={() => removeDevelopmentActivity(itemIndex, activityIndex)}
+                            className="text-white bg-red-600 hover:bg-red-800 rounded px-2 py-1"
+                            title="Remove Activity"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>

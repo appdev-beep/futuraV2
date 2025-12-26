@@ -1081,10 +1081,10 @@ async function amApprove(id, approverId, remarks) {
       [approverId, id]
     );
 
-    // Update CL status to PENDING_EMPLOYEE
+    // Update CL status to PENDING_MANAGER
     await conn.query(
       `UPDATE cl_headers 
-       SET status = 'PENDING_EMPLOYEE', updated_at = NOW()
+       SET status = 'PENDING_MANAGER', updated_at = NOW()
        WHERE id = ?`,
       [id]
     );
