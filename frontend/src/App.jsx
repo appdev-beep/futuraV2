@@ -13,6 +13,8 @@ import AMDashboard from './pages/AMDashboard';
 import AMReviewCLPage from './pages/AMReviewCLPage';
 import HRDashboard from './pages/HRDashboard';
 import HRReviewCLPage from './pages/HRReviewCLPage';
+import CreateIDPPage from './pages/Supervisor/CreateIDPPage';
+import SupervisorViewIDPPage from './pages/Supervisor/SupervisorViewIDPPage';
 import './index.css';
 import './App.css';
 
@@ -33,9 +35,12 @@ function App() {
         <Route path="/supervisor" element={<SupervisorDashboard />} />
         <Route path="/cl/supervisor/review/:id" element={<SupervisorReviewCLPage />} />
         <Route path="/cl/start" element={<StartCLPage />} />
+        <Route path="/supervisor/idp/create/:employeeId" element={<CreateIDPPage />} />
+        <Route path="/supervisor/idp/view/:id" element={<SupervisorViewIDPPage />} />
 
         {/* Manager pages */}
         <Route path="/manager" element={<ManagerDashboard />} />
+        <Route path="/manager/idp/view/:id" element={<SupervisorViewIDPPage />} />
         <Route path="/cl/submissions/:id" element={<ManagerReviewCLPage />} />
 
         {/* Employee pages */}

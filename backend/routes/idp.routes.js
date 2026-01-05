@@ -1,10 +1,19 @@
+
 const express = require('express');
 const idpController = require('../controllers/idp.controller');
 const { requireAuth, requireRole } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
+
 router.use(requireAuth);
+
+// GET /api/idp/manager/pending (IDPs pending manager approval)
+router.get(
+  '/manager/pending',
+  requireRole('Manager', 'HR', 'Admin'),
+  idpController.getManagerPendingIDPs
+);
 
 // GET /api/idp/:id  (everyone logged in can view – later: ownership rules)
 router.get('/:id', idpController.getById);
@@ -37,6 +46,13 @@ router.put(
   idpController.submit
 );
 
+// PUT /api/idp/:id/manager/return (Manager returns IDP to supervisor)
+router.put(
+  '/:id/manager/return',
+  requireRole('Manager', 'HR', 'Admin'),
+  idpController.managerReturnIDP
+);
+
 // =====================================
 // SUPERVISOR DASHBOARD ROUTES
 // =====================================
@@ -46,6 +62,20 @@ router.get(
   '/supervisor/for-creation',
   requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
   idpController.getSupervisorForCreation
+);
+
+// GET /api/idp/supervisor/grouped
+router.get(
+  '/supervisor/grouped',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  idpController.getSupervisorIDPsGrouped
+);
+
+// DELETE /api/idp/:id (delete DRAFT IDP)
+router.delete(
+  '/:id',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  idpController.deleteIDP
 );
 
 module.exports = router;

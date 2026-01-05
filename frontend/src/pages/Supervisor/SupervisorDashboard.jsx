@@ -47,7 +47,7 @@ function SupervisorDashboard() {
     idpApproved: 0,
     idpReturned: 0,
   });
-
+  const [idpByStatus, setIdpByStatus] = useState({});
   const [clByStatus, setClByStatus] = useState({});
   const [idpEmployees, setIdpEmployees] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -55,6 +55,7 @@ function SupervisorDashboard() {
 
   const [activePage, setActivePage] = useState('CL'); // 'CL' or 'IDP'
   const [activeSection, setActiveSection] = useState('ALL');
+  const [activeIDPSection, setActiveIDPSection] = useState('ALL');
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
   const [showFullNotifications, setShowFullNotifications] = useState(false);
 
@@ -73,27 +74,28 @@ function SupervisorDashboard() {
     notification: null,
   });
 
-  // IDP Creation Modal State
-  const [idpModalState, setIdpModalState] = useState({
-    open: false,
-    employee: null,
-    loading: false,
-    saving: false,
-    error: '',
-    competencies: [],
-    idpData: {
-      reviewPeriod: '1st Cycle Performance Review',
-      nextReviewDate: new Date(new Date().getFullYear() + 1, 11, 31).toISOString().split('T')[0],
-      items: []
-    }
-  });
+  // ...removed IDP creation modal state and logic. IDP creation is now handled only in CreateIDPPage.jsx
 
 
 
   const [department, setDepartment] = useState(null);
 
-  // Dynamically build CL status sections based on department.has_am
+  // Dynamically build CL and IDP status sections based on department.has_am
   const CL_STATUS_SECTIONS = useMemo(() => {
+    const sections = [
+      { key: 'DRAFT', label: 'Returned for Review', icon: PencilSquareIcon },
+      { key: 'PENDING_EMPLOYEE', label: 'For Approval by Employee', icon: UserIcon },
+      { key: 'PENDING_HR', label: 'For Approval by HR', icon: BriefcaseIcon },
+    ];
+    if (department && department.has_am) {
+      sections.push({ key: 'PENDING_AM', label: 'For Approval by Assistant Manager', icon: ClockIcon });
+    }
+    sections.push({ key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon });
+    sections.push({ key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon });
+    return sections;
+  }, [department]);
+
+  const IDP_STATUS_SECTIONS = useMemo(() => {
     const sections = [
       { key: 'DRAFT', label: 'Returned for Review', icon: PencilSquareIcon },
       { key: 'PENDING_EMPLOYEE', label: 'For Approval by Employee', icon: UserIcon },
@@ -141,10 +143,11 @@ function SupervisorDashboard() {
 
     async function loadDashboard() {
       try {
-        const [clSummary, clGrouped, idpData] = await Promise.all([
+        const [clSummary, clGrouped, idpCreation, idpGrouped] = await Promise.all([
           apiRequest('/api/cl/supervisor/summary'),
           apiRequest('/api/cl/supervisor/all'),
           apiRequest('/api/idp/supervisor/for-creation'),
+          apiRequest('/api/idp/supervisor/grouped'),
         ]);
 
         setSummary({
@@ -154,14 +157,15 @@ function SupervisorDashboard() {
         });
 
         setClByStatus(clGrouped || {});
-        
-        // Set IDP employees and summary
-        setIdpEmployees(idpData || []);
+        setIdpEmployees(idpCreation || []);
+
+        // Calculate summary from grouped IDPs
+        setIdpByStatus(idpGrouped || {});
         setIdpSummary({
-          idpCreation: (idpData || []).length,
-          idpPending: 0,
-          idpApproved: 0,
-          idpReturned: 0,
+          idpCreation: (idpCreation || []).length,
+          idpPending: (idpGrouped?.PENDING_AM?.length || 0) + (idpGrouped?.PENDING_MANAGER?.length || 0),
+          idpApproved: (idpGrouped?.APPROVED?.length || 0),
+          idpReturned: (idpGrouped?.RETURNED?.length || 0),
         });
       } catch (err) {
         console.error(err);
@@ -369,58 +373,7 @@ function SupervisorDashboard() {
     // Modal stays closed without refresh
   }
 
-  async function openIDPModal(employee) {
-    try {
-      setIdpModalState(prev => ({ ...prev, loading: true, error: '', employee }));
-      
-      // Fetch the approved CL details which contains the competency levels
-      console.log('Fetching CL for employee:', employee);
-      const clResponse = await apiRequest(`/api/cl/${employee.cl_id}`);
-      console.log('CL Response:', clResponse);
-      
-      if (clResponse && clResponse.items && clResponse.items.length > 0) {
-        console.log('Found competencies:', clResponse.items);
-        
-        // Convert CL items to IDP items
-        const idpItems = clResponse.items.map(item => ({
-          competencyId: item.competency_id,
-          competencyName: item.competency_name,
-          competencyArea: item.competency_area, // ✅ ADD THIS
-          currentLevel: item.assigned_level || item.self_rating || 1,
-          targetLevel: Math.min((item.assigned_level || item.self_rating || 1) + 1, 5),
-          developmentActivities: []
-        }));
-        
-        setIdpModalState(prev => ({ 
-          ...prev, 
-          open: true, 
-          loading: false,
-          competencies: clResponse.items || [],
-          idpData: {
-            ...prev.idpData,
-            items: idpItems
-          }
-        }));
-      } else {
-        console.log('No competencies found in response');
-        setIdpModalState(prev => ({ 
-          ...prev, 
-          loading: false, 
-          error: 'No approved competencies found for this employee.',
-          open: true,
-          competencies: []
-        }));
-      }
-    } catch (error) {
-      console.error('Error loading employee competencies:', error);
-      setIdpModalState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: 'Failed to load employee competencies. Please try again.',
-        open: true
-      }));
-    }
-  }
+  // ...removed openIDPModal and all IDP creation logic. Use navigation to CreateIDPPage.jsx for IDP creation.
 
   const unreadCount = useMemo(() => {
     return (notifications || []).filter(
@@ -436,6 +389,15 @@ function SupervisorDashboard() {
     }
     return counts;
   }, [clByStatus, CL_STATUS_SECTIONS]);
+
+  const idpSectionCounts = useMemo(() => {
+    const counts = { ALL: 0 };
+    for (const s of IDP_STATUS_SECTIONS) {
+      counts[s.key] = (idpByStatus?.[s.key] || []).length;
+      counts.ALL += counts[s.key];
+    }
+    return counts;
+  }, [idpByStatus, IDP_STATUS_SECTIONS]);
 
   const activeLabel = useMemo(() => {
     if (activeSection === 'ALL') return 'All Competency Levelings';
@@ -466,70 +428,108 @@ function SupervisorDashboard() {
               <span>Competency Leveling</span>
             </button>
 
-            {/* ✅ REPLACE THE "Start" SLOT WITH OPTIONS */}
             <div className="pr-0">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
                 CL Sections
               </p>
-
-            <button
-              type="button"
-              onClick={() => setActiveSection('ALL')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                ${activeSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-            >
-              <span className="flex items-center gap-2">
-                <Squares2X2Icon className="w-4 h-4" />
-                All
-              </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                {sectionCounts.ALL || 0}
-              </span>
-            </button>
-
-            <div className="mt-1 space-y-1">
-              {CL_STATUS_SECTIONS.map(({ key, label, icon }) => {
-                const Icon = icon;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setActiveSection(key)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                      ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Icon className="w-4 h-4" />
-                      {label}
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                      {sectionCounts[key] || 0}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Keep Start button, but place it AFTER the options */}
-            <button
-              onClick={() => goTo('/cl/start')}
-              className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded
-                         text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 transition"
-            >
-              <span>➤ Start Competency Leveling</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => setActiveSection('ALL')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                  ${activeSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <Squares2X2Icon className="w-4 h-4" />
+                  All
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                  {sectionCounts.ALL || 0}
+                </span>
+              </button>
+              <div className="mt-1 space-y-1">
+                {CL_STATUS_SECTIONS.map(({ key, label, icon }) => {
+                  const Icon = icon;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setActiveSection(key)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                        ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        {label}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                        {sectionCounts[key] || 0}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => goTo('/cl/start')}
+                className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded
+                           text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 transition"
+              >
+                <span>➤ Start Competency Leveling</span>
+              </button>
             </div>
           </div>
 
           {/* IDP */}
-          <button
-            onClick={() => setActivePage('IDP')}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded transition
-              ${activePage === 'IDP' ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'}`}
-          >
-            <BookOpenIcon className="w-5 h-5 text-green-600" />
-            <span>IDP Leveling</span>
-          </button>
+          <div className="space-y-1 mt-6">
+            <button
+              onClick={() => setActivePage('IDP')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded transition
+                ${activePage === 'IDP' ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'}`}
+            >
+              <BookOpenIcon className="w-5 h-5 text-green-600" />
+              <span>IDP Leveling</span>
+            </button>
+            <div className="pr-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
+                IDP Sections
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveIDPSection('ALL')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                  ${activeIDPSection === 'ALL' ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <Squares2X2Icon className="w-4 h-4" />
+                  All
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                  {idpSectionCounts.ALL || 0}
+                </span>
+              </button>
+              <div className="mt-1 space-y-1">
+                {IDP_STATUS_SECTIONS.map(({ key, label, icon }) => {
+                  const Icon = icon;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setActiveIDPSection(key)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                        ${activeIDPSection === key ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        {label}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                        {idpSectionCounts[key] || 0}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </nav>
       </aside>
 
@@ -582,7 +582,10 @@ function SupervisorDashboard() {
           <SupervisorIDP
             idpSummary={idpSummary}
             idpEmployees={idpEmployees}
-            openIDPModal={openIDPModal}
+            idpByStatus={idpByStatus}
+            activeIDPSection={activeIDPSection}
+            setActiveIDPSection={setActiveIDPSection}
+            IDP_STATUS_SECTIONS={IDP_STATUS_SECTIONS}
           />
         )}
       </main>
@@ -711,70 +714,7 @@ function SupervisorDashboard() {
         onClose={closeNotificationModal}
       />
 
-      {/* IDP Creation Modal */}
-      <IDPCreationModal
-        isOpen={idpModalState.open}
-        employee={idpModalState.employee}
-
-        idpData={idpModalState.idpData}
-        loading={idpModalState.loading}
-        saving={idpModalState.saving}
-        error={idpModalState.error}
-        onClose={() => setIdpModalState(prev => ({ ...prev, open: false }))}
-        onSave={async (idpPayload) => {
-          try {
-            setIdpModalState(prev => ({ ...prev, saving: true, error: '' }));
-            
-            await apiRequest('/api/idp/create', {
-              method: 'POST',
-              body: JSON.stringify({
-                employeeId: idpModalState.employee?.id,
-                supervisorId: user.id,
-                reviewPeriod: idpPayload.reviewPeriod,
-                nextReviewDate: idpPayload.nextReviewDate,
-                items: idpPayload.items
-              })
-            });
-            
-            setIdpModalState(prev => ({ ...prev, open: false, saving: false }));
-            openModal({
-              title: 'Success',
-              message: 'IDP created successfully!',
-              showCancel: false,
-              confirmText: 'OK',
-            });
-            
-            // Reload IDP employees list
-            const idpData = await apiRequest('/api/idp/supervisor/for-creation');
-            setIdpEmployees(idpData || []);
-            
-          } catch (err) {
-            console.error('Failed to create IDP:', err);
-            setIdpModalState(prev => ({ 
-              ...prev, 
-              saving: false, 
-              error: 'Failed to create IDP. Please try again.' 
-            }));
-          }
-        }}
-        onUpdateIdpData={(path, value) => {
-          setIdpModalState(prev => {
-            const newData = { ...prev.idpData };
-            const pathArray = path.split('.');
-            let current = newData;
-            
-            for (let i = 0; i < pathArray.length - 1; i++) {
-              if (!current[pathArray[i]]) {
-                current[pathArray[i]] = {};
-              }
-              current = current[pathArray[i]];
-            }
-            
-            current[pathArray[pathArray.length - 1]] = value;
-            return { ...prev, idpData: newData };
-          });
-        }}
-      />
+      {/* IDP Creation Modal removed. All IDP creation is now handled in CreateIDPPage.jsx */}
 
       <FullRecentActionsModal
         open={showFullRecentActions}

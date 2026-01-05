@@ -71,12 +71,26 @@ async function getById(req, res, next) {
   try {
     const { id } = req.params;
 
-    // Allow access if requesting own profile or admin
+
+    // Allow access if requesting own profile, admin, or supervisor of the user
     if (!req.user) {
       return res.status(401).json({ message: 'Authentication required' });
     }
 
-    if (String(req.user.id) !== String(id) && req.user.role !== 'Admin') {
+    if (String(req.user.id) === String(id) || req.user.role === 'Admin') {
+      // Self or admin can access
+      // continue
+    } else if (
+      ['Supervisor', 'AM', 'Manager', 'HR'].includes(req.user.role)
+    ) {
+      // Check if the requested user is supervised by the requester
+      const user = await getUserById(id);
+      if (!user) return res.status(404).json({ message: 'User not found' });
+      if (String(user.supervisor_id) !== String(req.user.id)) {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+      // continue, user is supervised by requester
+    } else {
       return res.status(403).json({ message: 'Forbidden' });
     }
 

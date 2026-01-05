@@ -1,3 +1,58 @@
+// Manager returns IDP to supervisor
+async function managerReturnIDP(idpId, managerId, remarks) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    // Check if IDP exists and is pending manager
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ? AND manager_id = ?', [idpId, 'PENDING_MANAGER', managerId]);
+    if (rows.length === 0) {
+      throw new Error('IDP not found or not pending manager approval.');
+    }
+    // Update status and remarks
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['RETURNED', idpId]);
+    // Optionally, store remarks in a remarks/history table or in idp_headers if a column exists
+    // For now, assume a remarks column exists on idp_headers
+    await conn.query('UPDATE idp_headers SET manager_remarks = ? WHERE id = ?', [remarks, idpId]);
+    await conn.commit();
+    logInfo('Manager returned IDP to supervisor', { idpId, managerId });
+    return { success: true };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+// Get all IDPs pending manager approval
+async function getIDPsPendingManager(managerId) {
+  const [headers] = await db.query(
+    `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id
+     FROM idp_headers h
+     JOIN users e ON h.employee_id = e.id
+     WHERE h.status = 'PENDING_MANAGER' AND h.manager_id = ?
+     ORDER BY h.created_at DESC`,
+    [managerId]
+  );
+  return headers;
+}
+// Delete IDP by id (only DRAFT)
+async function deleteById(id) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    // Delete items first
+    await conn.query('DELETE FROM idp_items WHERE idp_header_id = ?', [id]);
+    // Delete header
+    await conn.query('DELETE FROM idp_headers WHERE id = ?', [id]);
+    await conn.commit();
+    logInfo('Deleted DRAFT IDP', { id });
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
 // src/services/idp.service.js
 const { db } = require('../config/db');
 const { logInfo } = require('../utils/logger');
@@ -25,18 +80,42 @@ async function getById(id) {
 
 // Create IDP header
 async function create(payload) {
+  // Get department info for employee
+  const [userRows] = await db.query(
+    `SELECT u.department_id, d.has_am FROM users u JOIN departments d ON u.department_id = d.id WHERE u.id = ?`,
+    [payload.employee_id]
+  );
+  const departmentId = userRows[0]?.department_id;
+  const hasAM = !!userRows[0]?.has_am;
+
+  // Get AM and Manager for department
+  let amId = null, managerId = null;
+  if (hasAM) {
+    const [amRows] = await db.query(
+      `SELECT id FROM users WHERE department_id = ? AND role = 'AM' LIMIT 1`,
+      [departmentId]
+    );
+    amId = amRows[0]?.id || null;
+  }
+  const [managerRows] = await db.query(
+    `SELECT id FROM users WHERE department_id = ? AND role = 'Manager' LIMIT 1`,
+    [departmentId]
+  );
+  managerId = managerRows[0]?.id || null;
+
   const [result] = await db.query(
     `INSERT INTO idp_headers
-      (cl_header_id, employee_id, supervisor_id, cycle_id, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'DRAFT', NOW(), NOW())`,
+      (cl_header_id, employee_id, supervisor_id, cycle_id, status, created_at, updated_at, manager_id, am_id)
+     VALUES (?, ?, ?, ?, 'DRAFT', NOW(), NOW(), ?, ?)` ,
     [
       payload.cl_header_id,
       payload.employee_id,
       payload.supervisor_id,
-      payload.cycle_id
+      payload.cycle_id,
+      managerId,
+      amId
     ]
   );
-
   const idpId = result.insertId;
   logInfo('Created IDP header', { idpId });
   return { id: idpId };
@@ -103,15 +182,42 @@ async function update(id, payload) {
   }
 }
 
-// Submit IDP (simple: mark as PENDING_AM)
+// Submit IDP: route to AM if department has AM, else to Manager
 async function submit(id) {
-  await db.query(
-    `UPDATE idp_headers
-     SET status = 'PENDING_AM', updated_at = NOW()
-     WHERE id = ?`,
+  // 1. Get the IDP header and department info
+  const [headerRows] = await db.query(
+    `SELECT ih.*, u.department_id, d.has_am
+     FROM idp_headers ih
+     JOIN users u ON ih.employee_id = u.id
+     JOIN departments d ON u.department_id = d.id
+     WHERE ih.id = ?`,
     [id]
   );
+  if (!headerRows.length) throw new Error('IDP not found');
+  const header = headerRows[0];
+  const hasAM = !!header.has_am;
+  let amId = null, managerId = null;
+  if (hasAM) {
+    const [amRows] = await db.query(
+      `SELECT id FROM users WHERE department_id = ? AND role = 'AM' LIMIT 1`,
+      [header.department_id]
+    );
+    amId = amRows[0]?.id || null;
+  }
+  const [managerRows] = await db.query(
+    `SELECT id FROM users WHERE department_id = ? AND role = 'Manager' LIMIT 1`,
+    [header.department_id]
+  );
+  managerId = managerRows[0]?.id || null;
 
+  const nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
+  // Update status and set am_id/manager_id as appropriate
+  await db.query(
+    `UPDATE idp_headers
+     SET status = ?, updated_at = NOW(), am_id = ?, manager_id = ?
+     WHERE id = ?`,
+    [nextStatus, amId, managerId, id]
+  );
   return await getById(id);
 }
 
@@ -149,13 +255,40 @@ async function getEmployeesForIDPCreation(supervisorId) {
   }));
 }
 
+// Get all IDPs for a supervisor, grouped by status
+async function getIDPsGroupedByStatus(supervisorId) {
+  // Get all IDP headers for this supervisor
+
+  const [headers] = await db.query(
+    `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id
+     FROM idp_headers h
+     JOIN users e ON h.employee_id = e.id
+     WHERE h.supervisor_id = ?
+     ORDER BY h.created_at DESC`,
+    [supervisorId]
+  );
+
+  // Group by status
+  const grouped = {};
+  for (const header of headers) {
+    const status = header.status || 'UNKNOWN';
+    if (!grouped[status]) grouped[status] = [];
+    grouped[status].push(header);
+  }
+  return grouped;
+}
+
 module.exports = {
   getById,
   create,
   createWithItems,
   update,
   submit,
-  getEmployeesForIDPCreation
+  getEmployeesForIDPCreation,
+  getIDPsGroupedByStatus,
+  deleteById,
+  getIDPsPendingManager,
+  managerReturnIDP,
 };
 
 // Create IDP with full development plan
@@ -169,18 +302,42 @@ async function createWithItems(payload) {
     const [cycleRows] = await conn.query('SELECT id FROM cycles WHERE is_active = 1 LIMIT 1');
     const cycleId = cycleRows.length > 0 ? cycleRows[0].id : 1;
     
+    // Get department info for employee
+    const [userRows] = await conn.query(
+      `SELECT u.department_id, d.has_am FROM users u JOIN departments d ON u.department_id = d.id WHERE u.id = ?`,
+      [payload.employeeId]
+    );
+    const departmentId = userRows[0]?.department_id;
+    const hasAM = !!userRows[0]?.has_am;
+
+    // Get AM and Manager for department
+    let amId = null, managerId = null;
+    if (hasAM) {
+      const [amRows] = await conn.query(
+        `SELECT id FROM users WHERE department_id = ? AND role = 'AM' LIMIT 1`,
+        [departmentId]
+      );
+      amId = amRows[0]?.id || null;
+    }
+    const [managerRows] = await conn.query(
+      `SELECT id FROM users WHERE department_id = ? AND role = 'Manager' LIMIT 1`,
+      [departmentId]
+    );
+    managerId = managerRows[0]?.id || null;
+
     // 1. Create IDP header
     const [headerResult] = await conn.query(
       `INSERT INTO idp_headers
-        (employee_id, supervisor_id, cycle_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, 'DRAFT', NOW(), NOW())`,
+        (employee_id, supervisor_id, cycle_id, status, created_at, updated_at, manager_id, am_id)
+       VALUES (?, ?, ?, 'DRAFT', NOW(), NOW(), ?, ?)` ,
       [
         payload.employeeId,
         payload.supervisorId,
-        cycleId
+        cycleId,
+        managerId,
+        amId
       ]
     );
-    
     const idpId = headerResult.insertId;
     
     // 2. Create IDP items for each competency with development activities
@@ -220,9 +377,21 @@ async function createWithItems(payload) {
     
     await conn.commit();
     logInfo('Created comprehensive IDP', { idpId, employeeId: payload.employeeId });
-    
+
+    // Log recent action for IDP creation
+    const { logRecentAction } = require('./recentActions.service');
+    await logRecentAction({
+      actor_id: payload.supervisorId,
+      module: 'IDP',
+      action_type: 'CREATE',
+      employee_id: payload.employeeId,
+      title: 'Created IDP',
+      description: `Supervisor created IDP for employee ${payload.employeeId}`,
+      url: `/supervisor/idp/view/${idpId}`
+    });
+
     return { id: idpId };
-    
+
   } catch (err) {
     await conn.rollback();
     throw err;

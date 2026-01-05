@@ -1,5 +1,6 @@
 // src/pages/ManagerDashboard.jsx
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../api/client';
 import { displayStatus } from '../utils/statusHelper';
 import {
@@ -37,6 +38,35 @@ const getCLStatusSections = (department) => {
 };
 
 function ManagerDashboard({ isAMDashboard = false } = {}) {
+    // Approve/Return handlers for IDP
+    async function handleApproveIDP(idpId) {
+      if (!window.confirm('Approve this IDP?')) return;
+      try {
+        await apiRequest(`/api/idp/${idpId}/manager/approve`, { method: 'PUT' });
+        alert('IDP approved successfully.');
+        setPendingIDPs(pendingIDPs => pendingIDPs.filter(idp => idp.id !== idpId));
+      } catch (err) {
+        alert('Failed to approve IDP.');
+        console.error(err);
+      }
+    }
+
+    async function handleReturnIDP(idpId) {
+      const remarks = window.prompt('Enter remarks for return:');
+      if (!remarks) return;
+      try {
+        await apiRequest(`/api/idp/${idpId}/manager/return`, {
+          method: 'PUT',
+          body: JSON.stringify({ remarks }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+        alert('IDP returned to supervisor.');
+        setPendingIDPs(pendingIDPs => pendingIDPs.filter(idp => idp.id !== idpId));
+      } catch (err) {
+        alert('Failed to return IDP.');
+        console.error(err);
+      }
+    }
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -118,6 +148,8 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     setUser(parsed);
   }, [isAMDashboard]);
 
+  const navigate = useNavigate();
+
   // ==========================
   // LOAD DASHBOARD DATA
   // ==========================
@@ -193,6 +225,21 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         );
 
         setEmployees(enriched);
+        // Map supervisor IDs to names for CL records so UI shows names instead of raw ids
+        const userMap = {};
+        (allUsers || []).forEach(u => {
+          const display = u.name || u.full_name || ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.employee_id || u.id;
+          userMap[u.id] = display;
+        });
+
+        const mapCLsToNames = (arr) => (arr || []).map(item => ({
+          ...item,
+          supervisor_name: item.supervisor_name || item.supervisor || userMap[item.supervisor_id] || ''
+        }));
+
+        setPendingCL(mapCLsToNames(clPending || []));
+        setAllCL(mapCLsToNames(clAll || []));
+        setDepartmentCLs(mapCLsToNames(deptCLs || []));
       } catch (err) {
         console.error(err);
         setError(isAMDashboard ? 'Failed to load Assistant Manager dashboard data.' : 'Failed to load Manager dashboard data.');
@@ -414,6 +461,22 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     return 'Competency Levelings';
   }, [activeSection, CL_STATUS_SECTIONS, isAMDashboard]);
 
+  // Fetch pending IDPs for manager
+  const [pendingIDPs, setPendingIDPs] = useState([]);
+  useEffect(() => {
+    if (!user) return;
+    async function fetchPendingIDPs() {
+      try {
+        const idps = await apiRequest('/api/idp/manager/pending');
+        setPendingIDPs(idps || []);
+      } catch (err) {
+        // Debug log for error
+        console.error('Error fetching pending IDPs:', err, err?.status, err?.message);
+      }
+    }
+    fetchPendingIDPs();
+  }, [user]);
+
   if (!user) return null;
 
   return (
@@ -541,6 +604,29 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                   );
                 })}
               </div>
+            </div>
+
+            {/* NEW: IDP For Approval Section */}
+            <div className="mt-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
+                IDP For Approval
+              </p>
+
+              <button
+                onClick={() => setActiveSection('idp_pending')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                  ${activeSection === 'idp_pending' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <ClipboardDocumentCheckIcon className="w-4 h-4 text-purple-600" />
+                  Pending IDPs
+                </span>
+                {pendingIDPs.length > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                    {pendingIDPs.length}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
         </nav>
@@ -685,6 +771,53 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               setViewMode={setViewMode}
               goTo={goTo}
             />
+          ) : activeSection === 'idp_pending' ? (
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-3">IDPs For Your Approval</h2>
+              {pendingIDPs.length === 0 ? (
+                <p className="text-gray-400 text-sm italic">No IDPs pending your approval.</p>
+              ) : (
+                <div className="bg-white shadow rounded overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-semibold text-gray-600">IDP ID</th>
+                        <th className="px-4 py-2 text-left font-semibold text-gray-600">Employee</th>
+                        <th className="px-4 py-2 text-left font-semibold text-gray-600">Position</th>
+                        <th className="px-4 py-2 text-left font-semibold text-gray-600">Status</th>
+                        <th className="px-4 py-2 text-left font-semibold text-gray-600">Created At</th>
+                        <th className="px-4 py-2 text-left font-semibold text-gray-600">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {pendingIDPs.map(idp => (
+                        <tr key={idp.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-2">{idp.id}</td>
+                          <td className="px-4 py-2">{idp.employee_name}</td>
+                          <td className="px-4 py-2">{idp.position_id ? `Position #${idp.position_id}` : ''}</td>
+                          <td className="px-4 py-2">{idp.status}</td>
+                          <td className="px-4 py-2">{idp.created_at ? new Date(idp.created_at).toLocaleString() : ''}</td>
+                          <td className="px-4 py-2">
+                            <button
+                              onClick={() => {
+                                // Prefer names available in local supervisor/employee lists to avoid missing names
+                                const emp = idp.employee_name ? { id: idp.employee_id, name: idp.employee_name } : (employees.find(e => e.id === idp.employee_id) ? { id: idp.employee_id, name: employees.find(e => e.id === idp.employee_id).name || employees.find(e => e.id === idp.employee_id).full_name } : { id: idp.employee_id });
+                                const supFromList = supervisors.find(s => s.id === idp.supervisor_id);
+                                const sup = idp.supervisor_name ? { id: idp.supervisor_id, name: idp.supervisor_name } : (supFromList ? { id: supFromList.id, name: supFromList.name || supFromList.full_name || `${supFromList.first_name || ''} ${supFromList.last_name || ''}`.trim() } : { id: idp.supervisor_id });
+                                navigate(`/manager/idp/view/${idp.id}`, { state: { employee: emp, supervisor: sup } });
+                              }}
+                              className="text-blue-600 hover:underline"
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           ) : null}
         </section>
       </main>
