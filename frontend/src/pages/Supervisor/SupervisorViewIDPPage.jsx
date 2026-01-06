@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
-import { COMPLETION_STATUS_OPTIONS } from './idpConstants';
+import CreateIDPPage from './CreateIDPPage';
+import { COMPLETION_STATUS_OPTIONS, DEVELOPMENT_TYPES, CRAYON_COLORS } from './idpConstants';
 
 
 export default function SupervisorViewIDPPage() {
@@ -161,6 +162,11 @@ export default function SupervisorViewIDPPage() {
   const supName = (hasNonNumericSupName ? rawSupName : null) || (header.supervisor && getDisplayName(header.supervisor)) || getDisplayName(supervisorInfo) || '';
   const supPosition = header.supervisor_title || supervisorInfo?.position || supervisorInfo?.title || '';
 
+  // If the IDP is RETURNED and the current user is the supervisor owner, show full Create/Edit form so supervisor can modify and resubmit.
+  if (currentUser && currentUser.role === 'Supervisor' && header.status === 'RETURNED' && Number(supId) === Number(currentUser.id)) {
+    return <CreateIDPPage routeId={id} />;
+  }
+
   // Manager/AM actions
   async function handleApproveAsManager() {
     if (!window.confirm('Approve this IDP?')) return;
@@ -179,6 +185,36 @@ export default function SupervisorViewIDPPage() {
     if (!remarks) return;
     try {
       await apiRequest(`/api/idp/${id}/manager/return`, {
+        method: 'PUT',
+        body: JSON.stringify({ remarks }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      alert('IDP returned to supervisor.');
+      navigate(-1);
+    } catch (err) {
+      alert('Failed to return IDP.');
+      console.error(err);
+    }
+  }
+
+  // Employee actions (acknowledge or return to supervisor)
+  async function handleApproveAsEmployee() {
+    if (!window.confirm('Acknowledge and accept this IDP?')) return;
+    try {
+      await apiRequest(`/api/idp/${id}/employee/approve`, { method: 'PUT' });
+      alert('IDP acknowledged successfully.');
+      navigate(-1);
+    } catch (err) {
+      alert('Failed to acknowledge IDP.');
+      console.error(err);
+    }
+  }
+
+  async function handleReturnAsEmployee() {
+    const remarks = window.prompt('Enter remarks to return to supervisor:');
+    if (!remarks) return;
+    try {
+      await apiRequest(`/api/idp/${id}/employee/return`, {
         method: 'PUT',
         body: JSON.stringify({ remarks }),
         headers: { 'Content-Type': 'application/json' },
@@ -225,15 +261,16 @@ export default function SupervisorViewIDPPage() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              {currentUser && currentUser.role === 'Supervisor' && (header.status === 'DRAFT') && (
+              {currentUser && currentUser.role === 'Supervisor' && Number(supId) === Number(currentUser.id) && (
                 <button
                   onClick={async () => {
-                    if (!window.confirm('Delete this DRAFT IDP? This action cannot be undone.')) return;
+                    if (!window.confirm('Delete this IDP? This action cannot be undone.')) return;
                     try {
                       await apiRequest(`/api/idp/${id}`, { method: 'DELETE' });
                       alert('IDP deleted');
-                      navigate('/supervisor');
-                    } catch {
+                      navigate(-1);
+                    } catch (err) {
+                      console.error('Delete failed', err);
                       alert('Failed to delete IDP.');
                     }
                   }}
@@ -273,6 +310,9 @@ export default function SupervisorViewIDPPage() {
         {empDept && <div><strong>Department:</strong> {empDept}</div>}
         {empEmail && <div><strong>Email:</strong> {empEmail}</div>}
         <div style={{height:8}} />
+        {header.review_period && <div><strong>Review Period:</strong> {header.review_period}</div>}
+        {header.next_review_date && <div><strong>Next Review Date:</strong> {header.next_review_date}</div>}
+        <div style={{height:8}} />
         <div><strong>Supervisor:</strong> {supName || (supId ? `ID ${supId}` : '-')}</div>
         {supPosition && <div><strong>Supervisor Title:</strong> {supPosition}</div>}
         <div><strong>Cycle ID:</strong> {header.cycle_id}</div>
@@ -310,164 +350,191 @@ export default function SupervisorViewIDPPage() {
         </div>
       )}
 
+      {currentUser && currentUser.role === 'Employee' && header.status === 'PENDING_EMPLOYEE' && Number(empId) === Number(currentUser.id) && (
+        <div className="mb-4 flex gap-2">
+          <button
+            onClick={handleApproveAsEmployee}
+            className="px-4 py-2 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+          >
+            Acknowledge
+          </button>
+
+          <button
+            onClick={handleReturnAsEmployee}
+            className="px-4 py-2 rounded bg-yellow-600 text-white text-sm hover:bg-yellow-700"
+          >
+            Return to Supervisor
+          </button>
+        </div>
+      )}
+
         </div>
 
         <h2 className="text-xl font-semibold mb-2">Development Items</h2>
-      {/* Table only contains valid table elements */}
-      <table className="min-w-full divide-y divide-gray-200 mb-4">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Competency</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Current Level</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target Level</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Activity Type</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Activity</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {editable && editData
-            ? editData.items.map((item, idx) => (
-                <tr key={item.id}>
-                  <td className="px-4 py-2 align-top">{item.competency_name}</td>
-                  <td className="px-4 py-2 align-top">{item.current_level}</td>
-                  <td className="px-4 py-2 align-top">{item.target_level}</td>
-                  <td className="px-4 py-2 align-top">
-                    <input
-                      className="border rounded px-2 py-1 text-xs"
-                      value={item.activity.type || ''}
-                      onChange={e => {
-                        const v = e.target.value;
-                        setEditData(ed => {
-                          const items = [...ed.items];
-                          items[idx] = { ...items[idx], activity: { ...items[idx].activity, type: v } };
-                          return { ...ed, items };
-                        });
-                      }}
-                    />
-                  </td>
-                  <td className="px-4 py-2 align-top">
-                    <input
-                      className="border rounded px-2 py-1 text-xs"
-                      value={item.activity.activity || ''}
-                      onChange={e => {
-                        const v = e.target.value;
-                        setEditData(ed => {
-                          const items = [...ed.items];
-                          items[idx] = { ...items[idx], activity: { ...items[idx].activity, activity: v } };
-                          return { ...ed, items };
-                        });
-                      }}
-                    />
-                  </td>
-                  <td className="px-4 py-2 align-top">
-                    <input
-                      type="date"
-                      className="border rounded px-2 py-1 text-xs"
-                      value={item.activity.targetDate || ''}
-                      onChange={e => {
-                        const v = e.target.value;
-                        setEditData(ed => {
-                          const items = [...ed.items];
-                          items[idx] = { ...items[idx], activity: { ...items[idx].activity, targetDate: v } };
-                          return { ...ed, items };
-                        });
-                      }}
-                    />
-                  </td>
-                  <td className="px-4 py-2 align-top">
-                    <select
-                      className="border rounded px-2 py-1 text-xs"
-                      value={item.activity.status || COMPLETION_STATUS_OPTIONS[0]}
-                      onChange={e => {
-                        const v = e.target.value;
-                        setEditData(ed => {
-                          const items = [...ed.items];
-                          items[idx] = { ...items[idx], activity: { ...items[idx].activity, status: v } };
-                          return { ...ed, items };
-                        });
-                      }}
-                    >
-                      {COMPLETION_STATUS_OPTIONS.map(opt => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))
-              : idp.items.map(item => {
-                let activity = item.development_activity;
-                if (typeof activity === 'string') {
-                  try { activity = JSON.parse(activity); } catch { void 0; }
-                }
+      {/* Render full development plan for managers reviewing pending IDPs */}
+      {(currentUser && ((currentUser.role === 'Manager' && (header.status === 'PENDING_MANAGER' || header.status === 'PENDING_AM')) || (currentUser.role === 'Employee' && header.status === 'PENDING_EMPLOYEE' && Number(empId) === Number(currentUser.id)))) ? (
+        <div className="space-y-4">
+          {idp.items.map((item, itemIndex) => {
+            let activity = item.development_activity;
+            if (typeof activity === 'string') {
+              try { activity = JSON.parse(activity); } catch { activity = activity || {}; }
+            }
 
-                // Compute a robust current level with fallbacks.
-                const rawCurrent = (item.current_level ?? item.currentLevel ?? item.assigned_level ?? item.assignedLevel ?? item.mplr ?? item.mplr_level ?? compAssignedMap[item.competency_id] ?? null);
-                const rawTarget = (item.target_level ?? item.targetLevel ?? null);
+            // area color selection (simple deterministic)
+            const areaKey = item.development_area || item.competency_area || 'Other';
+            let hash = 0;
+            for (let i = 0; i < areaKey.length; i++) hash = (hash * 31 + areaKey.charCodeAt(i)) % CRAYON_COLORS.length;
+            const chipColor = CRAYON_COLORS[hash] || '#E5E7EB';
 
-                // If current is missing but target exists, derive a reasonable current (target - 1, min 1)
-                let displayCurrent = rawCurrent;
-                let displayTarget = rawTarget;
+            const displayCurrent = item.current_level ?? item.currentLevel ?? item.assigned_level ?? item.mplr ?? compAssignedMap[item.competency_id] ?? '';
+            const displayTarget = item.target_level ?? item.targetLevel ?? (displayCurrent ? Math.min(Number(displayCurrent) + 1, 5) : '');
 
-                if ((displayCurrent === null || displayCurrent === undefined || displayCurrent === '') && displayTarget != null) {
-                  const tnum = Number(displayTarget);
-                  if (!Number.isNaN(tnum)) {
-                    displayCurrent = Math.max(tnum - 1, 1);
-                  }
-                }
+            return (
+              <div key={item.id || item.competency_id} className="rounded-xl border border-gray-100 bg-gray-50 overflow-hidden">
+                <div className="px-4 py-4 bg-white border-b border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-semibold text-black">{item.competency_name}</span>
+                        <span className="text-xs font-semibold px-2 py-1 rounded-full border" style={{ background: chipColor }}>{item.development_area || item.competency_area || 'Area'}</span>
+                      </div>
+                      <div className="mt-1 text-sm text-gray-600">Current level <span className="font-semibold text-gray-900">{displayCurrent}</span> → Target level <span className="font-semibold text-gray-900">{displayTarget}</span></div>
+                    </div>
+                    <div className="text-xs font-semibold text-gray-500">1 Activity</div>
+                  </div>
+                </div>
 
-                // If target missing but current exists, derive target as current + 1 (max 5)
-                if ((displayTarget === null || displayTarget === undefined || displayTarget === '') && displayCurrent != null) {
-                  const cnum = Number(displayCurrent);
-                  if (!Number.isNaN(cnum)) {
-                    displayTarget = Math.min(cnum + 1, 5);
-                  }
-                }
+                <div className="p-4">
+                  <div className="bg-white rounded-xl border border-gray-100 p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Type</label>
+                        <select value={activity?.type || DEVELOPMENT_TYPES[0]} disabled className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100">
+                          {DEVELOPMENT_TYPES.map(t => <option key={t}>{t}</option>)}
+                        </select>
+                      </div>
 
-                return (
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Target Completion Date</label>
+                        <input type="date" value={activity?.targetDate || activity?.targetCompletionDate || ''} readOnly className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black opacity-90 border border-gray-100" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Actual Completion Date</label>
+                        <input type="date" value={activity?.actualDate || activity?.actualCompletionDate || ''} readOnly className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100" />
+                      </div>
+
+                      <div className="lg:col-span-3">
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Development Activity</label>
+                        <input type="text" value={activity?.activity || ''} readOnly className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Completion Status</label>
+                        <select value={activity?.status || COMPLETION_STATUS_OPTIONS[0]} disabled className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100">
+                          {COMPLETION_STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Score</label>
+                        <select value={activity?.score || 1} disabled className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100">
+                          {[1,2,3,4,5].map(n => <option key={n}>{n}</option>)}
+                        </select>
+                      </div>
+
+                      <div className="md:col-span-2 lg:col-span-3">
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Expected Results</label>
+                        <textarea value={activity?.expectedResults || ''} readOnly rows={3} className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100" />
+                      </div>
+
+                      <div className="md:col-span-2 lg:col-span-3">
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Knowledge Sharing Method</label>
+                        <textarea value={activity?.sharingMethod || ''} readOnly rows={3} className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100" />
+                      </div>
+
+                      <div className="md:col-span-2 lg:col-span-3">
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Application Method</label>
+                        <textarea value={activity?.applicationMethod || ''} readOnly rows={3} className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* existing compact table view for non-manager or non-pending */
+        <table className="min-w-full divide-y divide-gray-200 mb-4">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Competency</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Current Level</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target Level</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Activity Type</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Activity</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {editable && editData
+              ? editData.items.map((item, idx) => (
                   <tr key={item.id}>
                     <td className="px-4 py-2 align-top">{item.competency_name}</td>
-                    <td className="px-4 py-2 align-top">{(displayCurrent != null ? String(displayCurrent) : '')}</td>
-                    <td className="px-4 py-2 align-top">{(displayTarget != null ? String(displayTarget) : '')}</td>
-                    <td className="px-4 py-2 align-top">{activity?.type || ''}</td>
-                    <td className="px-4 py-2 align-top">{activity?.activity || ''}</td>
-                    <td className="px-4 py-2 align-top">{activity?.targetDate || ''}</td>
-                    <td className="px-4 py-2 align-top">
-                      {header.status === 'RETURNED' && currentUser && currentUser.role === 'Supervisor' ? (
-                        <select
-                          value={activity?.status || COMPLETION_STATUS_OPTIONS[0]}
-                          onChange={async (e) => {
-                            const newStatus = e.target.value;
-                            try {
-                              await apiRequest(`/api/idp/${id}`, {
-                                method: 'PUT',
-                                body: JSON.stringify({ items: [{ id: item.id, development_activity: JSON.stringify({ ...(activity || {}), status: newStatus }) }] }),
-                                headers: { 'Content-Type': 'application/json' }
-                              });
-                              // reload idp
-                              const refreshed = await apiRequest(`/api/idp/${id}`);
-                              setIdp(refreshed);
-                            } catch (err) {
-                              console.error('Failed to update activity status', err);
-                              alert('Failed to update status.');
-                            }
-                          }}
-                          className="border rounded px-2 py-1 text-xs"
-                        >
-                          {COMPLETION_STATUS_OPTIONS.map(opt => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        activity?.status || ''
-                      )}
-                    </td>
+                    <td className="px-4 py-2 align-top">{item.current_level}</td>
+                    <td className="px-4 py-2 align-top">{item.target_level}</td>
+                    <td className="px-4 py-2 align-top">{item.activity.type || ''}</td>
+                    <td className="px-4 py-2 align-top">{item.activity.activity || ''}</td>
+                    <td className="px-4 py-2 align-top">{item.activity.targetDate || ''}</td>
+                    <td className="px-4 py-2 align-top">{item.activity.status || ''}</td>
                   </tr>
-                );
-              })}
-        </tbody>
-      </table>
+                ))
+              : idp.items.map(item => {
+                  let activity = item.development_activity;
+                  if (typeof activity === 'string') {
+                    try { activity = JSON.parse(activity); } catch { void 0; }
+                  }
+
+                  // Compute a robust current level with fallbacks.
+                  const rawCurrent = (item.current_level ?? item.currentLevel ?? item.assigned_level ?? item.assignedLevel ?? item.mplr ?? item.mplr_level ?? compAssignedMap[item.competency_id] ?? null);
+                  const rawTarget = (item.target_level ?? item.targetLevel ?? null);
+
+                  // If current is missing but target exists, derive a reasonable current (target - 1, min 1)
+                  let displayCurrent = rawCurrent;
+                  let displayTarget = rawTarget;
+
+                  if ((displayCurrent === null || displayCurrent === undefined || displayCurrent === '') && displayTarget != null) {
+                    const tnum = Number(displayTarget);
+                    if (!Number.isNaN(tnum)) {
+                      displayCurrent = Math.max(tnum - 1, 1);
+                    }
+                  }
+
+                  // If target missing but current exists, derive target as current + 1 (max 5)
+                  if ((displayTarget === null || displayTarget === undefined || displayTarget === '') && displayCurrent != null) {
+                    const cnum = Number(displayCurrent);
+                    if (!Number.isNaN(cnum)) {
+                      displayTarget = Math.min(cnum + 1, 5);
+                    }
+                  }
+
+                  return (
+                    <tr key={item.id}>
+                      <td className="px-4 py-2 align-top">{item.competency_name}</td>
+                      <td className="px-4 py-2 align-top">{(displayCurrent != null ? String(displayCurrent) : '')}</td>
+                      <td className="px-4 py-2 align-top">{(displayTarget != null ? String(displayTarget) : '')}</td>
+                      <td className="px-4 py-2 align-top">{activity?.type || ''}</td>
+                      <td className="px-4 py-2 align-top">{activity?.activity || ''}</td>
+                      <td className="px-4 py-2 align-top">{activity?.targetDate || ''}</td>
+                      <td className="px-4 py-2 align-top">{activity?.status || ''}</td>
+                    </tr>
+                  );
+                })}
+          </tbody>
+        </table>
+      )}
     </div>
   </div>
   );

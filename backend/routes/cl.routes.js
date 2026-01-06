@@ -119,6 +119,14 @@ router.get(
   clController.getMyHistory
 );
 
+// EMPLOYEE SELF COMPETENCIES
+// GET /api/cl/employee/my/competencies
+router.get(
+  '/employee/my/competencies',
+  requireRole('Employee'),
+  clController.getMyCompetencies
+);
+
 // =====================================
 // AM DASHBOARD ROUTES
 // =====================================

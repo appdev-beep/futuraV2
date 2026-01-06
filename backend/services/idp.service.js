@@ -13,9 +13,105 @@ async function managerReturnIDP(idpId, managerId, remarks) {
     // Optionally, store remarks in a remarks/history table or in idp_headers if a column exists
     // For now, assume a remarks column exists on idp_headers
     await conn.query('UPDATE idp_headers SET manager_remarks = ? WHERE id = ?', [remarks, idpId]);
+
+    // Fetch header to get supervisor/employee info for notifications/logging
+    const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+    const header = hdrRows[0] || {};
+    const supervisorId = header.supervisor_id || null;
+    const employeeId = header.employee_id || null;
+
     await conn.commit();
+
+    // Log recent action and notify supervisor (do not block the main flow on failures)
+    try {
+      const [mgrRows] = await db.query('SELECT name FROM users WHERE id = ?', [managerId]);
+      const managerName = (mgrRows[0] && mgrRows[0].name) || 'Manager';
+      const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
+      const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+
+      await logRecentAction({
+        actor_id: managerId,
+        module: 'IDP',
+        action_type: 'IDP_RETURNED',
+        cl_id: null,
+        employee_id: employeeId,
+        title: `Returned IDP for ${employeeName}`,
+        description: `IDP #${idpId} returned with remarks: ${remarks}`,
+        url: `/supervisor/idp/view/${idpId}`,
+      }).catch(() => {});
+
+      if (supervisorId) {
+        await createNotification({
+          recipient_id: supervisorId,
+          message: `IDP #${idpId} for ${employeeName} was returned by ${managerName}. Remarks: ${remarks}`,
+          module: 'IDP',
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      // swallow notification/log errors
+      console.error('Failed to log/notify on manager return:', notifErr.message || notifErr);
+    }
+
     logInfo('Manager returned IDP to supervisor', { idpId, managerId });
     return { success: true };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+// Manager approves IDP and routes it to the employee for acknowledgement
+async function managerApprove(idpId, managerId) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    // Verify IDP exists and is pending manager approval
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ? AND manager_id = ?', [idpId, 'PENDING_MANAGER', managerId]);
+    if (rows.length === 0) {
+      throw new Error('IDP not found or not pending manager approval.');
+    }
+
+    // Update status to PENDING_EMPLOYEE so the employee can view/acknowledge
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['PENDING_EMPLOYEE', idpId]);
+
+    // Fetch header for notifications
+    const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+    const header = hdrRows[0] || {};
+    const employeeId = header.employee_id || null;
+
+    await conn.commit();
+
+    try {
+      const [mgrRows] = await db.query('SELECT name FROM users WHERE id = ?', [managerId]);
+      const managerName = (mgrRows[0] && mgrRows[0].name) || 'Manager';
+      const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
+      const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+
+      await logRecentAction({
+        actor_id: managerId,
+        module: 'IDP',
+        action_type: 'IDP_APPROVED_BY_MANAGER',
+        cl_id: null,
+        employee_id: employeeId,
+        title: `Manager approved IDP for ${employeeName}`,
+        description: `IDP #${idpId} approved by ${managerName}`,
+        url: `/employee/idp/view/${idpId}`,
+      }).catch(() => {});
+
+      if (employeeId) {
+        await createNotification({
+          recipient_id: employeeId,
+          message: `Your IDP #${idpId} has been approved by ${managerName}.`,
+          module: 'IDP',
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.error('Failed to log/notify on manager approve:', notifErr.message || notifErr);
+    }
+
+    logInfo('Manager approved IDP', { idpId, managerId });
+    return await getById(idpId);
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -77,7 +173,55 @@ async function getById(id) {
     [id]
   );
 
-  return { header, items };
+  // Normalize DB column differences and parse JSON so frontend always receives an object
+  const normalizedItems = (items || []).map(it => {
+    const raw = it.development_activity || it.development_action || null;
+    let parsed = null;
+    if (raw) {
+      if (typeof raw === 'string') {
+        try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+      } else if (typeof raw === 'object') {
+        parsed = raw;
+      }
+    }
+
+    // Ensure common keys exist with friendly aliases
+    const activity = parsed || {};
+    const normalizeDate = (v) => {
+      if (!v) return '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+      const m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+      const d = new Date(v);
+      if (!isNaN(d.getTime())) {
+        const yy = d.getFullYear();
+        const mm = String(d.getMonth()+1).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        return `${yy}-${mm}-${dd}`;
+      }
+      return '';
+    };
+
+    const normalized = {
+      type: activity.type || activity.activityType || 'Education',
+      activity: activity.activity || activity.developmentActivity || '',
+      targetDate: normalizeDate(activity.targetDate || activity.targetCompletionDate || activity.target || ''),
+      actualDate: normalizeDate(activity.actualDate || activity.actualCompletionDate || ''),
+      status: activity.status || activity.completionStatus || '',
+      expectedResults: activity.expectedResults || activity.expected_results || '',
+      sharingMethod: activity.sharingMethod || activity.sharing_method || '',
+      applicationMethod: activity.applicationMethod || activity.application_method || '',
+      score: (typeof activity.score === 'number') ? activity.score : (activity.score ? Number(activity.score) : null),
+      __raw: parsed || raw
+    };
+
+    return {
+      ...it,
+      development_activity: normalized
+    };
+  });
+
+  return { header, items: normalizedItems };
 }
 
 // Create IDP header
@@ -131,42 +275,49 @@ async function update(id, payload) {
 
     if (Array.isArray(payload.items)) {
       for (const item of payload.items) {
+        try { console.log('[idp.service.update] item:', { id: item.id, competency_id: item.competency_id, hasDevActivity: !!(item.development_activity || item.development_action) }); } catch(e) {}
         if (item.id) {
-          // Update existing item: only update development_activity to avoid schema mismatches
+          // Update existing item: only update development_action to avoid schema mismatches
           await conn.query(
             `UPDATE idp_items
-             SET development_activity = ?, updated_at = NOW()
+             SET development_action = ?, updated_at = NOW()
              WHERE id = ? AND idp_header_id = ?`,
             [
-              item.development_activity,
+              item.development_activity || item.development_action || null,
               item.id,
               id
             ]
           );
+          try { console.log('[idp.service.update] updated item id:', item.id); } catch(e) {}
         } else {
-          // Insert new item with minimal/known columns
+          // Insert new item with known columns (no current_level column in schema)
           await conn.query(
             `INSERT INTO idp_items
-              (idp_header_id, competency_id, current_level, target_level, development_activity, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 'NOT_STARTED', NOW(), NOW())`,
+              (idp_header_id, competency_id, target_level, development_action, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 'NOT_STARTED', NOW(), NOW())`,
             [
               id,
               item.competency_id,
-              item.current_level || null,
               item.target_level || null,
-              item.development_activity
+              item.development_activity || item.development_action || null
             ]
           );
+          try { console.log('[idp.service.update] inserted new item for competency:', item.competency_id); } catch(e) {}
         }
       }
     }
 
-    await conn.query(
-      `UPDATE idp_headers
-       SET updated_at = NOW()
-       WHERE id = ?`,
-      [id]
-    );
+    // Update header-level fields if provided
+    if (payload.reviewPeriod || payload.nextReviewDate) {
+      await conn.query(
+        `UPDATE idp_headers
+         SET review_period = ?, next_review_date = ?, updated_at = NOW()
+         WHERE id = ?`,
+        [payload.reviewPeriod || null, payload.nextReviewDate || null, id]
+      );
+    } else {
+      await conn.query(`UPDATE idp_headers SET updated_at = NOW() WHERE id = ?`, [id]);
+    }
 
     await conn.commit();
     return await getById(id);
@@ -206,7 +357,47 @@ async function submit(id) {
   );
   managerId = managerRows[0]?.id || null;
 
-  const nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
+  // Determine next status. If the IDP was RETURNED and the last return was made by the employee,
+  // route back to the employee for acknowledgement. Otherwise route to AM/Manager as usual.
+  let nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
+  if (header.status === 'RETURNED') {
+    try {
+        const [raRows] = await db.query(
+          `SELECT actor_id, action_type, url, title, description
+           FROM recent_actions
+           WHERE module = 'IDP' AND (url LIKE ? OR title LIKE ? OR description LIKE ?)
+           ORDER BY created_at DESC
+           LIMIT 20`,
+          [`%/idp/view/${id}%`, `%IDP #${id}%`, `%IDP #${id}%`]
+        );
+        let returnedByEmployee = false;
+        for (const ra of raRows) {
+          const action = String(ra.action_type || '').toLowerCase();
+          const title = String(ra.title || '').toLowerCase();
+          const desc = String(ra.description || '').toLowerCase();
+          if (action.includes('return') || title.includes('return') || desc.includes('return')) {
+            // Found a returned action; check actor role
+            try {
+              const [uRows] = await db.query('SELECT role FROM users WHERE id = ?', [ra.actor_id]);
+              const role = (uRows[0] && uRows[0].role) || '';
+              if (String(role).toLowerCase() === 'employee') {
+                returnedByEmployee = true;
+                break;
+              }
+            } catch (e) {
+              // ignore lookup errors and continue searching
+            }
+          }
+        }
+      if (returnedByEmployee) {
+        nextStatus = 'PENDING_EMPLOYEE';
+      }
+    } catch (e) {
+      // If unable to determine recent action, fall back to default routing
+      console.error('Failed to determine last return actor for IDP submit:', e && e.message ? e.message : e);
+    }
+  }
+
   // Update status and set am_id/manager_id as appropriate
   await db.query(
     `UPDATE idp_headers
@@ -297,13 +488,19 @@ async function getIDPsGroupedByStatus(supervisorId) {
   // Get all IDP headers for this supervisor
 
   const [headers] = await db.query(
-    `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id
+        `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id,
+          COALESCE(p.title, '') AS position_title
      FROM idp_headers h
      JOIN users e ON h.employee_id = e.id
+     LEFT JOIN positions p ON e.position_id = p.id
      WHERE h.supervisor_id = ?
      ORDER BY h.created_at DESC`,
     [supervisorId]
   );
+
+  // If users table contains a position title field, prefer that for display
+  // Some rows may already include position_title; include it if present
+  // Note: selecting e.position_title and e.position for broader compatibility
 
   // Group by status
   const grouped = {};
@@ -313,6 +510,164 @@ async function getIDPsGroupedByStatus(supervisorId) {
     grouped[status].push(header);
   }
   return grouped;
+}
+
+// Get IDPs for a specific employee
+async function getIDPsForEmployee(employeeId) {
+  const [rows] = await db.query(
+    `SELECT h.*, u.name AS supervisor_name, u.employee_id AS supervisor_employee_code
+     FROM idp_headers h
+     LEFT JOIN users u ON h.supervisor_id = u.id
+     WHERE h.employee_id = ?
+     ORDER BY h.created_at DESC`,
+    [employeeId]
+  );
+  return rows || [];
+}
+
+// Employee approves (acknowledges) an IDP
+async function employeeApprove(idpId, employeeId) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    // Verify IDP exists and is pending employee
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ?', [idpId, 'PENDING_EMPLOYEE']);
+    if (rows.length === 0) {
+      throw new Error('IDP not found or not pending employee acknowledgement.');
+    }
+
+    // Update status to APPROVED
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['APPROVED', idpId]);
+
+    // Fetch header for notifications/logging
+    const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+    const header = hdrRows[0] || {};
+    const supervisorId = header.supervisor_id || null;
+
+    await conn.commit();
+
+    try {
+      const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
+      const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+      const [supRows] = await db.query('SELECT name FROM users WHERE id = ?', [supervisorId]);
+      const supervisorName = (supRows[0] && supRows[0].name) || 'Supervisor';
+
+      await logRecentAction({
+        actor_id: employeeId,
+        module: 'IDP',
+        action_type: 'IDP_APPROVED_BY_EMPLOYEE',
+        cl_id: null,
+        employee_id: header.employee_id,
+        title: `Employee acknowledged IDP for ${employeeName}`,
+        description: `IDP #${idpId} acknowledged by employee ${employeeName}`,
+        url: `/employee/idp/view/${idpId}`,
+      }).catch(() => {});
+
+      if (supervisorId) {
+        await createNotification({
+          recipient_id: supervisorId,
+          message: `Employee ${employeeName} acknowledged IDP #${idpId}.`,
+          module: 'IDP',
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.error('Failed to log/notify on employee approve:', notifErr.message || notifErr);
+    }
+
+    return await getById(idpId);
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// Employee returns IDP back to supervisor for changes
+async function employeeReturn(idpId, employeeId, remarks) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    // Verify IDP exists and is pending employee
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ?', [idpId, 'PENDING_EMPLOYEE']);
+    if (rows.length === 0) {
+      throw new Error('IDP not found or not pending employee acknowledgement.');
+    }
+
+    // Update status to RETURNED
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['RETURNED', idpId]);
+
+    const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+    const header = hdrRows[0] || {};
+    const supervisorId = header.supervisor_id || null;
+
+    await conn.commit();
+
+    try {
+      const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
+      const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+      const [supRows] = await db.query('SELECT name FROM users WHERE id = ?', [supervisorId]);
+      const supervisorName = (supRows[0] && supRows[0].name) || 'Supervisor';
+
+      await logRecentAction({
+        actor_id: employeeId,
+        module: 'IDP',
+        action_type: 'IDP_RETURNED_BY_EMPLOYEE',
+        cl_id: null,
+        employee_id: header.employee_id,
+        title: `Employee returned IDP for ${employeeName}`,
+        description: `IDP #${idpId} returned with remarks: ${remarks}`,
+        url: `/supervisor/idp/view/${idpId}`,
+      }).catch(() => {});
+
+      if (supervisorId) {
+        await createNotification({
+          recipient_id: supervisorId,
+          message: `Employee ${employeeName} returned IDP #${idpId}. Remarks: ${remarks}`,
+          module: 'IDP',
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.error('Failed to log/notify on employee return:', notifErr.message || notifErr);
+    }
+
+    return { success: true };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// HR: get incoming IDPs optionally filtered by department name and/or status
+async function getHRIncoming(hrId, departmentName = null, status = null) {
+  // Build base query
+  let sql = `SELECT h.*, u.name AS employee_name, d.name AS department_name, u.position_id
+             FROM idp_headers h
+             JOIN users u ON h.employee_id = u.id
+             LEFT JOIN departments d ON u.department_id = d.id
+             WHERE 1=1`;
+  const params = [];
+
+  // Optional status filter. Accept comma-separated list.
+  if (status) {
+    const statuses = String(status).split(',').map(s => s.trim()).filter(Boolean);
+    if (statuses.length > 0) {
+      const placeholders = statuses.map(() => '?').join(',');
+      sql += ` AND h.status IN (${placeholders})`;
+      params.push(...statuses);
+    }
+  }
+
+  if (departmentName) {
+    sql += ` AND d.name = ?`;
+    params.push(departmentName);
+  }
+
+  sql += ` ORDER BY h.created_at DESC`;
+  const [rows] = await db.query(sql, params);
+  return rows || [];
 }
 
 module.exports = {
@@ -326,6 +681,11 @@ module.exports = {
   deleteById,
   getIDPsPendingManager,
   managerReturnIDP,
+  managerApprove,
+  getIDPsForEmployee,
+  getHRIncoming,
+  employeeApprove,
+  employeeReturn,
 };
 
 // Create IDP with full development plan
@@ -365,12 +725,14 @@ async function createWithItems(payload) {
     // 1. Create IDP header
     const [headerResult] = await conn.query(
       `INSERT INTO idp_headers
-        (employee_id, supervisor_id, cycle_id, status, created_at, updated_at, manager_id, am_id)
-       VALUES (?, ?, ?, 'DRAFT', NOW(), NOW(), ?, ?)` ,
+        (employee_id, supervisor_id, cycle_id, review_period, next_review_date, status, created_at, updated_at, manager_id, am_id)
+       VALUES (?, ?, ?, ?, ?, 'DRAFT', NOW(), NOW(), ?, ?)` ,
       [
         payload.employeeId,
         payload.supervisorId,
         cycleId,
+        payload.reviewPeriod || null,
+        payload.nextReviewDate || null,
         managerId,
         amId
       ]
@@ -385,27 +747,27 @@ async function createWithItems(payload) {
           for (const activity of item.developmentActivities) {
             await conn.query(
               `INSERT INTO idp_items
-                (idp_header_id, competency_id, target_level, development_activity, timeline_months, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 'PLANNED', NOW(), NOW())`,
-              [
-                idpId,
-                item.competencyId,
-                item.targetLevel || item.currentLevel + 1,
-                JSON.stringify({
-                  type: activity.type,
-                  activity: activity.activity,
-                  targetDate: activity.targetCompletionDate,
-                  actualDate: activity.actualCompletionDate,
-                  status: activity.completionStatus,
-                  expectedResults: activity.expectedResults,
-                  sharingMethod: activity.sharingMethod,
-                  applicationMethod: activity.applicationMethod,
-                  score: activity.score,
-                  currentLevel: item.currentLevel,
-                  developmentArea: item.developmentArea
-                }),
-                12 // Default 12 months timeline
-              ]
+                  (idp_header_id, competency_id, target_level, development_action, timeline_months, status, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, 'PLANNED', NOW(), NOW())`,
+                [
+                  idpId,
+                  item.competencyId,
+                  item.targetLevel || (item.currentLevel ? Number(item.currentLevel) + 1 : null),
+                  JSON.stringify({
+                    type: activity.type,
+                    activity: activity.activity,
+                    targetDate: activity.targetCompletionDate || activity.targetDate || activity.target || null,
+                    actualDate: activity.actualCompletionDate || activity.actualDate || null,
+                    status: activity.completionStatus || activity.status || null,
+                    expectedResults: activity.expectedResults,
+                    sharingMethod: activity.sharingMethod,
+                    applicationMethod: activity.applicationMethod,
+                    score: activity.score,
+                    currentLevel: item.currentLevel,
+                    developmentArea: item.developmentArea
+                  }),
+                  12 // Default 12 months timeline
+                ]
             );
           }
         }

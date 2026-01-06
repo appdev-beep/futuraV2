@@ -74,7 +74,10 @@ function HRDashboard() {
   const [recentActions, setRecentActions] = useState([]);
 
   const [activeSection, setActiveSection] = useState('ALL');
+  const [activeModule, setActiveModule] = useState('CL'); // 'CL' or 'IDP'
+  const [activeIDPSection, setActiveIDPSection] = useState('ALL');
   const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [departmentSearch, setDepartmentSearch] = useState('');
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
   const [showFullNotifications, setShowFullNotifications] = useState(false);
   const [notificationModalState, setNotificationModalState] = useState({
@@ -88,6 +91,9 @@ function HRDashboard() {
     details: null,
     loading: false,
   });
+  const [allIncomingIDP, setAllIncomingIDP] = useState([]);
+  const [idpLoading, setIdpLoading] = useState(false);
+  const [idpError, setIdpError] = useState(null);
 
   // Dynamically build CL status sections based on selected department's has_am
   const CL_STATUS_SECTIONS = useMemo(() => {
@@ -97,6 +103,21 @@ function HRDashboard() {
       { key: 'PENDING_HR', label: 'For Approval by HR', icon: BriefcaseIcon },
     ];
     // Find the selected department object
+    const deptObj = allDepartments.find(d => d.name === selectedDepartment);
+    if (deptObj && deptObj.has_am) {
+      sections.push({ key: 'PENDING_AM', label: 'For Approval by Assistant Manager', icon: ClockIcon });
+    }
+    sections.push({ key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon });
+    sections.push({ key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon });
+    return sections;
+  }, [allDepartments, selectedDepartment]);
+
+  const IDP_STATUS_SECTIONS = useMemo(() => {
+    const sections = [
+      { key: 'DRAFT', label: 'Returned for Review', icon: PencilSquareIcon },
+      { key: 'PENDING_EMPLOYEE', label: 'For Approval by Employee', icon: UserIcon },
+      { key: 'PENDING_HR', label: 'For Approval by HR', icon: BriefcaseIcon },
+    ];
     const deptObj = allDepartments.find(d => d.name === selectedDepartment);
     if (deptObj && deptObj.has_am) {
       sections.push({ key: 'PENDING_AM', label: 'For Approval by Assistant Manager', icon: ClockIcon });
@@ -299,6 +320,12 @@ function HRDashboard() {
     return allDepartments.map(d => d.name).sort();
   }, [allDepartments]);
 
+  const filteredDepartments = useMemo(() => {
+    if (!departmentSearch) return departments;
+    const s = departmentSearch.toLowerCase();
+    return departments.filter(d => d.toLowerCase().includes(s));
+  }, [departments, departmentSearch]);
+
   // Set first department as default when departments load
   React.useEffect(() => {
     if (departments.length > 0 && !selectedDepartment) {
@@ -330,6 +357,53 @@ function HRDashboard() {
     loadDepartmentSummary();
   }, [user, selectedDepartment]);
 
+  // Load incoming IDPs for HR (load all once so dropdown can show counts for both CL and IDP)
+  useEffect(() => {
+    if (!user) return;
+
+    async function fetchIncomingIDPs() {
+      try {
+        const data = await apiRequest(`/api/idp/hr/incoming`, { method: 'GET' });
+        console.debug('[HRDashboard] fetched initial incoming IDPs:', data);
+        setAllIncomingIDP(data || []);
+      } catch (err) {
+        console.error('Failed to load incoming IDPs', err);
+        setIdpError(err.message || 'Failed to load incoming IDPs');
+      }
+    }
+
+    fetchIncomingIDPs();
+  }, [user]);
+
+  // Fetch filtered IDPs when switching to IDP module or department changes
+  useEffect(() => {
+    if (!user) return;
+    if (activeModule !== 'IDP') return;
+
+    let cancelled = false;
+    async function fetchFiltered() {
+      setIdpLoading(true);
+      setIdpError(null);
+      try {
+        const qs = selectedDepartment ? `?department=${encodeURIComponent(selectedDepartment)}` : '';
+        console.debug('[HRDashboard] fetching filtered IDPs for', { selectedDepartment, qs });
+        const data = await apiRequest(`/api/idp/hr/incoming${qs}`, { method: 'GET' });
+        console.debug('[HRDashboard] fetched filtered IDPs:', data);
+        if (!cancelled) setAllIncomingIDP(data || []);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load filtered IDPs', err);
+          setIdpError(err.message || 'Failed to load IDPs');
+        }
+      } finally {
+        if (!cancelled) setIdpLoading(false);
+      }
+    }
+
+    fetchFiltered();
+    return () => { cancelled = true; };
+  }, [user, selectedDepartment, activeModule]);
+
   const sectionCounts = useMemo(() => {
     const counts = { ALL: 0 };
     const dataToCount = selectedDepartment 
@@ -343,10 +417,21 @@ function HRDashboard() {
   }, [allIncomingCL, selectedDepartment, CL_STATUS_SECTIONS]);
 
   const activeLabel = useMemo(() => {
-    if (activeSection === 'ALL') return 'All Competency Levelings';
-    const s = CL_STATUS_SECTIONS.find((x) => x.key === activeSection);
-    return s ? s.label : 'All Competency Levelings';
-  }, [activeSection, CL_STATUS_SECTIONS]);
+    if (activeModule === 'CL') {
+      if (activeSection === 'ALL') return 'All Competency Levelings';
+      const s = CL_STATUS_SECTIONS.find((x) => x.key === activeSection);
+      return s ? s.label : 'All Competency Levelings';
+    }
+    // IDP label
+    if (activeIDPSection === 'ALL') return 'All IDP Levelings';
+    const s = IDP_STATUS_SECTIONS.find((x) => x.key === activeIDPSection);
+    return s ? s.label : 'All IDP Levelings';
+  }, [activeModule, activeSection, CL_STATUS_SECTIONS, activeIDPSection, IDP_STATUS_SECTIONS]);
+
+  const filteredIncomingIDPs = useMemo(() => {
+    if (!selectedDepartment) return allIncomingIDP;
+    return allIncomingIDP.filter(idp => idp.department_name === selectedDepartment);
+  }, [allIncomingIDP, selectedDepartment]);
 
   // Filter incoming CLs by selected department
   const filteredIncomingCLs = useMemo(() => {
@@ -365,13 +450,42 @@ function HRDashboard() {
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-800">FUTURA</h2>
           <p className="text-sm text-gray-500">{user.role}</p>
+          <div className="mt-3">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Filter by Department</label>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={departmentSearch}
+                onChange={(e) => setDepartmentSearch(e.target.value)}
+                placeholder="Search departments..."
+                className="w-full px-3 py-2 border border-gray-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+              <select
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Departments ({allIncomingCL.length} CLs, {allIncomingIDP.length} IDPs)</option>
+                {filteredDepartments.map(dept => {
+                  const clCount = allIncomingCL.filter(item => item.department_name === dept).length;
+                  const idpCount = allIncomingIDP.filter(item => item.department_name === dept).length;
+                  return (
+                    <option key={dept} value={dept}>
+                      {dept} ({clCount} CLs, {idpCount} IDPs)
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
         </div>
 
         <nav className="p-4 space-y-4 overflow-y-auto">
           {/* Competency Leveling */}
           <div className="space-y-1">
             <button
-              onClick={() => goTo('/hr')}
+              onClick={() => { setActiveModule('CL'); setActiveSection('ALL'); }}
               className="w-full flex items-center gap-3 px-3 py-2 rounded
                          text-gray-700 hover:bg-gray-100 transition"
             >
@@ -387,7 +501,7 @@ function HRDashboard() {
 
               <button
                 type="button"
-                onClick={() => setActiveSection('ALL')}
+                onClick={() => { setActiveModule('CL'); setActiveSection('ALL'); }}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
                   ${activeSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
               >
@@ -407,7 +521,7 @@ function HRDashboard() {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => setActiveSection(key)}
+                      onClick={() => { setActiveModule('CL'); setActiveSection(key); }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
                         ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
                     >
@@ -426,14 +540,58 @@ function HRDashboard() {
           </div>
 
           {/* IDP */}
-          <button
-            onClick={() => goTo('/idp')}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded
-                       text-gray-700 hover:bg-gray-100 transition"
-          >
-            <BookOpenIcon className="w-5 h-5 text-green-600" />
-            <span>IDP Leveling</span>
-          </button>
+          <div>
+            <button
+              onClick={() => { setActiveModule('IDP'); setActiveIDPSection('ALL'); }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded
+                         ${activeModule === 'IDP' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'} transition`}
+            >
+              <BookOpenIcon className="w-5 h-5 text-green-600" />
+              <span>IDP Leveling</span>
+            </button>
+
+            <div className="mt-2 pl-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-0">
+                IDP Sections
+              </p>
+              <button
+                type="button"
+                onClick={() => { setActiveModule('IDP'); setActiveIDPSection('ALL'); }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                  ${activeIDPSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <Squares2X2Icon className="w-4 h-4" />
+                  All
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{allIncomingIDP.length}</span>
+              </button>
+              <div className="mt-1 space-y-1">
+                {IDP_STATUS_SECTIONS.map(({ key, label, icon }) => {
+                  const Icon = icon;
+                  const count = allIncomingIDP.filter(i => i.status === key && (!selectedDepartment || i.department_name === selectedDepartment)).length;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => { setActiveModule('IDP'); setActiveIDPSection(key); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                        ${activeIDPSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        {label}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{count || 0}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Department selector in sidebar for quick filtering */}
+          
         </nav>
       </aside>
 
@@ -465,56 +623,42 @@ function HRDashboard() {
 
         {/* Removed error and loading UI as those states are not used */}
 
-        {/* Department Selector */}
-        <section className="mb-6">
-          <div className="flex items-center gap-4">
-            <div className="flex-1 max-w-md">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Filter by Department
-              </label>
-              <select
-                value={selectedDepartment}
-                onChange={(e) => setSelectedDepartment(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">All Departments</option>
-                {departments.map(dept => {
-                  const deptCount = allIncomingCL.filter(cl => cl.department_name === dept).length;
-                  return (
-                    <option key={dept} value={dept}>
-                      {dept} ({deptCount} CLs)
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-            {selectedDepartment && (
-              <button
-                onClick={() => setSelectedDepartment('')}
-                className="mt-7 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition"
-              >
-                Clear Filter
-              </button>
-            )}
-          </div>
-        </section>
+        
 
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          <SummaryCard
-            label="CL - Pending HR"
-            value={summary.clPending}
-            gradientClass="from-yellow-400 to-orange-500"
-          />
-          <SummaryCard
-            label="CL - Returns"
-            value={summary.clReturned}
-            gradientClass="from-red-400 to-red-600"
-          />
-          <SummaryCard
-            label="CL – Approved"
-            value={summary.clApproved}
-            gradientClass="from-emerald-400 to-emerald-700"
-          />
+          {activeModule === 'CL' ? (
+            <>
+              <SummaryCard
+                label="CL - Pending HR"
+                value={summary.clPending}
+                gradientClass="from-yellow-400 to-orange-500"
+              />
+              <SummaryCard
+                label="CL - Returns"
+                value={summary.clReturned}
+                gradientClass="from-red-400 to-red-600"
+              />
+              <SummaryCard
+                label="CL – Approved"
+                value={summary.clApproved}
+                gradientClass="from-emerald-400 to-emerald-700"
+              />
+            </>
+          ) : (
+            // IDP Summary
+            (() => {
+              const pendingHR = filteredIncomingIDPs.filter(i => i.status === 'PENDING_HR').length;
+              const returns = filteredIncomingIDPs.filter(i => i.status === 'DRAFT' || i.status === 'RETURNED').length;
+              const approved = filteredIncomingIDPs.filter(i => i.status === 'APPROVED').length;
+              return (
+                <>
+                  <SummaryCard label="IDP - Pending HR" value={pendingHR} gradientClass="from-yellow-400 to-orange-500" />
+                  <SummaryCard label="IDP - Returns" value={returns} gradientClass="from-red-400 to-red-600" />
+                  <SummaryCard label="IDP – Approved" value={approved} gradientClass="from-emerald-400 to-emerald-700" />
+                </>
+              );
+            })()
+          )}
         </section>
 
         <section>
@@ -523,30 +667,61 @@ function HRDashboard() {
             {selectedDepartment && <span className="text-gray-500 text-lg ml-2">- {selectedDepartment}</span>}
           </h2>
 
-          {activeSection === 'ALL' ? (
-            /* All Sections View */
-            CL_STATUS_SECTIONS.map(({ key, label }) => {
-              const items = filteredIncomingCLs.filter(cl => cl.status === key);
-              return (
-                <div key={key} className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{label}</h3>
-                  {items.length === 0 ? (
-                    <p className="text-gray-400 text-sm italic">No employees in this status.</p>
-                  ) : (
-                    <CLTable data={items} goTo={goTo} onCLClick={handleCLClick} />
-                  )}
-                </div>
-              );
-            })
-          ) : (
-            /* Single Section View */
-            (() => {
-              const items = filteredIncomingCLs.filter(cl => cl.status === activeSection);
-              if (items.length === 0) {
-                return <p className="text-gray-400 text-sm italic">No employees in this status.</p>;
-              }
-              return <CLTable data={items} goTo={goTo} onCLClick={handleCLClick} />;
-            })()
+            {activeModule === 'CL' ? (
+            activeSection === 'ALL' ? (
+              /* All Sections View */
+              CL_STATUS_SECTIONS.map(({ key, label }) => {
+                const items = filteredIncomingCLs.filter(cl => cl.status === key);
+                return (
+                  <div key={key} className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-700 mb-2">{label}</h3>
+                    {items.length === 0 ? (
+                      <p className="text-gray-400 text-sm italic">No employees in this status.</p>
+                    ) : (
+                      <CLTable data={items} goTo={goTo} onCLClick={handleCLClick} />
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              /* Single Section View */
+              (() => {
+                const items = filteredIncomingCLs.filter(cl => cl.status === activeSection);
+                if (items.length === 0) {
+                  return <p className="text-gray-400 text-sm italic">No employees in this status.</p>;
+                }
+                return <CLTable data={items} goTo={goTo} onCLClick={handleCLClick} />;
+              })()
+            )
+            ) : (
+            // IDP Module
+            idpLoading ? (
+              <p className="text-gray-500">Loading IDPs...</p>
+            ) : idpError ? (
+              <p className="text-red-500">{idpError}</p>
+            ) : activeIDPSection === 'ALL' ? (
+              IDP_STATUS_SECTIONS.map(({ key, label }) => {
+                const items = filteredIncomingIDPs.filter(idp => idp.status === key);
+                return (
+                  <div key={key} className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-700 mb-2">{label}</h3>
+                    {items.length === 0 ? (
+                      <p className="text-gray-400 text-sm italic">No employees in this status.</p>
+                    ) : (
+                      <IDPTable data={items} goTo={goTo} />
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              (() => {
+                const items = filteredIncomingIDPs.filter(idp => idp.status === activeIDPSection);
+                if (items.length === 0) {
+                  return <p className="text-gray-400 text-sm italic">No employees in this status.</p>;
+                }
+                return <IDPTable data={items} goTo={goTo} />;
+              })()
+            )
           )}
         </section>
       </main>
@@ -945,6 +1120,64 @@ function CLTable({ data, goTo, onCLClick }) {
                     className="px-3 py-1 rounded text-white text-xs
                                bg-gradient-to-r from-purple-500 to-purple-700
                                hover:from-purple-600 hover:to-purple-800"
+                  >
+                    Details
+                  </button>
+                </div>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function IDPTable({ data, goTo }) {
+  return (
+    <div className="bg-white shadow rounded overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <Th>IDP ID</Th>
+            <Th>Employee</Th>
+            <Th>Employee ID</Th>
+            <Th>Department</Th>
+            <Th>Position</Th>
+            <Th>Supervisor</Th>
+            <Th>Status</Th>
+            <Th>Submitted At</Th>
+            <Th>Actions</Th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-gray-200">
+          {data.map((item, idx) => (
+            <tr key={`${item.id}-${idx}`} className="hover:bg-gray-50">
+              <Td>{item.id}</Td>
+              <Td>{item.employee_name}</Td>
+              <Td>{item.employee_code || item.employee_id}</Td>
+              <Td>{item.department_name}</Td>
+              <Td>{item.position_title}</Td>
+              <Td>{item.supervisor_name || '-'}</Td>
+              <Td>{displayStatus(item.status)}</Td>
+              <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
+
+              <Td>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => goTo(`/manager/idp/view/${item.id}`)}
+                    className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
+                  >
+                    Review
+                  </button>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      goTo(`/manager/idp/view/${item.id}`);
+                    }}
+                    className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-purple-500 to-purple-700 hover:from-purple-600 hover:to-purple-800"
                   >
                     Details
                   </button>

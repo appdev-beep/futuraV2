@@ -14,8 +14,10 @@ import {
   SCORING_GUIDE
 } from './idpConstants';
 
-function CreateIDPPage() {
-  const { employeeId, id } = useParams(); // id is for edit mode
+function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
+  const params = useParams();
+  const employeeId = routeEmployeeId ?? params.employeeId;
+  const id = routeId ?? params.id; // id is for edit mode
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -42,20 +44,80 @@ function CreateIDPPage() {
           setEditMode(true);
           const idpRes = await apiRequest(`/api/idp/${id}`);
           setIdpHeader(idpRes.header);
-          setEmployee(idpRes.header.employee || {});
-          setSupervisor(idpRes.header.supervisor || {});
+          // Header may only contain ids; fetch full user objects if not provided
+          if (idpRes.header.employee) {
+            setEmployee(idpRes.header.employee);
+          } else if (idpRes.header.employee_id) {
+            try {
+              const emp = await apiRequest(`/api/users/${idpRes.header.employee_id}`);
+              setEmployee(emp || {});
+            } catch {
+              setEmployee({});
+            }
+          } else {
+            setEmployee({});
+          }
+
+          if (idpRes.header.supervisor) {
+            setSupervisor(idpRes.header.supervisor);
+          } else if (idpRes.header.supervisor_id) {
+            try {
+              const sup = await apiRequest(`/api/users/${idpRes.header.supervisor_id}`);
+              setSupervisor(sup || {});
+            } catch {
+              setSupervisor({});
+            }
+          } else {
+            setSupervisor({});
+          }
           setIdpData({
             reviewPeriod: idpRes.header.review_period,
-            nextReviewDate: idpRes.header.next_review_date,
-            items: (idpRes.items || []).map(item => ({
-              competencyId: item.competency_id,
-              competencyName: item.competency_name,
-              developmentArea: item.competency_area || 'Technical',
-              currentLevel: item.current_level,
-              targetLevel: item.target_level,
-              developmentActivities: [typeof item.development_activity === 'string' ? JSON.parse(item.development_activity) : item.development_activity]
-            }))
+            nextReviewDate: normalizeDate(idpRes.header.next_review_date || idpRes.header.nextReviewDate),
+            items: (idpRes.items || []).map(item => {
+              let rawActivity = item.development_activity;
+              if (typeof rawActivity === 'string') {
+                try { rawActivity = JSON.parse(rawActivity); } catch { rawActivity = {}; }
+              }
+              return ({
+                id: item.id,
+                competencyId: item.competency_id,
+                competency_id: item.competency_id,
+                competencyName: item.competency_name,
+                developmentArea: item.competency_area || 'Technical',
+                currentLevel: item.current_level,
+                targetLevel: item.target_level,
+                developmentActivities: [fromBackendActivity(rawActivity || {})]
+              });
+            })
           });
+          // If this header has no items (older rows or missing data), pre-fill items from employee competencies
+          if ((!idpRes.items || idpRes.items.length === 0) && idpRes.header && idpRes.header.employee_id) {
+            try {
+              const comps = await apiRequest(`/api/cl/employee/${idpRes.header.employee_id}/competencies`);
+              const fallbackItems = (comps?.competencies || []).map(comp => ({
+                competencyId: comp.competency_id,
+                competency_id: comp.competency_id,
+                competencyName: comp.name || comp.competency_name,
+                developmentArea: comp.competency_area || 'Technical',
+                currentLevel: comp.assigned_level || 1,
+                targetLevel: Math.min((comp.assigned_level || 1) + 1, 5),
+                developmentActivities: [{
+                  type: 'Education',
+                  activity: '',
+                  targetCompletionDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0],
+                  actualCompletionDate: '',
+                  completionStatus: 'Not Started/In Progress (<50%)',
+                  expectedResults: '',
+                  sharingMethod: '',
+                  applicationMethod: '',
+                  score: 1
+                }]
+              }));
+              setIdpData(prev => ({ ...prev, items: fallbackItems }));
+            } catch (e) {
+              // ignore fallback failure
+            }
+          }
         } else if (employeeId) {
           // Create mode: load employee and competencies
           const employeeData = await apiRequest(`/api/users/${employeeId}`);
@@ -63,61 +125,31 @@ function CreateIDPPage() {
             const supervisorData = await apiRequest(`/api/users/${employeeData.supervisor_id}`);
             setSupervisor(supervisorData);
           }
-          // Try to use latest CL (created by supervisor) to get assigned levels
-          const clHistory = await apiRequest(`/api/cl/employee/${employeeId}/history`);
-          let items = [];
-          if (Array.isArray(clHistory) && clHistory.length > 0) {
-            const latestClId = clHistory[0].id;
-            try {
-              const clFull = await apiRequest(`/api/cl/${latestClId}`);
-              const clItems = clFull.items || [];
-              items = clItems.map(ci => ({
-                competencyId: ci.competency_id,
-                competencyName: ci.competency_name,
-                developmentArea: ci.competency_area || 'Technical',
-                currentLevel: Number(ci.assigned_level || ci.self_rating || 1),
-                targetLevel: Math.min(Number(ci.assigned_level || ci.self_rating || 1) + 1, 5),
-                developmentActivities: [{
-                  type: 'Education', activity: '', targetCompletionDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0], actualCompletionDate: '', completionStatus: 'Not Started/In Progress (<50%)', expectedResults: '', sharingMethod: '', applicationMethod: '', score: 1
-                }]
-              }));
-            } catch (err) {
-              console.warn('Failed to load latest CL full details, falling back to position competencies', err);
-            }
-          }
-
-          // Fallback: use position competencies (mplr) if no CL found or failed
-          if (!items.length) {
-            const competenciesData = await apiRequest(`/api/cl/employee/${employeeId}/competencies`);
-            const deptNameFromCompetencies = competenciesData?.employee?.department_name;
-            const mergedEmployee = {
-              ...employeeData,
-              department_name: employeeData.department_name || deptNameFromCompetencies || '',
-            };
-            setEmployee(mergedEmployee);
-            items = (competenciesData?.competencies || []).map(comp => {
-              const assignedNum = 1; // default when no assigned level
-              return {
-                competencyId: comp.competency_id,
-                competencyName: comp.name,
-                developmentArea: comp.competency_area || 'Technical',
-                currentLevel: assignedNum,
-                targetLevel: Math.min(assignedNum + 1, 5),
-                developmentActivities: [{
-                  type: 'Education', activity: '', targetCompletionDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0], actualCompletionDate: '', completionStatus: 'Not Started/In Progress (<50%)', expectedResults: '', sharingMethod: '', applicationMethod: '', score: 1
-                }]
-              };
-            });
-            console.log('CreateIDP: competenciesData (fallback)', competenciesData, 'itemsSummary', items.map(i => ({ competencyId: i.competencyId, currentLevel: i.currentLevel, targetLevel: i.targetLevel })));
-            setIdpData(prev => ({ ...prev, items }));
-            return;
-          }
-
-          // If items came from CL, set employee then idp data
-          const deptNameFromCl = employeeData.department_name || '';
-          const mergedEmployee = { ...employeeData, department_name: deptNameFromCl };
+          const competenciesData = await apiRequest(`/api/cl/employee/${employeeId}/competencies`);
+          const deptNameFromCompetencies = competenciesData?.employee?.department_name;
+          const mergedEmployee = {
+            ...employeeData,
+            department_name: employeeData.department_name || deptNameFromCompetencies || '',
+          };
           setEmployee(mergedEmployee);
-          console.log('CreateIDP: used latest CL items', items.map(i => ({ competencyId: i.competencyId, currentLevel: i.currentLevel })));
+          const items = (competenciesData?.competencies || []).map(comp => ({
+            competencyId: comp.competency_id,
+            competencyName: comp.name,
+            developmentArea: comp.competency_area || 'Technical',
+            currentLevel: comp.assigned_level || 1,
+            targetLevel: Math.min((comp.assigned_level || 1) + 1, 5),
+            developmentActivities: [{
+              type: 'Education',
+              activity: '',
+              targetCompletionDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0],
+              actualCompletionDate: '',
+              completionStatus: 'Not Started/In Progress (<50%)',
+              expectedResults: '',
+              sharingMethod: '',
+              applicationMethod: '',
+              score: 1
+            }]
+          }));
           setIdpData(prev => ({ ...prev, items }));
         }
       } catch (err) {
@@ -161,6 +193,52 @@ function CreateIDPPage() {
     });
   };
 
+  const toBackendActivity = (a = {}) => ({
+    type: a.type || a.activityType || 'Education',
+    activity: a.activity || a.developmentActivity || '',
+    targetDate: normalizeDate(a.targetCompletionDate || a.targetDate || a.target || ''),
+    actualDate: normalizeDate(a.actualCompletionDate || a.actualDate || ''),
+    status: a.completionStatus || a.status || a.completion_status || '',
+    expectedResults: a.expectedResults || a.expected_results || '',
+    sharingMethod: a.sharingMethod || a.sharing_method || '',
+    applicationMethod: a.applicationMethod || a.application_method || '',
+    score: Number(a.score || a.points || 1)
+  });
+
+  const fromBackendActivity = (a = {}) => ({
+    type: a.type || a.activityType || 'Education',
+    activity: a.activity || a.developmentActivity || '',
+    targetCompletionDate: normalizeDate(a.targetDate || a.targetCompletionDate || a.target || ''),
+    actualCompletionDate: normalizeDate(a.actualDate || a.actualCompletionDate || ''),
+    completionStatus: a.status || a.completionStatus || '',
+    expectedResults: a.expectedResults || a.expected_results || '',
+    sharingMethod: a.sharingMethod || a.sharing_method || '',
+    applicationMethod: a.applicationMethod || a.application_method || '',
+    score: a.score || 1
+  });
+
+  function normalizeDate(value) {
+    if (!value) return '';
+    // Already ISO
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    // US format mm/dd/yyyy
+    const m = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) {
+      const mm = m[1].padStart(2, '0');
+      const dd = m[2].padStart(2, '0');
+      return `${m[3]}-${mm}-${dd}`;
+    }
+    // Try Date parse
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) {
+      const yy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yy}-${mm}-${dd}`;
+    }
+    return '';
+  }
+
   // For create: submit new, for edit: update and resubmit
   const submitIDP = async () => {
     try {
@@ -172,16 +250,21 @@ function CreateIDPPage() {
           : []
       }));
       if (editMode && id) {
-        // Edit mode: update and resubmit
+        // Edit mode: prepare backend-friendly payload (id + development_activity)
         const payload = {
           reviewPeriod: idpData.reviewPeriod,
-          nextReviewDate: idpData.nextReviewDate,
-          items: enforcedItems
+          nextReviewDate: normalizeDate(idpData.nextReviewDate),
+          items: (idpData.items || []).map(it => ({
+            id: it.id,
+            competency_id: it.competency_id || it.competencyId || it.competency_id,
+            development_activity: JSON.stringify(toBackendActivity((it.developmentActivities || [])[0] || {}))
+          }))
         };
-        // 1. Update the IDP
+        // 1. Update the IDP (backend will update existing items by id)
         await apiRequest(`/api/idp/${id}`, {
           method: 'PUT',
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          headers: { 'Content-Type': 'application/json' }
         });
         // 2. Resubmit the IDP
         await apiRequest(`/api/idp/${id}/submit`, {
@@ -195,8 +278,12 @@ function CreateIDPPage() {
           employeeId: parseInt(employeeId),
           supervisorId: employee?.supervisor_id,
           reviewPeriod: idpData.reviewPeriod,
-          nextReviewDate: idpData.nextReviewDate,
-          items: enforcedItems
+          nextReviewDate: normalizeDate(idpData.nextReviewDate),
+          // normalize activities for backend create
+          items: enforcedItems.map(it => ({
+            ...it,
+            developmentActivities: (it.developmentActivities || []).map(a => toBackendActivity(a))
+          }))
         };
         const createRes = await apiRequest('/api/idp/create', {
           method: 'POST',
@@ -599,9 +686,9 @@ function CreateIDPPage() {
                                 <label className="block text-xs font-semibold text-gray-600 mb-1">Target Completion Date</label>
                                 <input
                                   type="date"
-                                  value={activity.targetCompletionDate}
-                                  readOnly
-                                  className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black opacity-90 border border-gray-100"
+                                  value={activity.targetCompletionDate || ''}
+                                  onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.targetCompletionDate`, e.target.value)}
+                                  className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
 

@@ -9,6 +9,38 @@ import {
 } from '@heroicons/react/24/outline';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+// Helpers moved outside component to avoid hook dependency warnings
+function normalizeArray(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.rows)) return data.rows;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.history)) return data.history;
+  return [];
+}
+
+function safeDate(val) {
+  if (!val) return null;
+  const d = new Date(val);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function pickLatest(historyArr) {
+  if (!Array.isArray(historyArr) || historyArr.length === 0) return null;
+
+  const sorted = [...historyArr].sort((a, b) => {
+    const da = safeDate(a.created_at);
+    const db = safeDate(b.created_at);
+    if (da && db) return db - da; // newest first
+    if (da && !db) return -1;
+    if (!da && db) return 1;
+    return (b.id || 0) - (a.id || 0);
+  });
+
+  return sorted[0];
+}
+
+const supervisorRoles = ["Supervisor", "AM", "Manager", "HR"];
+
 function StartCLPage() {
   const [currentUser, setCurrentUser] = useState(null);
   const [employees, setEmployees] = useState([]);
@@ -46,40 +78,6 @@ function StartCLPage() {
   const closeAlertModal = () => {
     setModal({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
   };
-
-  const supervisorRoles = ["Supervisor", "AM", "Manager", "HR"];
-
-  // -------------------------------
-  // Helpers
-  // -------------------------------
-  function normalizeArray(data) {
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data?.rows)) return data.rows;
-    if (Array.isArray(data?.data)) return data.data;
-    if (Array.isArray(data?.history)) return data.history;
-    return [];
-  }
-
-  function safeDate(val) {
-    if (!val) return null;
-    const d = new Date(val);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-
-  function pickLatest(historyArr) {
-    if (!Array.isArray(historyArr) || historyArr.length === 0) return null;
-
-    const sorted = [...historyArr].sort((a, b) => {
-      const da = safeDate(a.created_at);
-      const db = safeDate(b.created_at);
-      if (da && db) return db - da; // newest first
-      if (da && !db) return -1;
-      if (!da && db) return 1;
-      return (b.id || 0) - (a.id || 0);
-    });
-
-    return sorted[0];
-  }
 
   // ===============================
   // LOAD USER

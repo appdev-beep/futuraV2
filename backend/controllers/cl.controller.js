@@ -391,8 +391,6 @@ async function getHRSummary(req, res, next) {
   try {
     const department = req.query.department || null;
     const summary = await clService.getHRSummary(req.user.id, department);
-  getAMAllCL,
-  getAMDepartmentCL,
     res.json(summary);
   } catch (err) {
     next(err);
@@ -579,6 +577,18 @@ async function getMyHistory(req, res, next) {
   }
 }
 
+// GET /api/cl/employee/my/competencies
+async function getMyCompetencies(req, res, next) {
+  try {
+    const employeeId = req.user.id;
+    const data = await clService.getCompetenciesForEmployee(employeeId);
+    if (!data) return res.status(404).json({ message: 'Employee not found' });
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getById,
   create,
@@ -594,6 +604,7 @@ module.exports = {
   // Employee history
   getEmployeeHistory,
   getMyHistory,
+  getMyCompetencies,
 
   // Manager
   getManagerSummary,

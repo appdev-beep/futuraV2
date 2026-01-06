@@ -17,11 +17,34 @@ async function managerReturnIDP(req, res, next) {
     next(err);
   }
 }
+// PUT /api/idp/:id/manager/approve
+async function managerApproveIDP(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid IDP id' });
+    const managerId = req.user.id;
+    const result = await idpService.managerApprove(id, managerId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
 // GET /api/idp/manager/pending
 async function getManagerPendingIDPs(req, res, next) {
   try {
     const managerId = req.user.id;
     const idps = await idpService.getIDPsPendingManager(managerId);
+    res.json(idps);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/idp/employee/my - return IDPs for the logged-in employee
+async function getEmployeeIDPs(req, res, next) {
+  try {
+    const employeeId = req.user.id;
+    const idps = await idpService.getIDPsForEmployee(employeeId);
     res.json(idps);
   } catch (err) {
     next(err);
@@ -84,8 +107,9 @@ async function update(req, res, next) {
       return res.status(400).json({ message: 'Invalid IDP id' });
     }
 
-    const { items } = req.body;
-    const result = await idpService.update(id, { items: items || [] });
+      const { items, reviewPeriod, nextReviewDate } = req.body;
+    console.log('[IDP UPDATE] Received items payload:', JSON.stringify(items || []).slice(0, 1000));
+      const result = await idpService.update(id, { items: items || [], reviewPeriod, nextReviewDate });
     res.json(result);
   } catch (err) {
     next(err);
@@ -134,6 +158,18 @@ async function getSupervisorIDPsGrouped(req, res, next) {
   }
 }
 
+// GET /api/idp/hr/incoming
+async function getHRIncomingIDPs(req, res, next) {
+  try {
+    const department = req.query.department || null;
+    const status = req.query.status || null; // optional comma-separated statuses
+    const rows = await idpService.getHRIncoming(req.user.id, department, status);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
 
 // DELETE /api/idp/:id (delete DRAFT IDP)
 async function deleteIDP(req, res, next) {
@@ -147,14 +183,15 @@ async function deleteIDP(req, res, next) {
     const user = req.user ? req.user.id : null;
     const role = req.user ? req.user.role : null;
     console.log(`[IDP DELETE] User: ${user}, Role: ${role}`);
-    // Only allow delete if status is DRAFT
     const idp = await idpService.getById(id);
     console.log('[IDP DELETE] IDP header:', idp && idp.header);
     if (!idp || !idp.header) {
       console.log('[IDP DELETE] IDP not found');
       return res.status(404).json({ message: 'IDP not found.' });
     }
-    if (idp.header.status !== 'DRAFT') {
+    // Supervisors who own the IDP may delete it even if it's in approval.
+    const isSupervisorOwner = role === 'Supervisor' && Number(idp.header.supervisor_id) === Number(user);
+    if (!isSupervisorOwner && idp.header.status !== 'DRAFT') {
       console.log(`[IDP DELETE] Cannot delete, status is ${idp.header.status}`);
       return res.status(403).json({ message: 'Only DRAFT IDPs can be deleted.' });
     }
@@ -172,6 +209,34 @@ async function deleteIDP(req, res, next) {
   }
 }
 
+// PUT /api/idp/:id/employee/approve
+async function employeeApproveIDP(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid IDP id' });
+    const employeeId = req.user.id;
+    const result = await idpService.employeeApprove(id, employeeId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /api/idp/:id/employee/return
+async function employeeReturnIDP(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid IDP id' });
+    const { remarks } = req.body || {};
+    if (!remarks) return res.status(400).json({ message: 'Remarks are required' });
+    const employeeId = req.user.id;
+    const result = await idpService.employeeReturn(id, employeeId, remarks);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getById,
   create,
@@ -183,6 +248,11 @@ module.exports = {
   deleteIDP,
   getManagerPendingIDPs,
   managerReturnIDP,
+  managerApproveIDP,
+  getEmployeeIDPs,
+  employeeApproveIDP,
+  employeeReturnIDP,
+  getHRIncomingIDPs,
 };
 
 // POST /api/idp/create

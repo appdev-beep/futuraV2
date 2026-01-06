@@ -1,6 +1,7 @@
 // src/pages/Supervisor/SupervisorDashboard.jsx
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../../api/client';
+import { useNavigate } from 'react-router-dom';
 import {
   ClipboardDocumentCheckIcon,
   BookOpenIcon,
@@ -138,44 +139,48 @@ function SupervisorDashboard() {
     fetchDepartment();
   }, []);
 
-  useEffect(() => {
+  const navigate = useNavigate();
+
+  // Load dashboard data; exposed so child components can trigger a refresh without reloading the page
+  async function loadDashboard() {
     if (!user) return;
+    try {
+      setLoading(true);
+      const [clSummary, clGrouped, idpCreation, idpGrouped] = await Promise.all([
+        apiRequest('/api/cl/supervisor/summary'),
+        apiRequest('/api/cl/supervisor/all'),
+        apiRequest('/api/idp/supervisor/for-creation'),
+        apiRequest('/api/idp/supervisor/grouped'),
+      ]);
 
-    async function loadDashboard() {
-      try {
-        const [clSummary, clGrouped, idpCreation, idpGrouped] = await Promise.all([
-          apiRequest('/api/cl/supervisor/summary'),
-          apiRequest('/api/cl/supervisor/all'),
-          apiRequest('/api/idp/supervisor/for-creation'),
-          apiRequest('/api/idp/supervisor/grouped'),
-        ]);
+      setSummary({
+        clPending: clSummary.clPending || 0,
+        clApproved: clSummary.clApproved || 0,
+        clReturned: clSummary.clInProgress || 0,
+      });
 
-        setSummary({
-          clPending: clSummary.clPending || 0,
-          clApproved: clSummary.clApproved || 0,
-          clReturned: clSummary.clInProgress || 0,
-        });
+      setClByStatus(clGrouped || {});
+      setIdpEmployees(idpCreation || []);
 
-        setClByStatus(clGrouped || {});
-        setIdpEmployees(idpCreation || []);
-
-        // Calculate summary from grouped IDPs
-        setIdpByStatus(idpGrouped || {});
-        setIdpSummary({
-          idpCreation: (idpCreation || []).length,
-          idpPending: (idpGrouped?.PENDING_AM?.length || 0) + (idpGrouped?.PENDING_MANAGER?.length || 0),
-          idpApproved: (idpGrouped?.APPROVED?.length || 0),
-          idpReturned: (idpGrouped?.RETURNED?.length || 0),
-        });
-      } catch (err) {
-        console.error(err);
-        setError('Failed to load Supervisor dashboard data.');
-      } finally {
-        setLoading(false);
-      }
+      // Calculate summary from grouped IDPs
+      setIdpByStatus(idpGrouped || {});
+      setIdpSummary({
+        idpCreation: (idpCreation || []).length,
+        idpPending: (idpGrouped?.PENDING_AM?.length || 0) + (idpGrouped?.PENDING_MANAGER?.length || 0),
+        idpApproved: (idpGrouped?.APPROVED?.length || 0),
+        idpReturned: (idpGrouped?.RETURNED?.length || 0),
+      });
+    } catch (err) {
+      console.error(err);
+      setError('Failed to load Supervisor dashboard data.');
+    } finally {
+      setLoading(false);
     }
+  }
 
+  useEffect(() => {
     loadDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // Notifications (polling)
@@ -223,14 +228,14 @@ function SupervisorDashboard() {
   function goTo(url) {
     const currentPath = window.location.pathname;
     const targetPath = url.split('?')[0];
-    
-    // If already on the target page, just reload data instead of full refresh
+
+    // If already on the target page, refresh data instead of full refresh
     if (currentPath === targetPath) {
-      window.location.reload();
+      loadDashboard();
       return;
     }
-    
-    window.location.href = url;
+
+    navigate(url);
   }
 
   function openModal(options) {
@@ -275,7 +280,7 @@ function SupervisorDashboard() {
             message: 'CL deleted successfully. The action has been logged in your Recent Actions.',
             showCancel: false,
             confirmText: 'OK',
-            onConfirm: () => window.location.reload(),
+            onConfirm: () => loadDashboard(),
           });
         } catch (err) {
           console.error(err);
@@ -334,10 +339,10 @@ function SupervisorDashboard() {
       // Just close modal and stay on current page
       return;
     }
-    
-    // Navigate to different page
+
+    // Navigate within SPA
     const separator = url.includes('?') ? '&' : '?';
-    window.location.href = `${url}${separator}viewOnly=true`;
+    navigate(`${url}${separator}viewOnly=true`);
   }
 
   async function proceedToNotificationLink(n) {
@@ -358,14 +363,14 @@ function SupervisorDashboard() {
     const url = n?.url || '/supervisor';
     const currentPath = window.location.pathname;
     const targetPath = url.split('?')[0];
-    
+
     if (currentPath === targetPath) {
       // Stay on current page without refresh
       return;
     }
-    
-    // Navigate to different page
-    window.location.href = url;
+
+    // Navigate within SPA
+    navigate(url);
   }
 
   function closeNotificationModal() {
@@ -586,6 +591,7 @@ function SupervisorDashboard() {
             activeIDPSection={activeIDPSection}
             setActiveIDPSection={setActiveIDPSection}
             IDP_STATUS_SECTIONS={IDP_STATUS_SECTIONS}
+            refreshIDPs={loadDashboard}
           />
         )}
       </main>

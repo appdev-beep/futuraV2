@@ -2,29 +2,30 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 
-export default function SupervisorIDP({ idpSummary, idpEmployees, idpByStatus, activeIDPSection, setActiveIDPSection, IDP_STATUS_SECTIONS }) {
+function SummaryCard({ label, value, gradientClass }) {
+  return (
+    <div className={`p-4 rounded shadow-md bg-gradient-to-r ${gradientClass}`}>
+      <h3 className="text-sm text-white/80">{label}</h3>
+      <p className="text-3xl font-semibold text-white mt-1">{value}</p>
+    </div>
+  );
+}
+
+export default function SupervisorIDP({ idpSummary, idpEmployees, idpByStatus, activeIDPSection, IDP_STATUS_SECTIONS, refreshIDPs }) {
   const navigate = useNavigate();
 
-  // Delete handler for DRAFT IDPs
+  // Delete handler (supervisor owner may delete even if in approval)
   async function handleDeleteIDP(idpId) {
-    if (!window.confirm('Are you sure you want to delete this DRAFT IDP? This action cannot be undone.')) return;
+    if (!window.confirm('Are you sure you want to delete this IDP? This action cannot be undone.')) return;
     try {
       // Use apiRequest to ensure correct base URL and headers
-      await apiRequest(`/api/idp/${idpId}`, { method: 'DELETE' });
-      alert('IDP deleted successfully.');
-      window.location.reload();
+        await apiRequest(`/api/idp/${idpId}`, { method: 'DELETE' });
+        alert('IDP deleted successfully.');
+        if (typeof refreshIDPs === 'function') refreshIDPs();
     } catch (err) {
       alert('Failed to delete IDP.');
       console.error(err);
     }
-  }
-  function SummaryCard({ label, value, gradientClass }) {
-    return (
-      <div className={`p-4 rounded shadow-md bg-gradient-to-r ${gradientClass}`}>
-        <h3 className="text-sm text-white/80">{label}</h3>
-        <p className="text-3xl font-semibold text-white mt-1">{value}</p>
-      </div>
-    );
   }
 
   // Filtered IDP list for the selected section
@@ -114,7 +115,7 @@ export default function SupervisorIDP({ idpSummary, idpEmployees, idpByStatus, a
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idp.id}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idp.employee_id || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idp.employee_name || 'N/A'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idp.position_id ? `Position #${idp.position_id}` : 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idp.position_title || idp.position || (idp.position_id ? `Position #${idp.position_id}` : 'N/A')}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idp.status || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
@@ -123,7 +124,7 @@ export default function SupervisorIDP({ idpSummary, idpEmployees, idpByStatus, a
                       >
                         View
                       </button>
-                      {idp.status === 'DRAFT' && (
+                      {(idp.status === 'DRAFT' || Number(idp.supervisor_id) === Number(localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')).id : -1)) && (
                         <button
                           onClick={() => handleDeleteIDP(idp.id)}
                           className="text-red-600 hover:text-red-900 font-medium"

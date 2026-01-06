@@ -34,11 +34,13 @@ function EmployeeDashboard() {
   const [selectedCLLoading, _setSelectedCLLoading] = useState(false);
 
   const [activeView, setActiveView] = useState('pending'); // 'pending' or 'history'
+  const [activeModule, setActiveModule] = useState('CL'); // 'CL' or 'IDP'
   const [currentCompetencies, setCurrentCompetencies] = useState(null);
   const [approvedCompetencies, setApprovedCompetencies] = useState(null);
   const [competenciesLoading, setCompetenciesLoading] = useState(false);
   const [showFullNotifications, setShowFullNotifications] = useState(false);
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
+  const [employeeIDPs, setEmployeeIDPs] = useState([]);
 
   // Auth check – must be logged in and Employee
   useEffect(() => {
@@ -135,7 +137,8 @@ function EmployeeDashboard() {
     async function loadCompetencies() {
       setCompetenciesLoading(true);
       try {
-        const data = await apiRequest(`/api/cl/employee/${user.id}/competencies`, { method: 'GET' });
+        // Employees fetch their own competencies via a dedicated endpoint to avoid role checks
+        const data = await apiRequest(`/api/cl/employee/my/competencies`, { method: 'GET' });
         const all = data?.competencies || [];
 
         // Determine approved items from API
@@ -366,6 +369,22 @@ function EmployeeDashboard() {
     ).length;
   }, [notifications]);
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    async function loadEmployeeIDPs() {
+      try {
+        const data = await apiRequest('/api/idp/employee/my');
+        if (!cancelled) setEmployeeIDPs(data || []);
+      } catch (err) {
+        console.error('Failed to load employee IDPs', err);
+        if (!cancelled) setEmployeeIDPs([]);
+      }
+    }
+    loadEmployeeIDPs();
+    return () => { cancelled = true; };
+  }, [user]);
+
   if (!user) {
     return null; // wait for auth check
   }
@@ -387,58 +406,25 @@ function EmployeeDashboard() {
 
         <nav className="flex-1 p-4 space-y-2">
           <button
-            onClick={() => setActiveView('pending')}
-            className={`w-full flex items-center gap-3 px-4 py-2 rounded transition
-                       ${
-                         activeView === 'pending'
-                           ? 'bg-blue-50 text-blue-700'
-                           : 'text-gray-700 hover:bg-gray-100'
-                       }`}
+            onClick={() => { setActiveModule('IDP'); setActiveView('idp_pending'); }}
+            className={`w-full text-left px-4 py-2 rounded transition ${activeView === 'idp_pending' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
           >
-            <ClipboardDocumentCheckIcon className="w-5 h-5" />
-            <span>Pending Reviews</span>
+            IDP FOR APPROVAL
           </button>
+
           <button
-            onClick={() => setActiveView('history')}
-            className={`w-full flex items-center gap-3 px-4 py-2 rounded transition
-                       ${
-                         activeView === 'history'
-                           ? 'bg-blue-50 text-blue-700'
-                           : 'text-gray-700 hover:bg-gray-100'
-                       }`}
+            onClick={() => { setActiveModule('CL'); setActiveView('pending'); }}
+            className={`w-full text-left px-4 py-2 rounded transition ${activeView === 'pending' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
           >
-            <CheckCircleIcon className="w-5 h-5" />
-            <span>My Activity</span>
+            CL FOR APPROVAL
           </button>
+
           <button
-            onClick={() => setActiveView('current')}
-            className={`w-full flex items-center gap-3 px-4 py-2 rounded transition
-                       ${
-                         activeView === 'current'
-                           ? 'bg-blue-50 text-blue-700'
-                           : 'text-gray-700 hover:bg-gray-100'
-                       }`}
+            onClick={() => { setActiveModule('CL'); setActiveView('tracking'); }}
+            className={`w-full text-left px-4 py-2 rounded transition ${activeView === 'tracking' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
           >
-            <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m2 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>Current Competencies</span>
+            CL OR IDP TRACKING
           </button>
-          <button
-            onClick={() => setActiveView('approved')}
-            className={`w-full flex items-center gap-3 px-4 py-2 rounded transition
-                       ${
-                         activeView === 'approved'
-                           ? 'bg-blue-50 text-blue-700'
-                           : 'text-gray-700 hover:bg-gray-100'
-                       }`}
-          >
-            <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            <span>Approved Competencies</span>
-          </button>
-          {/* Past CLs removed per user request */}
         </nav>
         <div className="p-4 border-t border-gray-200">
           <button
@@ -573,6 +559,49 @@ function EmployeeDashboard() {
 
         {/* CONDITIONAL CONTENT BASED ON VIEW */}
 
+        {/* IDP Views (real lists) */}
+        {activeView && typeof activeView === 'string' && activeView.startsWith('idp') && (
+          <section>
+            <h2 className="mb-3 text-lg font-semibold text-gray-900">IDP — {activeView === 'idp_pending' ? 'For Your Acknowledgement' : activeView === 'idp_returned' ? 'Returned to You' : activeView === 'idp_approved' ? 'Approved IDPs' : 'My IDPs'}</h2>
+
+            {employeeIDPs.length === 0 ? (
+              <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600">No IDPs found.</div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <Th>IDP #</Th>
+                      <Th>Supervisor</Th>
+                      <Th>Status</Th>
+                      <Th>Submitted At</Th>
+                      <Th>Actions</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {employeeIDPs.filter(h => {
+                      if (activeView === 'idp_pending') return h.status === 'PENDING_EMPLOYEE';
+                      if (activeView === 'idp_returned') return h.status === 'RETURNED';
+                      if (activeView === 'idp_approved') return h.status === 'APPROVED';
+                      return true;
+                    }).map((h) => (
+                      <tr key={h.id} className="hover:bg-gray-50">
+                        <Td>{h.id}</Td>
+                        <Td>{h.supervisor_name || h.supervisor_id || '-'}</Td>
+                        <Td><span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800">{displayStatus(h.status)}</span></Td>
+                        <Td>{h.created_at ? new Date(h.created_at).toLocaleString() : '-'}</Td>
+                        <Td>
+                          <button type="button" onClick={() => goTo(`/employee/idp/view/${h.id}`)} className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">View</button>
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+
         {activeView === 'pending' && (
           <section>
             <h2 className="mb-3 text-lg font-semibold text-gray-900">Pending Competency Leveling Review</h2>
@@ -700,6 +729,80 @@ function EmployeeDashboard() {
                 </table>
               </div>
             )}
+          </section>
+        )}
+
+        {activeView === 'tracking' && (
+          <section>
+            <h2 className="mb-3 text-lg font-semibold text-gray-900">CL / IDP Tracking</h2>
+
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-gray-800 mb-2">All CLs</h3>
+              {clHistory && clHistory.length > 0 ? (
+                <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <Th>CL #</Th>
+                        <Th>Cycle</Th>
+                        <Th>Status</Th>
+                        <Th>Submitted</Th>
+                        <Th>Actions</Th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {clHistory.map(cl => (
+                        <tr key={cl.id} className="hover:bg-gray-50">
+                          <Td>{cl.id}</Td>
+                          <Td>{cl.cycle_name || cl.cycle_id || '-'}</Td>
+                          <Td>{displayStatus(cl.status)}</Td>
+                          <Td>{cl.created_at ? new Date(cl.created_at).toLocaleString() : '-'}</Td>
+                          <Td>
+                            <button onClick={() => goTo(`/cl/employee/review/${cl.id}`)} className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">View</button>
+                          </Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600">No CL records found.</div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-2">All IDPs</h3>
+              {employeeIDPs && employeeIDPs.length > 0 ? (
+                <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <Th>IDP #</Th>
+                        <Th>Supervisor</Th>
+                        <Th>Status</Th>
+                        <Th>Submitted</Th>
+                        <Th>Actions</Th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {employeeIDPs.map(h => (
+                        <tr key={h.id} className="hover:bg-gray-50">
+                          <Td>{h.id}</Td>
+                          <Td>{h.supervisor_name || h.supervisor_id || '-'}</Td>
+                          <Td>{displayStatus(h.status)}</Td>
+                          <Td>{h.created_at ? new Date(h.created_at).toLocaleString() : '-'}</Td>
+                          <Td>
+                            <button onClick={() => goTo(`/employee/idp/view/${h.id}`)} className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">View</button>
+                          </Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600">No IDP records found.</div>
+              )}
+            </div>
           </section>
         )}
       </main>

@@ -15,6 +15,13 @@ router.get(
   idpController.getManagerPendingIDPs
 );
 
+// GET /api/idp/employee/my (IDPs for current employee)
+router.get(
+  '/employee/my',
+  requireRole('Employee', 'Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  idpController.getEmployeeIDPs
+);
+
 // GET /api/idp/:id  (everyone logged in can view – later: ownership rules)
 router.get('/:id', idpController.getById);
 
@@ -53,6 +60,27 @@ router.put(
   idpController.managerReturnIDP
 );
 
+// PUT /api/idp/:id/manager/approve (Manager approves IDP and routes to employee)
+router.put(
+  '/:id/manager/approve',
+  requireRole('Manager', 'HR', 'Admin'),
+  idpController.managerApproveIDP
+);
+
+// PUT /api/idp/:id/employee/approve (Employee acknowledges/approves IDP)
+router.put(
+  '/:id/employee/approve',
+  requireRole('Employee'),
+  idpController.employeeApproveIDP
+);
+
+// PUT /api/idp/:id/employee/return (Employee returns IDP to supervisor)
+router.put(
+  '/:id/employee/return',
+  requireRole('Employee'),
+  idpController.employeeReturnIDP
+);
+
 // =====================================
 // SUPERVISOR DASHBOARD ROUTES
 // =====================================
@@ -69,6 +97,13 @@ router.get(
   '/supervisor/grouped',
   requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
   idpController.getSupervisorIDPsGrouped
+);
+
+// HR incoming IDPs (filterable by department)
+router.get(
+  '/hr/incoming',
+  requireRole('HR', 'Admin'),
+  idpController.getHRIncomingIDPs
 );
 
 // DELETE /api/idp/:id (delete DRAFT IDP)

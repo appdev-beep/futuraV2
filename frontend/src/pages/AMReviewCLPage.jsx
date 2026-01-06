@@ -102,7 +102,7 @@ function AMReviewCLPage() {
         setStatus(data.status);
         setEmployeeName(data.employee_name);
         setSupervisorName(data.supervisor_name);
-      } catch (err) {
+      } catch {
         setError('Failed to load CL details.');
       } finally {
         setLoading(false);

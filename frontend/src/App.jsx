@@ -46,6 +46,7 @@ function App() {
         {/* Employee pages */}
         <Route path="/employee" element={<EmployeeDashboard />} />
         <Route path="/cl/employee/review/:id" element={<EmployeeReviewCLPage />} />
+        <Route path="/employee/idp/view/:id" element={<SupervisorViewIDPPage />} />
 
         {/* Assistant Manager pages */}
         <Route path="/am" element={<AMDashboard />} />
