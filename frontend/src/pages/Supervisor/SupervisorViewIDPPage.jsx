@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
+import { COMPLETION_STATUS_OPTIONS } from './idpConstants';
 
 
 export default function SupervisorViewIDPPage() {
@@ -15,6 +16,13 @@ export default function SupervisorViewIDPPage() {
   const [employeeInfo, setEmployeeInfo] = useState(null);
   const [supervisorInfo, setSupervisorInfo] = useState(null);
   const [compAssignedMap, setCompAssignedMap] = useState({});
+  const [currentUser, setCurrentUser] = useState(null);
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (stored) {
+      try { setCurrentUser(JSON.parse(stored)); } catch { setCurrentUser(null); }
+    }
+  }, []);
 
   useEffect(() => {
     async function fetchIDP() {
@@ -44,8 +52,8 @@ export default function SupervisorViewIDPPage() {
           if (c && c.competency_id != null) map[c.competency_id] = c.assigned_level || map[c.competency_id];
         });
         if (!cancelled) setCompAssignedMap(map);
-      } catch (e) {
-        // ignore
+      } catch {
+        void 0;
       }
     })();
     return () => { cancelled = true; };
@@ -72,7 +80,6 @@ export default function SupervisorViewIDPPage() {
 
   // Debug: log idp + fetched users to help map fields (always registered)
   useEffect(() => {
-    // eslint-disable-next-line no-console
     console.log('IDP (debug):', idp, 'employeeInfo:', employeeInfo, 'supervisorInfo:', supervisorInfo);
   }, [idp, employeeInfo, supervisorInfo]);
 
@@ -84,7 +91,7 @@ export default function SupervisorViewIDPPage() {
         items: idp.items.map(item => {
           let activity = item.development_activity;
           if (typeof activity === 'string') {
-            try { activity = JSON.parse(activity); } catch (e) {}
+            try { activity = JSON.parse(activity); } catch { void 0; }
           }
           const assignedFromMap = compAssignedMap[item.competency_id];
           const current_level = (item.current_level ?? item.currentLevel ?? item.assigned_level ?? item.mplr ?? item.mplr_level ?? assignedFromMap ?? null);
@@ -117,7 +124,7 @@ export default function SupervisorViewIDPPage() {
         body: JSON.stringify({
           items: editData.items.map(item => ({
             id: item.id,
-            development_activity: item.activity
+            development_activity: JSON.stringify(item.activity || {})
           }))
         }),
         headers: { 'Content-Type': 'application/json' },
@@ -154,13 +161,112 @@ export default function SupervisorViewIDPPage() {
   const supName = (hasNonNumericSupName ? rawSupName : null) || (header.supervisor && getDisplayName(header.supervisor)) || getDisplayName(supervisorInfo) || '';
   const supPosition = header.supervisor_title || supervisorInfo?.position || supervisorInfo?.title || '';
 
+  // Manager/AM actions
+  async function handleApproveAsManager() {
+    if (!window.confirm('Approve this IDP?')) return;
+    try {
+      await apiRequest(`/api/idp/${id}/manager/approve`, { method: 'PUT' });
+      alert('IDP approved successfully.');
+      navigate(-1);
+    } catch (err) {
+      alert('Failed to approve IDP.');
+      console.error(err);
+    }
+  }
+
+  async function handleReturnAsManager() {
+    const remarks = window.prompt('Enter remarks for return:');
+    if (!remarks) return;
+    try {
+      await apiRequest(`/api/idp/${id}/manager/return`, {
+        method: 'PUT',
+        body: JSON.stringify({ remarks }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      alert('IDP returned to supervisor.');
+      navigate(-1);
+    } catch (err) {
+      alert('Failed to return IDP.');
+      console.error(err);
+    }
+  }
+
+  // status badge similar to CreateIDPPage
+  const statusBadge = (() => {
+    const status = header.status;
+    if (!status) return null;
+    const base = "inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border";
+    if (status === 'RETURNED') return (<span className={`${base} bg-amber-50 text-amber-800 border-amber-200`}><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />{status}</span>);
+    if (status === 'PENDING_MANAGER' || status === 'PENDING_AM') return (<span className={`${base} bg-blue-50 text-blue-800 border-blue-200`}><span className="h-1.5 w-1.5 rounded-full bg-blue-500" />{status}</span>);
+    if (status === 'APPROVED') return (<span className={`${base} bg-emerald-50 text-emerald-800 border-emerald-200`}><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{status}</span>);
+    return (<span className={`${base} bg-gray-50 text-gray-800 border-gray-200`}><span className="h-1.5 w-1.5 rounded-full bg-gray-500" />{status}</span>);
+  })();
+
   return (
-    <div className="max-w-3xl mx-auto p-6 bg-white rounded shadow">
-      <button onClick={() => navigate(-1)} className="mb-4 text-blue-600 hover:underline">&larr; Back</button>
-      <h1 className="text-2xl font-bold mb-4">Individual Development Plan (IDP) Details</h1>
-      <div className="mb-4">
-        <strong>Status:</strong> {header.status}
+    <div className="min-h-screen bg-gray-50 text-black">
+      <div className="border-b bg-black sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3 min-w-0">
+              <button
+                onClick={() => navigate(-1)}
+                className="shrink-0 p-2 bg-white/10 hover:bg-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-white/30"
+                aria-label="Back"
+              >
+                &larr;
+              </button>
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-xl font-bold text-white leading-tight">Individual Development Plan (IDP) Details</h1>
+                  {statusBadge}
+                </div>
+                <p className="text-xs text-white/70 mt-0.5 truncate">View IDP details</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              {currentUser && currentUser.role === 'Supervisor' && (header.status === 'DRAFT') && (
+                <button
+                  onClick={async () => {
+                    if (!window.confirm('Delete this DRAFT IDP? This action cannot be undone.')) return;
+                    try {
+                      await apiRequest(`/api/idp/${id}`, { method: 'DELETE' });
+                      alert('IDP deleted');
+                      navigate('/supervisor');
+                    } catch {
+                      alert('Failed to delete IDP.');
+                    }
+                  }}
+                  className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              )}
+
+              {editable && (
+                <button
+                  onClick={handleSaveAndResubmit}
+                  disabled={saving}
+                  className="bg-white text-black px-4 py-2 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition"
+                >
+                  {saving ? 'Saving...' : (header.status === 'DRAFT' ? 'Save & Submit' : 'Save & Resubmit')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-black">Employee Information</h2>
+            </div>
+            <div className="text-xs text-gray-500 text-right">
+              <div className="font-semibold text-gray-800">Cycle ID: {header.cycle_id}</div>
+            </div>
+          </div>
       <div className="mb-4">
         <div><strong>Employee:</strong> {empName}{empId ? ` (${empId})` : ''}</div>
         {empPosition && <div><strong>Position:</strong> {empPosition}</div>}
@@ -185,7 +291,28 @@ export default function SupervisorViewIDPPage() {
         </div>
       )}
 
-      <h2 className="text-xl font-semibold mb-2">Development Items</h2>
+      {/* Manager approve/return controls (shown when a manager opens a pending IDP) */}
+      {currentUser && currentUser.role === 'Manager' && header.status === 'PENDING_MANAGER' && (
+        <div className="mb-4 flex gap-2">
+          <button
+            onClick={handleApproveAsManager}
+            className="px-4 py-2 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+          >
+            Approve
+          </button>
+
+          <button
+            onClick={handleReturnAsManager}
+            className="px-4 py-2 rounded bg-yellow-600 text-white text-sm hover:bg-yellow-700"
+          >
+            Return
+          </button>
+        </div>
+      )}
+
+        </div>
+
+        <h2 className="text-xl font-semibold mb-2">Development Items</h2>
       {/* Table only contains valid table elements */}
       <table className="min-w-full divide-y divide-gray-200 mb-4">
         <thead className="bg-gray-50">
@@ -250,9 +377,9 @@ export default function SupervisorViewIDPPage() {
                     />
                   </td>
                   <td className="px-4 py-2 align-top">
-                    <input
+                    <select
                       className="border rounded px-2 py-1 text-xs"
-                      value={item.activity.status || ''}
+                      value={item.activity.status || COMPLETION_STATUS_OPTIONS[0]}
                       onChange={e => {
                         const v = e.target.value;
                         setEditData(ed => {
@@ -261,29 +388,87 @@ export default function SupervisorViewIDPPage() {
                           return { ...ed, items };
                         });
                       }}
-                    />
+                    >
+                      {COMPLETION_STATUS_OPTIONS.map(opt => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
                   </td>
                 </tr>
               ))
-            : idp.items.map(item => {
+              : idp.items.map(item => {
                 let activity = item.development_activity;
                 if (typeof activity === 'string') {
-                  try { activity = JSON.parse(activity); } catch (e) {}
+                  try { activity = JSON.parse(activity); } catch { void 0; }
                 }
+
+                // Compute a robust current level with fallbacks.
+                const rawCurrent = (item.current_level ?? item.currentLevel ?? item.assigned_level ?? item.assignedLevel ?? item.mplr ?? item.mplr_level ?? compAssignedMap[item.competency_id] ?? null);
+                const rawTarget = (item.target_level ?? item.targetLevel ?? null);
+
+                // If current is missing but target exists, derive a reasonable current (target - 1, min 1)
+                let displayCurrent = rawCurrent;
+                let displayTarget = rawTarget;
+
+                if ((displayCurrent === null || displayCurrent === undefined || displayCurrent === '') && displayTarget != null) {
+                  const tnum = Number(displayTarget);
+                  if (!Number.isNaN(tnum)) {
+                    displayCurrent = Math.max(tnum - 1, 1);
+                  }
+                }
+
+                // If target missing but current exists, derive target as current + 1 (max 5)
+                if ((displayTarget === null || displayTarget === undefined || displayTarget === '') && displayCurrent != null) {
+                  const cnum = Number(displayCurrent);
+                  if (!Number.isNaN(cnum)) {
+                    displayTarget = Math.min(cnum + 1, 5);
+                  }
+                }
+
                 return (
                   <tr key={item.id}>
                     <td className="px-4 py-2 align-top">{item.competency_name}</td>
-                    <td className="px-4 py-2 align-top">{(item.current_level ?? item.currentLevel ?? item.assigned_level ?? item.mplr ?? item.mplr_level ?? compAssignedMap[item.competency_id]) || ''}</td>
-                    <td className="px-4 py-2 align-top">{(item.target_level ?? item.targetLevel ?? ( (item.current_level ?? item.currentLevel ?? item.assigned_level ?? compAssignedMap[item.competency_id]) ? Math.min(Number(item.current_level ?? item.currentLevel ?? item.assigned_level ?? compAssignedMap[item.competency_id]) + 1, 5) : ''))}</td>
+                    <td className="px-4 py-2 align-top">{(displayCurrent != null ? String(displayCurrent) : '')}</td>
+                    <td className="px-4 py-2 align-top">{(displayTarget != null ? String(displayTarget) : '')}</td>
                     <td className="px-4 py-2 align-top">{activity?.type || ''}</td>
                     <td className="px-4 py-2 align-top">{activity?.activity || ''}</td>
                     <td className="px-4 py-2 align-top">{activity?.targetDate || ''}</td>
-                    <td className="px-4 py-2 align-top">{activity?.status || ''}</td>
+                    <td className="px-4 py-2 align-top">
+                      {header.status === 'RETURNED' && currentUser && currentUser.role === 'Supervisor' ? (
+                        <select
+                          value={activity?.status || COMPLETION_STATUS_OPTIONS[0]}
+                          onChange={async (e) => {
+                            const newStatus = e.target.value;
+                            try {
+                              await apiRequest(`/api/idp/${id}`, {
+                                method: 'PUT',
+                                body: JSON.stringify({ items: [{ id: item.id, development_activity: JSON.stringify({ ...(activity || {}), status: newStatus }) }] }),
+                                headers: { 'Content-Type': 'application/json' }
+                              });
+                              // reload idp
+                              const refreshed = await apiRequest(`/api/idp/${id}`);
+                              setIdp(refreshed);
+                            } catch (err) {
+                              console.error('Failed to update activity status', err);
+                              alert('Failed to update status.');
+                            }
+                          }}
+                          className="border rounded px-2 py-1 text-xs"
+                        >
+                          {COMPLETION_STATUS_OPTIONS.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        activity?.status || ''
+                      )}
+                    </td>
                   </tr>
                 );
               })}
         </tbody>
       </table>
     </div>
+  </div>
   );
 }

@@ -56,6 +56,8 @@ async function deleteById(id) {
 // src/services/idp.service.js
 const { db } = require('../config/db');
 const { logInfo } = require('../utils/logger');
+const { logRecentAction } = require('./recentActions.service');
+const { createNotification } = require('./notification.service');
 
 // Return IDP header + items
 async function getById(id) {
@@ -130,35 +132,29 @@ async function update(id, payload) {
     if (Array.isArray(payload.items)) {
       for (const item of payload.items) {
         if (item.id) {
-          // Update existing item
+          // Update existing item: only update development_activity to avoid schema mismatches
           await conn.query(
             `UPDATE idp_items
-             SET development_activity = ?, development_type = ?, start_date = ?, end_date = ?, updated_at = NOW()
+             SET development_activity = ?, updated_at = NOW()
              WHERE id = ? AND idp_header_id = ?`,
             [
               item.development_activity,
-              item.development_type,
-              item.start_date || null,
-              item.end_date || null,
               item.id,
               id
             ]
           );
         } else {
-          // Insert new item
+          // Insert new item with minimal/known columns
           await conn.query(
             `INSERT INTO idp_items
-              (idp_header_id, competency_id, current_level, target_level, development_activity, development_type, start_date, end_date, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NOT_STARTED', NOW(), NOW())`,
+              (idp_header_id, competency_id, current_level, target_level, development_activity, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 'NOT_STARTED', NOW(), NOW())`,
             [
               id,
               item.competency_id,
-              item.current_level,
-              item.target_level,
-              item.development_activity,
-              item.development_type,
-              item.start_date || null,
-              item.end_date || null
+              item.current_level || null,
+              item.target_level || null,
+              item.development_activity
             ]
           );
         }
@@ -218,6 +214,47 @@ async function submit(id) {
      WHERE id = ?`,
     [nextStatus, amId, managerId, id]
   );
+  // Log recent action and create notifications similar to CL flow
+  try {
+    const isResubmission = header.status === 'RETURNED';
+    const [empRows] = await db.query('SELECT name, employee_id FROM users WHERE id = ?', [header.employee_id]);
+    const employeeName = empRows[0]?.name || 'Employee';
+
+    const [superRows] = await db.query('SELECT name FROM users WHERE id = ?', [header.supervisor_id]);
+    const supervisorName = superRows[0]?.name || 'Supervisor';
+
+    await logRecentAction({
+      actor_id: header.supervisor_id,
+      module: 'IDP',
+      action_type: isResubmission ? 'IDP_RESUBMITTED' : 'IDP_SUBMITTED',
+      cl_id: null,
+      employee_id: header.employee_id,
+      title: isResubmission ? `Resubmitted IDP for ${employeeName}` : `Created IDP for ${employeeName}`,
+      description: `IDP #${id}`,
+      url: `/supervisor/idp/view/${id}`,
+    }).catch(() => {});
+
+    // Notify employee
+    await createNotification({
+      recipient_id: header.employee_id,
+      message: `IDP #${id} ${isResubmission ? 'resubmitted' : 'created'} for you by ${supervisorName}`,
+      module: 'IDP'
+    }).catch(() => {});
+
+    // Notify next approver (AM or Manager)
+    const approverId = hasAM ? amId : managerId;
+    if (approverId) {
+      await createNotification({
+        recipient_id: approverId,
+        message: `IDP #${id} for ${employeeName} ${isResubmission ? 'resubmitted' : 'submitted'} by ${supervisorName} is awaiting your approval`,
+        module: 'IDP'
+      }).catch(() => {});
+    }
+  } catch (e) {
+    // don't block submit on notification/log failures
+    console.error('IDP post-submit notifications/logging failed', e);
+  }
+
   return await getById(id);
 }
 

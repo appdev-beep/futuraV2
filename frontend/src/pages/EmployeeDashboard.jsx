@@ -30,8 +30,8 @@ function EmployeeDashboard() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileDetails, setProfileDetails] = useState(null);
-  const [selectedCL, setSelectedCL] = useState(null);
-  const [selectedCLLoading, setSelectedCLLoading] = useState(false);
+  const [selectedCL, _setSelectedCL] = useState(null);
+  const [selectedCLLoading, _setSelectedCLLoading] = useState(false);
 
   const [activeView, setActiveView] = useState('pending'); // 'pending' or 'history'
   const [currentCompetencies, setCurrentCompetencies] = useState(null);
@@ -158,7 +158,7 @@ function EmployeeDashboard() {
             try {
               const d = await apiRequest(`/api/cl/${cl.id}`);
               return { header: cl, details: d };
-            } catch (e) {
+            } catch {
               return { header: cl, details: null };
             }
           })
@@ -497,11 +497,8 @@ function EmployeeDashboard() {
         <ProfileModal
           open={showProfileModal}
           userData={profileDetails || user}
-          clHistory={clHistory}
           loading={profileLoading}
           onClose={closeProfileModal}
-          goTo={goTo}
-          displayStatus={displayStatus}
         />
 
         {/* Current Competencies View */}
@@ -1147,7 +1144,7 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
 }
 
 // Profile modal for viewing complete employee information
-function ProfileModal({ open, userData, clHistory, loading, onClose, goTo, displayStatus }) {
+function ProfileModal({ open, userData, loading, onClose }) {
   if (!open) return null;
 
   return (

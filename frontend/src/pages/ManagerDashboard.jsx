@@ -38,35 +38,6 @@ const getCLStatusSections = (department) => {
 };
 
 function ManagerDashboard({ isAMDashboard = false } = {}) {
-    // Approve/Return handlers for IDP
-    async function handleApproveIDP(idpId) {
-      if (!window.confirm('Approve this IDP?')) return;
-      try {
-        await apiRequest(`/api/idp/${idpId}/manager/approve`, { method: 'PUT' });
-        alert('IDP approved successfully.');
-        setPendingIDPs(pendingIDPs => pendingIDPs.filter(idp => idp.id !== idpId));
-      } catch (err) {
-        alert('Failed to approve IDP.');
-        console.error(err);
-      }
-    }
-
-    async function handleReturnIDP(idpId) {
-      const remarks = window.prompt('Enter remarks for return:');
-      if (!remarks) return;
-      try {
-        await apiRequest(`/api/idp/${idpId}/manager/return`, {
-          method: 'PUT',
-          body: JSON.stringify({ remarks }),
-          headers: { 'Content-Type': 'application/json' },
-        });
-        alert('IDP returned to supervisor.');
-        setPendingIDPs(pendingIDPs => pendingIDPs.filter(idp => idp.id !== idpId));
-      } catch (err) {
-        alert('Failed to return IDP.');
-        console.error(err);
-      }
-    }
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -149,6 +120,19 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }, [isAMDashboard]);
 
   const navigate = useNavigate();
+
+  // Helper: open IDP view with resolved employee/supervisor objects
+  function openIdpView(idp) {
+    const empFromList = employees.find(e => e.id === idp.employee_id);
+    const supFromList = supervisors.find(s => s.id === idp.supervisor_id);
+    const emp = idp.employee_name
+      ? { id: idp.employee_id, name: idp.employee_name }
+      : (empFromList ? { id: idp.employee_id, name: empFromList.name || empFromList.full_name } : { id: idp.employee_id });
+    const sup = idp.supervisor_name
+      ? { id: idp.supervisor_id, name: idp.supervisor_name }
+      : (supFromList ? { id: supFromList.id, name: supFromList.name || supFromList.full_name || `${supFromList.first_name || ''} ${supFromList.last_name || ''}`.trim() } : { id: idp.supervisor_id });
+    navigate(`/manager/idp/view/${idp.id}`, { state: { employee: emp, supervisor: sup } });
+  }
 
   // ==========================
   // LOAD DASHBOARD DATA
@@ -798,18 +782,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                           <td className="px-4 py-2">{idp.status}</td>
                           <td className="px-4 py-2">{idp.created_at ? new Date(idp.created_at).toLocaleString() : ''}</td>
                           <td className="px-4 py-2">
-                            <button
-                              onClick={() => {
-                                // Prefer names available in local supervisor/employee lists to avoid missing names
-                                const emp = idp.employee_name ? { id: idp.employee_id, name: idp.employee_name } : (employees.find(e => e.id === idp.employee_id) ? { id: idp.employee_id, name: employees.find(e => e.id === idp.employee_id).name || employees.find(e => e.id === idp.employee_id).full_name } : { id: idp.employee_id });
-                                const supFromList = supervisors.find(s => s.id === idp.supervisor_id);
-                                const sup = idp.supervisor_name ? { id: idp.supervisor_id, name: idp.supervisor_name } : (supFromList ? { id: supFromList.id, name: supFromList.name || supFromList.full_name || `${supFromList.first_name || ''} ${supFromList.last_name || ''}`.trim() } : { id: idp.supervisor_id });
-                                navigate(`/manager/idp/view/${idp.id}`, { state: { employee: emp, supervisor: sup } });
-                              }}
-                              className="text-blue-600 hover:underline"
-                            >
-                              View
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => openIdpView(idp)} className="text-blue-600 hover:underline">View</button>
+
+                              
+                            </div>
                           </td>
                         </tr>
                       ))}
