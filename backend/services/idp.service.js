@@ -268,7 +268,7 @@ async function create(payload) {
 }
 
 // Update or insert IDP items
-async function update(id, payload) {
+async function update(id, payload, actorId = null, actorRole = null) {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -320,6 +320,80 @@ async function update(id, payload) {
     }
 
     await conn.commit();
+
+    // After a successful update, if the IDP is in FOR_COMPLETION and the
+    // supervisor made changes, notify AM, Manager, HR and Employee so all
+    // stakeholders see the updates in their views.
+    try {
+      const [hdrRowsAfter] = await db.query('SELECT * FROM idp_headers WHERE id = ?', [id]);
+      const headerAfter = hdrRowsAfter[0] || {};
+      const statusAfter = headerAfter.status;
+
+      if (String(statusAfter).toUpperCase() === 'FOR_COMPLETION' && String(actorRole || '').toLowerCase() === 'supervisor') {
+        // Actor name
+        const [actorRows] = await db.query('SELECT name FROM users WHERE id = ?', [actorId]);
+        const actorName = actorRows[0]?.name || 'Supervisor';
+
+        // Employee name
+        const employeeId = headerAfter.employee_id;
+        const [empRows] = await db.query('SELECT name, department_id FROM users WHERE id = ?', [employeeId]);
+        const employeeName = empRows[0]?.name || 'Employee';
+        const departmentId = empRows[0]?.department_id || null;
+
+        // Find AM and Manager for the employee's department
+        let amId = null, managerId = null;
+        if (departmentId) {
+          const [amRows] = await db.query("SELECT id FROM users WHERE department_id = ? AND role = 'AM' LIMIT 1", [departmentId]);
+          amId = amRows[0]?.id || null;
+          const [managerRows] = await db.query("SELECT id FROM users WHERE department_id = ? AND role = 'Manager' LIMIT 1", [departmentId]);
+          managerId = managerRows[0]?.id || null;
+        }
+
+        // HR
+        const [hrRows] = await db.query("SELECT id FROM users WHERE role = 'HR' LIMIT 1");
+        const hrId = hrRows[0]?.id || null;
+
+        // Log recent action
+        await logRecentAction({
+          actor_id: actorId,
+          module: 'IDP',
+          action_type: 'IDP_UPDATED_FOR_COMPLETION',
+          cl_id: null,
+          employee_id: employeeId,
+          title: `Supervisor updated IDP for ${employeeName}`,
+          description: `Supervisor ${actorName} updated IDP #${id} while status FOR_COMPLETION`,
+          url: `/supervisor/idp/view/${id}`,
+        }).catch(() => {});
+
+        // Build notification message
+        const note = `Supervisor ${actorName} updated IDP #${id} for ${employeeName} while status FOR_COMPLETION.`;
+
+        // Notify employee
+        if (employeeId) {
+          await createNotification({ recipient_id: employeeId, message: note, module: 'IDP' }).catch(() => {});
+        }
+        // Notify supervisor (actor) - optional: skip notifying self
+        const supervisorId = headerAfter.supervisor_id || null;
+        if (supervisorId && supervisorId !== actorId) {
+          await createNotification({ recipient_id: supervisorId, message: note, module: 'IDP' }).catch(() => {});
+        }
+        // Notify AM
+        if (amId) {
+          await createNotification({ recipient_id: amId, message: note, module: 'IDP' }).catch(() => {});
+        }
+        // Notify Manager
+        if (managerId) {
+          await createNotification({ recipient_id: managerId, message: note, module: 'IDP' }).catch(() => {});
+        }
+        // Notify HR
+        if (hrId) {
+          await createNotification({ recipient_id: hrId, message: note, module: 'IDP' }).catch(() => {});
+        }
+      }
+    } catch (notifyErr) {
+      console.error('Failed to notify stakeholders after supervisor update in FOR_COMPLETION:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
+    }
+
     return await getById(id);
   } catch (err) {
     await conn.rollback();
@@ -713,7 +787,46 @@ async function hrApprove(idpId, hrId) {
     }
 
     if (incomplete.length > 0) {
-      throw new Error(`Cannot approve: the following competencies are not completed: ${incomplete.join(', ')}`);
+      // Not all completed -> route back to supervisor for completion
+      await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['FOR_COMPLETION', idpId]);
+
+      const [hdrRowsFC] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+      const headerFC = hdrRowsFC[0] || {};
+      const supervisorIdFC = headerFC.supervisor_id || null;
+      const employeeIdFC = headerFC.employee_id || null;
+
+      await conn.commit();
+
+      // Notify supervisor (and optionally other stakeholders) that IDP requires completion
+      try {
+        const [hrRows] = await db.query('SELECT name FROM users WHERE id = ?', [hrId]);
+        const hrName = (hrRows[0] && hrRows[0].name) || 'HR';
+        const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeIdFC]);
+        const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+
+        await logRecentAction({
+          actor_id: hrId,
+          module: 'IDP',
+          action_type: 'IDP_FOR_COMPLETION_BY_HR',
+          cl_id: null,
+          employee_id: employeeIdFC,
+          title: `HR requested completion for IDP for ${employeeName}`,
+          description: `IDP #${idpId} requires completion for competencies: ${incomplete.join(', ')}`,
+          url: `/supervisor/idp/view/${idpId}`,
+        }).catch(() => {});
+
+        if (supervisorIdFC) {
+          await createNotification({
+            recipient_id: supervisorIdFC,
+            message: `IDP #${idpId} for ${employeeName} requires completion (incomplete competencies: ${incomplete.join(', ')}). HR ${hrName} flagged it for completion.`,
+            module: 'IDP',
+          }).catch(() => {});
+        }
+      } catch (notifyErr) {
+        console.error('Failed to log/notify on HR FOR_COMPLETION:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
+      }
+
+      return await getById(idpId);
     }
 
     // All completed -> mark APPROVED

@@ -109,7 +109,9 @@ async function update(req, res, next) {
 
       const { items, reviewPeriod, nextReviewDate } = req.body;
     console.log('[IDP UPDATE] Received items payload:', JSON.stringify(items || []).slice(0, 1000));
-      const result = await idpService.update(id, { items: items || [], reviewPeriod, nextReviewDate });
+      const actorId = req.user?.id || null;
+      const actorRole = req.user?.role || null;
+      const result = await idpService.update(id, { items: items || [], reviewPeriod, nextReviewDate }, actorId, actorRole);
     res.json(result);
   } catch (err) {
     next(err);

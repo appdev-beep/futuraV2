@@ -24,6 +24,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
   const [saving, setSaving] = useState(false);
   const [employee, setEmployee] = useState(null);
   const [supervisor, setSupervisor] = useState(null);
+  const [availableCompetencies, setAvailableCompetencies] = useState([]);
+  const [selectedCompetencyIds, setSelectedCompetencyIds] = useState([]);
   const [showScoringGuide, setShowScoringGuide] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [idpHeader, setIdpHeader] = useState(null); // for edit mode
@@ -119,38 +121,63 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             }
           }
         } else if (employeeId) {
-          // Create mode: load employee and competencies
+          // Create mode: load employee and try to get assigned levels from latest APPROVED CL
           const employeeData = await apiRequest(`/api/users/${employeeId}`);
           if (employeeData.supervisor_id) {
             const supervisorData = await apiRequest(`/api/users/${employeeData.supervisor_id}`);
             setSupervisor(supervisorData);
           }
-          const competenciesData = await apiRequest(`/api/cl/employee/${employeeId}/competencies`);
-          const deptNameFromCompetencies = competenciesData?.employee?.department_name;
+
+          // Default merged employee info
           const mergedEmployee = {
             ...employeeData,
-            department_name: employeeData.department_name || deptNameFromCompetencies || '',
+            department_name: employeeData.department_name || ''
           };
           setEmployee(mergedEmployee);
-          const items = (competenciesData?.competencies || []).map(comp => ({
-            competencyId: comp.competency_id,
-            competencyName: comp.name,
-            developmentArea: comp.competency_area || 'Technical',
-            currentLevel: comp.assigned_level || 1,
-            targetLevel: Math.min((comp.assigned_level || 1) + 1, 5),
-            developmentActivities: [{
-              type: 'Education',
-              activity: '',
-              targetCompletionDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0],
-              actualCompletionDate: '',
-              completionStatus: 'Not Started/In Progress (<50%)',
-              expectedResults: '',
-              sharingMethod: '',
-              applicationMethod: '',
-              score: 1
-            }]
-          }));
-          setIdpData(prev => ({ ...prev, items }));
+
+          // Try to fetch employee CL history and use the most recent APPROVED CL's assigned levels
+          let comps = [];
+          try {
+            const history = await apiRequest(`/api/cl/employee/${employeeId}/history`);
+            const approved = (history || []).find(h => String(h.status).toUpperCase() === 'APPROVED');
+            if (approved && approved.id) {
+              const clFull = await apiRequest(`/api/cl/${approved.id}`);
+              if (clFull && Array.isArray(clFull.items) && clFull.items.length > 0) {
+                comps = clFull.items.map(it => ({
+                  competency_id: it.competency_id,
+                  competencyId: it.competency_id,
+                  competencyName: it.competency_name,
+                  competency_area: it.competency_area,
+                  // assigned_level comes from CL item
+                  assigned_level: it.assigned_level ?? it.self_rating ?? null
+                }));
+              }
+            }
+          } catch (e) {
+            console.error('Failed to load approved CL for assigned levels', e);
+          }
+
+          // If no approved CL found or no items, fall back to position competencies
+          if (!comps || comps.length === 0) {
+            try {
+              const competenciesData = await apiRequest(`/api/cl/employee/${employeeId}/competencies`);
+              comps = (competenciesData?.competencies || []).map(comp => ({
+                competency_id: comp.competency_id,
+                competencyId: comp.competency_id,
+                competencyName: comp.name,
+                competency_area: comp.competency_area,
+                assigned_level: comp.assigned_level ?? comp.assignedLevel ?? comp.assigned ?? null
+              }));
+            } catch (e) {
+              console.error('Failed to load position competencies', e);
+              comps = [];
+            }
+          }
+
+          setAvailableCompetencies(comps);
+          // Start with no selected items; supervisor must pick between 1 and 3
+          setSelectedCompetencyIds([]);
+          setIdpData(prev => ({ ...prev, items: [] }));
         }
       } catch (err) {
         console.error('Failed to load IDP data:', err);
@@ -163,6 +190,37 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       loadData();
     }
   }, [id, employeeId]);
+
+  // Update idpData.items when selected competencies change (create mode only)
+  useEffect(() => {
+    if (editMode) return; // keep existing behavior in edit mode
+    if (!availableCompetencies || availableCompetencies.length === 0) return;
+    // Map selected IDs to items with default development activity
+    const selected = selectedCompetencyIds.map(cid => {
+      const comp = availableCompetencies.find(c => String(c.competency_id || c.competencyId) === String(cid));
+      const assigned = (comp && (comp.assigned_level ?? comp.assignedLevel ?? comp.assigned)) ?? 1;
+      return {
+        competencyId: comp?.competencyId || comp?.competency_id,
+        competency_id: comp?.competencyId || comp?.competency_id,
+        competencyName: comp?.competencyName || comp?.name || '',
+        developmentArea: comp?.competency_area || 'Technical',
+        currentLevel: assigned,
+        targetLevel: Math.min(Number(assigned) + 1, 5),
+        developmentActivities: [{
+          type: 'Education',
+          activity: '',
+          targetCompletionDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0],
+          actualCompletionDate: '',
+          completionStatus: 'Not Started/In Progress (<50%)',
+          expectedResults: '',
+          sharingMethod: '',
+          applicationMethod: '',
+          score: 1
+        }]
+      };
+    });
+    setIdpData(prev => ({ ...prev, items: selected }));
+  }, [selectedCompetencyIds, availableCompetencies, editMode]);
 
   const updateIdpData = (path, value) => {
     setIdpData(prev => {
@@ -249,6 +307,20 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           ? item.developmentActivities.slice(0, 1)
           : []
       }));
+      // Validation for create mode: must select between 1 and 3 competencies
+      if (!editMode) {
+        const count = (enforcedItems || []).length;
+        if (count < 1) {
+          alert('Please select at least one competency (minimum 1).');
+          setSaving(false);
+          return;
+        }
+        if (count > 3) {
+          alert('You may select a maximum of 3 competencies.');
+          setSaving(false);
+          return;
+        }
+      }
       if (editMode && id) {
         // Edit mode: prepare backend-friendly payload (id + development_activity)
         const payload = {
@@ -597,6 +669,46 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             </div>
           </div>
         </div>
+
+        {/* Competency selector for supervisors creating an IDP */}
+        {!editMode && availableCompetencies && availableCompetencies.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 className="text-sm font-semibold text-black">Select Competencies (min 1, max 3)</h3>
+            <p className="text-xs text-gray-500 mt-1">Choose up to three competencies from the employee's competency list to include in this IDP.</p>
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {availableCompetencies.map(comp => {
+                const cid = comp.competencyId || comp.competency_id;
+                const checked = selectedCompetencyIds.includes(String(cid));
+                const disabled = !checked && selectedCompetencyIds.length >= 3;
+                return (
+                  <label key={cid} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-300 bg-blue-50' : 'border-gray-100 bg-white'}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={(e) => {
+                        const v = String(cid);
+                        if (e.target.checked) {
+                          if (selectedCompetencyIds.length >= 3) return; // guard
+                          setSelectedCompetencyIds(prev => [...prev, v]);
+                        } else {
+                          setSelectedCompetencyIds(prev => prev.filter(x => x !== v));
+                        }
+                      }}
+                    />
+                    <div className="text-sm">
+                      <div className="font-semibold text-gray-800">{comp.competencyName || comp.name}</div>
+                      <div className="text-xs text-gray-500">Current level: {comp.assigned_level || 1}</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            {selectedCompetencyIds.length === 0 && (
+              <p className="text-xs text-red-600 mt-2">Select at least one competency to proceed.</p>
+            )}
+          </div>
+        )}
 
         {/* Development Plan */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
