@@ -76,7 +76,7 @@ function HRDashboard() {
   const [activeSection, setActiveSection] = useState('ALL');
   const [activeModule, setActiveModule] = useState('CL'); // 'CL' or 'IDP'
   const [activeIDPSection, setActiveIDPSection] = useState('ALL');
-  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [selectedDepartment, setSelectedDepartment] = useState('ALL');
   const [departmentSearch, setDepartmentSearch] = useState('');
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
   const [showFullNotifications, setShowFullNotifications] = useState(false);
@@ -327,22 +327,18 @@ function HRDashboard() {
   }, [departments, departmentSearch]);
 
   // Set first department as default when departments load
-  React.useEffect(() => {
-    if (departments.length > 0 && !selectedDepartment) {
-      setSelectedDepartment(departments[0]);
-    }
-  }, [departments, selectedDepartment]);
+  // Default is 'ALL' (explicit) so we don't auto-select the first department
 
   // Load department-specific summary when department changes
   React.useEffect(() => {
-    if (!user || !selectedDepartment) return;
+    if (!user) return;
 
     async function loadDepartmentSummary() {
       try {
-        const clSummary = await apiRequest(
-          `/api/cl/hr/summary?department=${encodeURIComponent(selectedDepartment)}`, 
-          { method: 'GET' }
-        );
+        const qs = selectedDepartment && selectedDepartment !== 'ALL'
+          ? `?department=${encodeURIComponent(selectedDepartment)}`
+          : '';
+        const clSummary = await apiRequest(`/api/cl/hr/summary${qs}`, { method: 'GET' });
 
         setSummary({
           clPending: clSummary.clPending || 0,
@@ -385,7 +381,7 @@ function HRDashboard() {
       setIdpLoading(true);
       setIdpError(null);
       try {
-        const qs = selectedDepartment ? `?department=${encodeURIComponent(selectedDepartment)}` : '';
+        const qs = (selectedDepartment && selectedDepartment !== 'ALL') ? `?department=${encodeURIComponent(selectedDepartment)}` : '';
         console.debug('[HRDashboard] fetching filtered IDPs for', { selectedDepartment, qs });
         const data = await apiRequest(`/api/idp/hr/incoming${qs}`, { method: 'GET' });
         console.debug('[HRDashboard] fetched filtered IDPs:', data);
@@ -406,7 +402,7 @@ function HRDashboard() {
 
   const sectionCounts = useMemo(() => {
     const counts = { ALL: 0 };
-    const dataToCount = selectedDepartment 
+    const dataToCount = (selectedDepartment && selectedDepartment !== 'ALL')
       ? allIncomingCL.filter(cl => cl.department_name === selectedDepartment)
       : allIncomingCL;
     for (const s of CL_STATUS_SECTIONS) {
@@ -429,13 +425,13 @@ function HRDashboard() {
   }, [activeModule, activeSection, CL_STATUS_SECTIONS, activeIDPSection, IDP_STATUS_SECTIONS]);
 
   const filteredIncomingIDPs = useMemo(() => {
-    if (!selectedDepartment) return allIncomingIDP;
+    if (!selectedDepartment || selectedDepartment === 'ALL') return allIncomingIDP;
     return allIncomingIDP.filter(idp => idp.department_name === selectedDepartment);
   }, [allIncomingIDP, selectedDepartment]);
 
   // Filter incoming CLs by selected department
   const filteredIncomingCLs = useMemo(() => {
-    if (!selectedDepartment) return allIncomingCL;
+    if (!selectedDepartment || selectedDepartment === 'ALL') return allIncomingCL;
     return allIncomingCL.filter(cl => cl.department_name === selectedDepartment);
   }, [allIncomingCL, selectedDepartment]);
 
@@ -449,7 +445,7 @@ function HRDashboard() {
       <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-800">FUTURA</h2>
-          <p className="text-sm text-gray-500">{user.role}</p>
+          
           <div className="mt-3">
             <label className="block text-xs font-medium text-gray-600 mb-1">Filter by Department</label>
             <div className="space-y-2">
@@ -466,7 +462,7 @@ function HRDashboard() {
                 onChange={(e) => setSelectedDepartment(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">All Departments ({allIncomingCL.length} CLs, {allIncomingIDP.length} IDPs)</option>
+                <option value="ALL">All Departments ({allIncomingCL.length} CLs, {allIncomingIDP.length} IDPs)</option>
                 {filteredDepartments.map(dept => {
                   const clCount = allIncomingCL.filter(item => item.department_name === dept).length;
                   const idpCount = allIncomingIDP.filter(item => item.department_name === dept).length;
@@ -569,7 +565,7 @@ function HRDashboard() {
               <div className="mt-1 space-y-1">
                 {IDP_STATUS_SECTIONS.map(({ key, label, icon }) => {
                   const Icon = icon;
-                  const count = allIncomingIDP.filter(i => i.status === key && (!selectedDepartment || i.department_name === selectedDepartment)).length;
+                  const count = allIncomingIDP.filter(i => i.status === key && (selectedDepartment === 'ALL' || !selectedDepartment || i.department_name === selectedDepartment)).length;
                   return (
                     <button
                       key={key}
@@ -600,9 +596,7 @@ function HRDashboard() {
         <header className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">HR Dashboard</h1>
-            <p className="text-gray-600">
-              Welcome, {user.name} ({user.employee_id})
-            </p>
+            <p className="text-gray-600">{user.name} · {user.employee_id}</p>
           </div>
 
           <div className="flex items-center gap-4">
@@ -616,7 +610,7 @@ function HRDashboard() {
                          text-sm hover:bg-red-700 transition"
             >
               <ArrowRightOnRectangleIcon className="w-4 h-4" />
-              <span>Logout</span>
+              <span>Sign out</span>
             </button>
           </div>
         </header>
@@ -664,7 +658,7 @@ function HRDashboard() {
         <section>
           <h2 className="text-xl font-semibold mb-3">
             {activeLabel}
-            {selectedDepartment && <span className="text-gray-500 text-lg ml-2">- {selectedDepartment}</span>}
+            {selectedDepartment && selectedDepartment !== 'ALL' && <span className="text-gray-500 text-lg ml-2">- {selectedDepartment}</span>}
           </h2>
 
             {activeModule === 'CL' ? (

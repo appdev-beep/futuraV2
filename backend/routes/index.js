@@ -2,6 +2,7 @@
 const express = require('express');
 const clRoutes = require('./cl.routes');
 const idpRoutes = require('./idp.routes');
+const idpUploadRoutes = require('./idp.upload.routes');
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
 const lookupRoutes = require('./lookup.routes');
@@ -19,5 +20,6 @@ router.use('/recent-actions', recentActionsRoutes);  // ✅ /api/recent-actions
 
 router.use('/cl', clRoutes);
 router.use('/idp', idpRoutes);
+router.use('/idp', idpUploadRoutes);
 
 module.exports = router;

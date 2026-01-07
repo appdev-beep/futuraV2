@@ -536,8 +536,8 @@ async function employeeApprove(idpId, employeeId) {
       throw new Error('IDP not found or not pending employee acknowledgement.');
     }
 
-    // Update status to APPROVED
-    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['APPROVED', idpId]);
+    // Update status to PENDING_HR so HR can review/approve after employee acknowledgement
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['PENDING_HR', idpId]);
 
     // Fetch header for notifications/logging
     const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
@@ -563,12 +563,26 @@ async function employeeApprove(idpId, employeeId) {
         url: `/employee/idp/view/${idpId}`,
       }).catch(() => {});
 
+      // Notify supervisor that the employee acknowledged
       if (supervisorId) {
         await createNotification({
           recipient_id: supervisorId,
           message: `Employee ${employeeName} acknowledged IDP #${idpId}.`,
           module: 'IDP',
         }).catch(() => {});
+      }
+      // Notify HR that the IDP is now pending HR review/approval
+      try {
+        const [hrRows] = await db.query(`SELECT id FROM users WHERE role = 'HR' LIMIT 1`);
+        if (hrRows && hrRows.length > 0) {
+          await createNotification({
+            recipient_id: hrRows[0].id,
+            message: `IDP #${idpId} for ${employeeName} is awaiting HR review after employee acknowledgement.`,
+            module: 'IDP'
+          }).catch(() => {});
+        }
+      } catch (hrErr) {
+        console.error('Failed to notify HR on employee approve:', hrErr && hrErr.message ? hrErr.message : hrErr);
       }
     } catch (notifErr) {
       console.error('Failed to log/notify on employee approve:', notifErr.message || notifErr);
@@ -670,6 +684,148 @@ async function getHRIncoming(hrId, departmentName = null, status = null) {
   return rows || [];
 }
 
+// HR approves IDP: only allowed when all development activities are completed
+async function hrApprove(idpId, hrId) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ?', [idpId, 'PENDING_HR']);
+    if (rows.length === 0) {
+      throw new Error('IDP not found or not pending HR approval.');
+    }
+
+    // Load items to verify completion status
+    const [items] = await conn.query('SELECT ii.*, c.name AS competency_name FROM idp_items ii LEFT JOIN competencies c ON ii.competency_id = c.id WHERE ii.idp_header_id = ?', [idpId]);
+
+    const incomplete = [];
+    for (const it of items) {
+      const raw = it.development_action || it.development_activity || null;
+      let parsed = null;
+      if (raw) {
+        if (typeof raw === 'string') {
+          try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+        } else if (typeof raw === 'object') parsed = raw;
+      }
+      const status = String((parsed && (parsed.status || parsed.completionStatus || parsed.completion_status)) || '').trim().toLowerCase();
+      if (status !== 'completed') {
+        incomplete.push(it.competency_name || `item ${it.id}`);
+      }
+    }
+
+    if (incomplete.length > 0) {
+      throw new Error(`Cannot approve: the following competencies are not completed: ${incomplete.join(', ')}`);
+    }
+
+    // All completed -> mark APPROVED
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['APPROVED', idpId]);
+
+    const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+    const header = hdrRows[0] || {};
+    const employeeId = header.employee_id || null;
+    const supervisorId = header.supervisor_id || null;
+
+    await conn.commit();
+
+    try {
+      const [hrRows] = await db.query('SELECT name FROM users WHERE id = ?', [hrId]);
+      const hrName = (hrRows[0] && hrRows[0].name) || 'HR';
+      const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
+      const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+
+      await logRecentAction({
+        actor_id: hrId,
+        module: 'IDP',
+        action_type: 'IDP_APPROVED_BY_HR',
+        cl_id: null,
+        employee_id: employeeId,
+        title: `HR approved IDP for ${employeeName}`,
+        description: `IDP #${idpId} approved by ${hrName}`,
+        url: `/employee/idp/view/${idpId}`,
+      }).catch(() => {});
+
+      if (employeeId) {
+        await createNotification({
+          recipient_id: employeeId,
+          message: `Your IDP #${idpId} has been approved by HR ${hrName}.`,
+          module: 'IDP',
+        }).catch(() => {});
+      }
+      if (supervisorId) {
+        await createNotification({
+          recipient_id: supervisorId,
+          message: `IDP #${idpId} for ${employeeName} has been approved by HR ${hrName}.`,
+          module: 'IDP',
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.error('Failed to log/notify on HR approve:', notifErr && notifErr.message ? notifErr.message : notifErr);
+    }
+
+    return await getById(idpId);
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// HR returns IDP to supervisor for completion (status: FOR_COMPLETION)
+async function hrReturn(idpId, hrId, remarks) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ?', [idpId, 'PENDING_HR']);
+    if (rows.length === 0) {
+      throw new Error('IDP not found or not pending HR review.');
+    }
+
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['FOR_COMPLETION', idpId]);
+
+    const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+    const header = hdrRows[0] || {};
+    const supervisorId = header.supervisor_id || null;
+    const employeeId = header.employee_id || null;
+
+    await conn.commit();
+
+    try {
+      const [hrRows] = await db.query('SELECT name FROM users WHERE id = ?', [hrId]);
+      const hrName = (hrRows[0] && hrRows[0].name) || 'HR';
+      const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
+      const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+
+      await logRecentAction({
+        actor_id: hrId,
+        module: 'IDP',
+        action_type: 'IDP_RETURNED_BY_HR',
+        cl_id: null,
+        employee_id: employeeId,
+        title: `HR returned IDP for ${employeeName}`,
+        description: `IDP #${idpId} returned by HR ${hrName}. Remarks: ${remarks}`,
+        url: `/supervisor/idp/view/${idpId}`,
+      }).catch(() => {});
+
+      if (supervisorId) {
+        await createNotification({
+          recipient_id: supervisorId,
+          message: `IDP #${idpId} for ${employeeName} was returned by HR ${hrName} for completion. Remarks: ${remarks}`,
+          module: 'IDP',
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.error('Failed to log/notify on HR return:', notifErr && notifErr.message ? notifErr.message : notifErr);
+    }
+
+    return { success: true };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 module.exports = {
   getById,
   create,
@@ -686,6 +842,8 @@ module.exports = {
   getHRIncoming,
   employeeApprove,
   employeeReturn,
+  hrApprove,
+  hrReturn,
 };
 
 // Create IDP with full development plan

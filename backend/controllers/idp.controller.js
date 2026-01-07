@@ -237,6 +237,34 @@ async function employeeReturnIDP(req, res, next) {
   }
 }
 
+// PUT /api/idp/:id/hr/approve
+async function hrApproveIDP(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid IDP id' });
+    const hrId = req.user.id;
+    const result = await idpService.hrApprove(id, hrId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /api/idp/:id/hr/return
+async function hrReturnIDP(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid IDP id' });
+    const { remarks } = req.body || {};
+    if (!remarks) return res.status(400).json({ message: 'Remarks are required' });
+    const hrId = req.user.id;
+    const result = await idpService.hrReturn(id, hrId, remarks);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getById,
   create,
@@ -252,6 +280,8 @@ module.exports = {
   getEmployeeIDPs,
   employeeApproveIDP,
   employeeReturnIDP,
+  hrApproveIDP,
+  hrReturnIDP,
   getHRIncomingIDPs,
 };
 

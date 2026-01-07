@@ -106,6 +106,20 @@ router.get(
   idpController.getHRIncomingIDPs
 );
 
+// PUT /api/idp/:id/hr/approve (HR approves IDP if all competencies completed)
+router.put(
+  '/:id/hr/approve',
+  requireRole('HR', 'Admin'),
+  idpController.hrApproveIDP
+);
+
+// PUT /api/idp/:id/hr/return (HR returns IDP to supervisor for completion)
+router.put(
+  '/:id/hr/return',
+  requireRole('HR', 'Admin'),
+  idpController.hrReturnIDP
+);
+
 // DELETE /api/idp/:id (delete DRAFT IDP)
 router.delete(
   '/:id',

@@ -197,6 +197,36 @@ export default function SupervisorViewIDPPage() {
     }
   }
 
+  // HR actions
+  async function handleApproveAsHR() {
+    if (!window.confirm('Approve this IDP as HR?')) return;
+    try {
+      await apiRequest(`/api/idp/${id}/hr/approve`, { method: 'PUT' });
+      alert('IDP approved by HR.');
+      navigate(-1);
+    } catch (err) {
+      alert(err?.message || 'Failed to approve IDP. If some competencies are incomplete, return it for completion.');
+      console.error(err);
+    }
+  }
+
+  async function handleReturnAsHR() {
+    const remarks = window.prompt('Enter remarks for returning to supervisor:');
+    if (!remarks) return;
+    try {
+      await apiRequest(`/api/idp/${id}/hr/return`, {
+        method: 'PUT',
+        body: JSON.stringify({ remarks }),
+        headers: { 'Content-Type': 'application/json' }
+      });
+      alert('IDP returned to supervisor for completion.');
+      navigate(-1);
+    } catch (err) {
+      alert('Failed to return IDP.');
+      console.error(err);
+    }
+  }
+
   // Employee actions (acknowledge or return to supervisor)
   async function handleApproveAsEmployee() {
     if (!window.confirm('Acknowledge and accept this IDP?')) return;
@@ -346,6 +376,25 @@ export default function SupervisorViewIDPPage() {
             className="px-4 py-2 rounded bg-yellow-600 text-white text-sm hover:bg-yellow-700"
           >
             Return
+          </button>
+        </div>
+      )}
+
+      {/* HR approve/return controls (shown when HR opens a pending HR IDP) */}
+      {currentUser && currentUser.role === 'HR' && header.status === 'PENDING_HR' && (
+        <div className="mb-4 flex gap-2">
+          <button
+            onClick={handleApproveAsHR}
+            className="px-4 py-2 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+          >
+            Approve
+          </button>
+
+          <button
+            onClick={handleReturnAsHR}
+            className="px-4 py-2 rounded bg-yellow-600 text-white text-sm hover:bg-yellow-700"
+          >
+            Return for Completion
           </button>
         </div>
       )}

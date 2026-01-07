@@ -726,6 +726,66 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 </select>
                               </div>
 
+                              {/* When Education selected, show file dropdown / upload */}
+                              {activity.type === 'Education' && (
+                                <div className="lg:col-span-3">
+                                  <label className="block text-xs font-semibold text-gray-600 mb-1">Attachment (PDF)</label>
+                                  <div className="flex items-center gap-2">
+                                    <select
+                                      value={activity.pdfPath || ''}
+                                      onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, e.target.value)}
+                                      className="flex-1 bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100"
+                                    >
+                                      <option value="">-- No file selected --</option>
+                                      {activity.pdfPath && (
+                                        <option value={activity.pdfPath}>{activity.pdfPath.split('/').pop()}</option>
+                                      )}
+                                    </select>
+
+                                    <label className="inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm cursor-pointer">
+                                      <input
+                                        type="file"
+                                        accept="application/pdf"
+                                        onChange={async (e) => {
+                                          const f = e.target.files && e.target.files[0];
+                                          if (!f) return;
+                                          const form = new FormData();
+                                          form.append('pdf', f);
+                                          try {
+                                            const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/idp/upload`, {
+                                              method: 'POST',
+                                              headers: {
+                                                Authorization: `Bearer ${localStorage.getItem('token')}`
+                                              },
+                                              body: form
+                                            });
+                                            const data = await res.json();
+                                            if (!res.ok) throw new Error(data.message || 'Upload failed');
+                                            updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, data.pdf_path);
+                                            alert('PDF uploaded');
+                                          } catch (err) {
+                                            console.error('Upload failed', err);
+                                            alert('Upload failed: ' + (err.message || ''));
+                                          }
+                                        }}
+                                        style={{ display: 'none' }}
+                                      />
+                                      Upload
+                                    </label>
+                                    {activity.pdfPath && (
+                                      <a
+                                        href={`${import.meta.env.VITE_API_BASE_URL}/${activity.pdfPath}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-blue-600 hover:underline"
+                                      >
+                                        View
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
                               <div>
                                 <label className="block text-xs font-semibold text-gray-600 mb-1">Score</label>
                                 <select

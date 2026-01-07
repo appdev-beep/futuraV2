@@ -34,7 +34,7 @@ function EmployeeDashboard() {
   const [selectedCLLoading, _setSelectedCLLoading] = useState(false);
 
   const [activeView, setActiveView] = useState('pending'); // 'pending' or 'history'
-  const [activeModule, setActiveModule] = useState('CL'); // 'CL' or 'IDP'
+  const [, setActiveModule] = useState('CL'); // 'CL' or 'IDP' (we only need the setter)
   const [currentCompetencies, setCurrentCompetencies] = useState(null);
   const [approvedCompetencies, setApprovedCompetencies] = useState(null);
   const [competenciesLoading, setCompetenciesLoading] = useState(false);
