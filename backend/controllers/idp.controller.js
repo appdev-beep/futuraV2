@@ -252,6 +252,32 @@ async function hrApproveIDP(req, res, next) {
   }
 }
 
+// PUT /api/idp/:id/hr/approve-for-completion
+async function hrApproveForCompletionIDP(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid IDP id' });
+    const hrId = req.user.id;
+    const result = await idpService.hrApproveForCompletion(id, hrId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /api/idp/:id/hr/approve-cycle
+async function hrApproveCycleIDP(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid IDP id' });
+    const hrId = req.user.id;
+    const result = await idpService.hrForceCycleComplete(id, hrId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // PUT /api/idp/:id/hr/return
 async function hrReturnIDP(req, res, next) {
   try {
@@ -283,6 +309,8 @@ module.exports = {
   employeeApproveIDP,
   employeeReturnIDP,
   hrApproveIDP,
+  hrApproveForCompletionIDP,
+  hrApproveCycleIDP,
   hrReturnIDP,
   getHRIncomingIDPs,
 };

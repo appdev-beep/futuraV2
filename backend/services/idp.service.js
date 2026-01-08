@@ -846,8 +846,10 @@ async function hrApprove(idpId, hrId) {
       return await getById(idpId);
     }
 
-    // All completed -> mark APPROVED
-    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['APPROVED', idpId]);
+    // (moved HR helper functions to module scope below)
+
+    // All completed -> mark CYCLE_COMPLETED so the record remains visible as finished
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['CYCLE_COMPLETED', idpId]);
 
     const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
     const header = hdrRows[0] || {};
@@ -865,25 +867,25 @@ async function hrApprove(idpId, hrId) {
       await logRecentAction({
         actor_id: hrId,
         module: 'IDP',
-        action_type: 'IDP_APPROVED_BY_HR',
+        action_type: 'IDP_CYCLE_COMPLETED_BY_HR',
         cl_id: null,
         employee_id: employeeId,
-        title: `HR approved IDP for ${employeeName}`,
-        description: `IDP #${idpId} approved by ${hrName}`,
+        title: `HR completed IDP cycle for ${employeeName}`,
+        description: `IDP #${idpId} marked Cycle Completed by ${hrName}`,
         url: `/employee/idp/view/${idpId}`,
       }).catch(() => {});
 
       if (employeeId) {
         await createNotification({
           recipient_id: employeeId,
-          message: `Your IDP #${idpId} has been approved by HR ${hrName}.`,
+          message: `Your IDP #${idpId} has been marked Cycle Completed by HR ${hrName}.`,
           module: 'IDP',
         }).catch(() => {});
       }
       if (supervisorId) {
         await createNotification({
           recipient_id: supervisorId,
-          message: `IDP #${idpId} for ${employeeName} has been approved by HR ${hrName}.`,
+          message: `IDP #${idpId} for ${employeeName} has been marked Cycle Completed by HR ${hrName}.`,
           module: 'IDP',
         }).catch(() => {});
       }
@@ -900,7 +902,7 @@ async function hrApprove(idpId, hrId) {
   }
 }
 
-// HR returns IDP to supervisor for completion (status: FOR_COMPLETION)
+// HR returns IDP to supervisor for revision (status: RETURNED)
 async function hrReturn(idpId, hrId, remarks) {
   const conn = await db.getConnection();
   try {
@@ -910,7 +912,8 @@ async function hrReturn(idpId, hrId, remarks) {
       throw new Error('IDP not found or not pending HR review.');
     }
 
-    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['FOR_COMPLETION', idpId]);
+    // Set status to RETURNED so supervisor can revise the IDP (return for revision)
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['RETURNED', idpId]);
 
     const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
     const header = hdrRows[0] || {};
@@ -931,15 +934,15 @@ async function hrReturn(idpId, hrId, remarks) {
         action_type: 'IDP_RETURNED_BY_HR',
         cl_id: null,
         employee_id: employeeId,
-        title: `HR returned IDP for ${employeeName}`,
-        description: `IDP #${idpId} returned by HR ${hrName}. Remarks: ${remarks}`,
+        title: `HR returned IDP for ${employeeName} (for revision)`,
+        description: `IDP #${idpId} returned by HR ${hrName} for revision. Remarks: ${remarks}`,
         url: `/supervisor/idp/view/${idpId}`,
       }).catch(() => {});
 
       if (supervisorId) {
         await createNotification({
           recipient_id: supervisorId,
-          message: `IDP #${idpId} for ${employeeName} was returned by HR ${hrName} for completion. Remarks: ${remarks}`,
+          message: `IDP #${idpId} for ${employeeName} was returned by HR ${hrName} for revision. Remarks: ${remarks}`,
           module: 'IDP',
         }).catch(() => {});
       }
@@ -973,8 +976,113 @@ module.exports = {
   employeeApprove,
   employeeReturn,
   hrApprove,
+  hrApproveForCompletion,
+  hrForceCycleComplete,
   hrReturn,
 };
+
+// HR: explicitly mark IDP as FOR_COMPLETION (HR chooses to send back for completion)
+async function hrApproveForCompletion(idpId, hrId) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ?', [idpId, 'PENDING_HR']);
+    if (rows.length === 0) throw new Error('IDP not found or not pending HR review.');
+
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['FOR_COMPLETION', idpId]);
+
+    const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+    const header = hdrRows[0] || {};
+    const supervisorId = header.supervisor_id || null;
+    const employeeId = header.employee_id || null;
+
+    await conn.commit();
+
+    try {
+      const [hrRows] = await db.query('SELECT name FROM users WHERE id = ?', [hrId]);
+      const hrName = (hrRows[0] && hrRows[0].name) || 'HR';
+      const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
+      const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+
+      await logRecentAction({
+        actor_id: hrId,
+        module: 'IDP',
+        action_type: 'IDP_FOR_COMPLETION_BY_HR',
+        cl_id: null,
+        employee_id: employeeId,
+        title: `HR requested completion for IDP for ${employeeName}`,
+        description: `IDP #${idpId} requires completion per HR ${hrName}`,
+        url: `/supervisor/idp/view/${idpId}`,
+      }).catch(() => {});
+
+      if (supervisorId) {
+        await createNotification({ recipient_id: supervisorId, message: `IDP #${idpId} for ${employeeName} requires completion per HR ${hrName}.`, module: 'IDP' }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.error('Failed to log/notify on HR FOR_COMPLETION (explicit):', notifErr && notifErr.message ? notifErr.message : notifErr);
+    }
+
+    return await getById(idpId);
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// HR: explicitly force CYCLE_COMPLETED (HR chooses to finalize the cycle)
+async function hrForceCycleComplete(idpId, hrId) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ?', [idpId, 'PENDING_HR']);
+    if (rows.length === 0) throw new Error('IDP not found or not pending HR review.');
+
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['CYCLE_COMPLETED', idpId]);
+
+    const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+    const header = hdrRows[0] || {};
+    const employeeId = header.employee_id || null;
+    const supervisorId = header.supervisor_id || null;
+
+    await conn.commit();
+
+    try {
+      const [hrRows] = await db.query('SELECT name FROM users WHERE id = ?', [hrId]);
+      const hrName = (hrRows[0] && hrRows[0].name) || 'HR';
+      const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
+      const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+
+      await logRecentAction({
+        actor_id: hrId,
+        module: 'IDP',
+        action_type: 'IDP_CYCLE_COMPLETED_BY_HR',
+        cl_id: null,
+        employee_id: employeeId,
+        title: `HR completed IDP cycle for ${employeeName}`,
+        description: `IDP #${idpId} marked Cycle Completed by ${hrName}`,
+        url: `/employee/idp/view/${idpId}`,
+      }).catch(() => {});
+
+      if (employeeId) {
+        await createNotification({ recipient_id: employeeId, message: `Your IDP #${idpId} has been marked Cycle Completed by HR ${hrName}.`, module: 'IDP' }).catch(() => {});
+      }
+      if (supervisorId) {
+        await createNotification({ recipient_id: supervisorId, message: `IDP #${idpId} for ${employeeName} has been marked Cycle Completed by HR ${hrName}.`, module: 'IDP' }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.error('Failed to log/notify on HR force cycle complete:', notifErr && notifErr.message ? notifErr.message : notifErr);
+    }
+
+    return await getById(idpId);
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
 
 // Create IDP with full development plan
 async function createWithItems(payload) {
@@ -1051,6 +1159,7 @@ async function createWithItems(payload) {
                     sharingMethod: activity.sharingMethod,
                     applicationMethod: activity.applicationMethod,
                     score: activity.score,
+                    pdf_path: activity.pdf_path || activity.pdfPath || activity.pdf || null,
                     currentLevel: item.currentLevel,
                     developmentArea: item.developmentArea
                   }),

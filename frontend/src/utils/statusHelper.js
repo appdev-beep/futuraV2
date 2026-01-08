@@ -12,6 +12,7 @@ export function displayStatus(s) {
     'PENDING_AM': 'For AM Approval',
     'DRAFT': 'Draft',
     'APPROVED': 'Approved',
+    'CYCLE_COMPLETED': 'Cycle Completed',
     'REJECTED': 'Rejected',
     'UNREAD': 'Unread'
   };

@@ -945,6 +945,56 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                             const data = await res.json();
                                             if (!res.ok) throw new Error(data.message || 'Upload failed');
                                             updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, data.pdf_path);
+                                            // If we're editing an existing IDP (editMode) and the item exists in DB, persist immediately
+                                            try {
+                                              if (editMode && id) {
+                                                const item = idpData.items[itemIndex] || {};
+                                                const itemId = item.id || null;
+                                                const competencyId = item.competency_id || item.competencyId || null;
+                                                const activityObj = (item.developmentActivities || [])[0] || {};
+                                                const uploadedPath = data.pdf_path || data.pdfPath || '';
+                                                const mergedActivity = { ...activityObj, pdfPath: uploadedPath, pdf_path: uploadedPath };
+
+                                                const payloadItem = {
+                                                  development_activity: JSON.stringify(toBackendActivity(mergedActivity))
+                                                };
+                                                if (itemId) payloadItem.id = itemId;
+                                                if (competencyId && !itemId) payloadItem.competency_id = competencyId;
+
+                                                const payload = { items: [ payloadItem ] };
+                                                await apiRequest(`/api/idp/${id}`, {
+                                                  method: 'PUT',
+                                                  body: JSON.stringify(payload),
+                                                });
+
+                                                // Refresh local data from server so UI reflects any DB-normalized fields
+                                                try {
+                                                  const fresh = await apiRequest(`/api/idp/${id}`, { method: 'GET' });
+                                                  // map to idpData shape used in this component
+                                                  const mapped = (fresh.items || []).map(it => {
+                                                    let rawAct = it.development_activity;
+                                                    if (typeof rawAct === 'string') {
+                                                      try { rawAct = JSON.parse(rawAct); } catch { rawAct = {}; }
+                                                    }
+                                                    return {
+                                                      id: it.id,
+                                                      competencyId: it.competency_id,
+                                                      competency_id: it.competency_id,
+                                                      competencyName: it.competency_name,
+                                                      developmentArea: it.competency_area || 'Technical',
+                                                      currentLevel: it.current_level,
+                                                      targetLevel: it.target_level,
+                                                      developmentActivities: [ fromBackendActivity(rawAct || {}) ]
+                                                    };
+                                                  });
+                                                  setIdpData(prev => ({ ...prev, items: mapped }));
+                                                } catch (refreshErr) {
+                                                  console.error('Failed to refresh IDP after persisting upload:', refreshErr);
+                                                }
+                                              }
+                                            } catch (persistErr) {
+                                              console.error('Failed to persist uploaded pdf_path immediately:', persistErr);
+                                            }
                                             alert('PDF uploaded');
                                           } catch (err) {
                                             console.error('Upload failed', err);

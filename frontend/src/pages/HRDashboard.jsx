@@ -20,6 +20,7 @@ import '../index.css';
 import '../App.css'; 
 import ProficiencyTable from '../components/ProficiencyGuide';
 import { displayStatus } from '../utils/statusHelper';
+import { COMPLETION_STATUS_OPTIONS } from './Supervisor/idpConstants';
 
 function HRDashboard() {
   // Initialize user from localStorage
@@ -124,6 +125,7 @@ function HRDashboard() {
     }
     sections.push({ key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon });
     sections.push({ key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon });
+    sections.push({ key: 'CYCLE_COMPLETED', label: 'Cycle Completed', icon: CheckCircleIcon });
     return sections;
   }, [allDepartments, selectedDepartment]);
 
@@ -400,6 +402,42 @@ function HRDashboard() {
     return () => { cancelled = true; };
   }, [user, selectedDepartment, activeModule]);
 
+  // Utility to reload IDPs (used after actions)
+  async function reloadIDPs() {
+    if (!user) return;
+    try {
+      const qs = (selectedDepartment && selectedDepartment !== 'ALL') ? `?department=${encodeURIComponent(selectedDepartment)}` : '';
+      const data = await apiRequest(`/api/idp/hr/incoming${qs}`, { method: 'GET' });
+      setAllIncomingIDP(data || []);
+    } catch (err) {
+      console.error('Failed to reload IDPs', err);
+    }
+  }
+
+  async function handleApproveForCompletion(id) {
+    if (!window.confirm('Mark this IDP as "For Completion" and notify supervisor?')) return;
+    try {
+      await apiRequest(`/api/idp/${id}/hr/approve-for-completion`, { method: 'PUT' });
+      alert('IDP marked For Completion.');
+      await reloadIDPs();
+    } catch (err) {
+      console.error('Approve for completion failed', err);
+      alert(err?.message || 'Failed to mark For Completion');
+    }
+  }
+
+  async function handleApproveCycle(id) {
+    if (!window.confirm('Mark this IDP as Cycle Completed?')) return;
+    try {
+      await apiRequest(`/api/idp/${id}/hr/approve-cycle`, { method: 'PUT' });
+      alert('IDP marked Cycle Completed.');
+      await reloadIDPs();
+    } catch (err) {
+      console.error('Approve cycle failed', err);
+      alert(err?.message || 'Failed to mark Cycle Completed');
+    }
+  }
+
   const sectionCounts = useMemo(() => {
     const counts = { ALL: 0 };
     const dataToCount = (selectedDepartment && selectedDepartment !== 'ALL')
@@ -643,7 +681,7 @@ function HRDashboard() {
             (() => {
               const pendingHR = filteredIncomingIDPs.filter(i => i.status === 'PENDING_HR').length;
               const returns = filteredIncomingIDPs.filter(i => i.status === 'DRAFT' || i.status === 'RETURNED').length;
-              const approved = filteredIncomingIDPs.filter(i => i.status === 'APPROVED').length;
+              const approved = filteredIncomingIDPs.filter(i => i.status === 'APPROVED' || i.status === 'CYCLE_COMPLETED').length;
               return (
                 <>
                   <SummaryCard label="IDP - Pending HR" value={pendingHR} gradientClass="from-yellow-400 to-orange-500" />
@@ -1048,6 +1086,13 @@ function HRDashboard() {
   );
 }
 
+// Helper to determine explicit completed statuses (shared for HR dashboard tables)
+function isCompletedStatus(status) {
+  if (!status) return false;
+  const s = String(status).trim().toLowerCase();
+  return COMPLETION_STATUS_OPTIONS.slice(2).some(opt => String(opt).toLowerCase() === s || s.startsWith('completed'));
+}
+
 /* COMPONENTS */
 
 function SummaryCard({ label, value, gradientClass }) {
@@ -1175,6 +1220,31 @@ function IDPTable({ data, goTo }) {
                   >
                     Details
                   </button>
+                  {item.status === 'PENDING_HR' && (() => {
+                    const anyIncomplete = (item.items || []).some(it => {
+                      let activity = it.development_activity;
+                      if (typeof activity === 'string') {
+                        try { activity = JSON.parse(activity); } catch { activity = activity || {}; }
+                      }
+                      return !isCompletedStatus(activity?.status || activity?.completionStatus || '');
+                    });
+
+                    return anyIncomplete ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleApproveForCompletion(item.id); }}
+                        className="px-3 py-1 rounded text-white text-xs bg-yellow-600 hover:bg-yellow-700"
+                      >
+                        Approve For Completion
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleApproveCycle(item.id); }}
+                        className="px-3 py-1 rounded text-white text-xs bg-emerald-600 hover:bg-emerald-700"
+                      >
+                        Approve Cycle Completed
+                      </button>
+                    );
+                  })()}
                 </div>
               </Td>
             </tr>

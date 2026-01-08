@@ -113,6 +113,20 @@ router.put(
   idpController.hrApproveIDP
 );
 
+// PUT /api/idp/:id/hr/approve-for-completion (HR explicitly mark FOR_COMPLETION)
+router.put(
+  '/:id/hr/approve-for-completion',
+  requireRole('HR', 'Admin'),
+  idpController.hrApproveForCompletionIDP
+);
+
+// PUT /api/idp/:id/hr/approve-cycle (HR explicitly mark Cycle Completed)
+router.put(
+  '/:id/hr/approve-cycle',
+  requireRole('HR', 'Admin'),
+  idpController.hrApproveCycleIDP
+);
+
 // PUT /api/idp/:id/hr/return (HR returns IDP to supervisor for completion)
 router.put(
   '/:id/hr/return',

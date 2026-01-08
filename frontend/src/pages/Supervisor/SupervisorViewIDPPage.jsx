@@ -199,13 +199,27 @@ export default function SupervisorViewIDPPage() {
 
   // HR actions
   async function handleApproveAsHR() {
-    if (!window.confirm('Approve this IDP as HR?')) return;
+    // Determine whether any competency is incomplete and call the appropriate HR endpoint
+    const anyIncomplete = (idp.items || []).some(it => {
+      let activity = it.development_activity;
+      if (typeof activity === 'string') {
+        try { activity = JSON.parse(activity); } catch { activity = activity || {}; }
+      }
+      return !isCompletedStatus(activity?.status || activity?.completionStatus || '');
+    });
+
+    if (!window.confirm(anyIncomplete ? 'Approve this IDP for completion (notify supervisor)?' : 'Approve this IDP and mark cycle completed?')) return;
     try {
-      await apiRequest(`/api/idp/${id}/hr/approve`, { method: 'PUT' });
-      alert('IDP approved by HR.');
+      if (anyIncomplete) {
+        await apiRequest(`/api/idp/${id}/hr/approve-for-completion`, { method: 'PUT' });
+        alert('IDP marked For Completion.');
+      } else {
+        await apiRequest(`/api/idp/${id}/hr/approve-cycle`, { method: 'PUT' });
+        alert('IDP marked Cycle Completed.');
+      }
       navigate(-1);
     } catch (err) {
-      alert(err?.message || 'Failed to approve IDP. If some competencies are incomplete, return it for completion.');
+      alert(err?.message || 'Failed to approve IDP.');
       console.error(err);
     }
   }
@@ -225,6 +239,13 @@ export default function SupervisorViewIDPPage() {
       alert('Failed to return IDP.');
       console.error(err);
     }
+  }
+
+  // Helper to determine explicit completed statuses
+  function isCompletedStatus(status) {
+    if (!status) return false;
+    const s = String(status).trim().toLowerCase();
+    return COMPLETION_STATUS_OPTIONS.slice(2).some(opt => String(opt).toLowerCase() === s || s.startsWith('completed'));
   }
 
   // Employee actions (acknowledge or return to supervisor)
@@ -264,7 +285,7 @@ export default function SupervisorViewIDPPage() {
     const base = "inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border";
     if (status === 'RETURNED') return (<span className={`${base} bg-amber-50 text-amber-800 border-amber-200`}><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />{status}</span>);
     if (status === 'PENDING_MANAGER' || status === 'PENDING_AM') return (<span className={`${base} bg-blue-50 text-blue-800 border-blue-200`}><span className="h-1.5 w-1.5 rounded-full bg-blue-500" />{status}</span>);
-    if (status === 'APPROVED') return (<span className={`${base} bg-emerald-50 text-emerald-800 border-emerald-200`}><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{status}</span>);
+    if (status === 'APPROVED' || status === 'CYCLE_COMPLETED') return (<span className={`${base} bg-emerald-50 text-emerald-800 border-emerald-200`}><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{status}</span>);
     return (<span className={`${base} bg-gray-50 text-gray-800 border-gray-200`}><span className="h-1.5 w-1.5 rounded-full bg-gray-500" />{status}</span>);
   })();
 
@@ -381,23 +402,32 @@ export default function SupervisorViewIDPPage() {
       )}
 
       {/* HR approve/return controls (shown when HR opens a pending HR IDP) */}
-      {currentUser && currentUser.role === 'HR' && header.status === 'PENDING_HR' && (
-        <div className="mb-4 flex gap-2">
-          <button
-            onClick={handleApproveAsHR}
-            className="px-4 py-2 rounded bg-green-600 text-white text-sm hover:bg-green-700"
-          >
-            Approve
-          </button>
+      {currentUser && currentUser.role === 'HR' && header.status === 'PENDING_HR' && (() => {
+        const anyIncomplete = (idp.items || []).some(it => {
+          let activity = it.development_activity;
+          if (typeof activity === 'string') {
+            try { activity = JSON.parse(activity); } catch { activity = activity || {}; }
+          }
+          return !isCompletedStatus(activity?.status || activity?.completionStatus || '');
+        });
+        return (
+          <div className="mb-4 flex gap-2">
+            <button
+              onClick={handleApproveAsHR}
+              className="px-4 py-2 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+            >
+              {anyIncomplete ? 'Approve For Completion' : 'Approve Cycle Completed'}
+            </button>
 
-          <button
-            onClick={handleReturnAsHR}
-            className="px-4 py-2 rounded bg-yellow-600 text-white text-sm hover:bg-yellow-700"
-          >
-            Return for Completion
-          </button>
-        </div>
-      )}
+            <button
+              onClick={handleReturnAsHR}
+              className="px-4 py-2 rounded bg-yellow-600 text-white text-sm hover:bg-yellow-700"
+            >
+              Return for Revision
+            </button>
+          </div>
+        );
+      })()}
 
       {currentUser && currentUser.role === 'Employee' && header.status === 'PENDING_EMPLOYEE' && Number(empId) === Number(currentUser.id) && (
         <div className="mb-4 flex gap-2">
@@ -492,6 +522,22 @@ export default function SupervisorViewIDPPage() {
                         </select>
                       </div>
 
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Attachment</label>
+                        {activity?.pdfPath ? (
+                          <a
+                            href={`${import.meta.env.VITE_API_BASE_URL}/${activity.pdfPath}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-600 hover:underline"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
+                        )}
+                      </div>
+
                       <div className="md:col-span-2 lg:col-span-3">
                         <label className="block text-xs font-semibold text-gray-600 mb-1">Expected Results</label>
                         <textarea value={activity?.expectedResults || ''} readOnly rows={3} className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100" />
@@ -575,7 +621,14 @@ export default function SupervisorViewIDPPage() {
                       <td className="px-4 py-2 align-top">{(displayCurrent != null ? String(displayCurrent) : '')}</td>
                       <td className="px-4 py-2 align-top">{(displayTarget != null ? String(displayTarget) : '')}</td>
                       <td className="px-4 py-2 align-top">{activity?.type || ''}</td>
-                      <td className="px-4 py-2 align-top">{activity?.activity || ''}</td>
+                      <td className="px-4 py-2 align-top">
+                        <div className="truncate">{activity?.activity || ''}</div>
+                        {activity?.pdfPath && (
+                          <div className="text-xs mt-1">
+                            <a href={`${import.meta.env.VITE_API_BASE_URL}/${activity.pdfPath}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">View attachment</a>
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-2 align-top">{activity?.targetDate || ''}</td>
                       <td className="px-4 py-2 align-top">{activity?.status || ''}</td>
                     </tr>
