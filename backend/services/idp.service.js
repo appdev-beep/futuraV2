@@ -208,6 +208,7 @@ async function getById(id) {
       targetDate: normalizeDate(activity.targetDate || activity.targetCompletionDate || activity.target || ''),
       actualDate: normalizeDate(activity.actualDate || activity.actualCompletionDate || ''),
       status: activity.status || activity.completionStatus || '',
+      pdfPath: activity.pdf_path || activity.pdfPath || activity.pdf || '',
       expectedResults: activity.expectedResults || activity.expected_results || '',
       sharingMethod: activity.sharingMethod || activity.sharing_method || '',
       applicationMethod: activity.applicationMethod || activity.application_method || '',
@@ -434,6 +435,11 @@ async function submit(id) {
   // Determine next status. If the IDP was RETURNED and the last return was made by the employee,
   // route back to the employee for acknowledgement. Otherwise route to AM/Manager as usual.
   let nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
+  // If HR previously returned this IDP for completion (FOR_COMPLETION),
+  // resubmission by the supervisor should route back to HR for review.
+  if (String(header.status).toUpperCase() === 'FOR_COMPLETION') {
+    nextStatus = 'PENDING_HR';
+  }
   if (header.status === 'RETURNED') {
     try {
         const [raRows] = await db.query(
@@ -506,8 +512,19 @@ async function submit(id) {
       module: 'IDP'
     }).catch(() => {});
 
-    // Notify next approver (AM or Manager)
-    const approverId = hasAM ? amId : managerId;
+    // Notify next approver (AM/Manager or HR depending on routing)
+    let approverId = null;
+    if (String(nextStatus).toUpperCase() === 'PENDING_HR') {
+      try {
+        const [hrRows] = await db.query("SELECT id FROM users WHERE role = 'HR' LIMIT 1");
+        approverId = hrRows[0]?.id || null;
+      } catch (e) {
+        approverId = null;
+      }
+    } else {
+      approverId = hasAM ? amId : managerId;
+    }
+
     if (approverId) {
       await createNotification({
         recipient_id: approverId,

@@ -84,7 +84,7 @@ export default function SupervisorViewIDPPage() {
     console.log('IDP (debug):', idp, 'employeeInfo:', employeeInfo, 'supervisorInfo:', supervisorInfo);
   }, [idp, employeeInfo, supervisorInfo]);
 
-  const editable = idp && idp.header && (idp.header.status === 'DRAFT' || idp.header.status === 'RETURNED');
+  const editable = idp && idp.header && (idp.header.status === 'DRAFT' || idp.header.status === 'RETURNED' || idp.header.status === 'FOR_COMPLETION');
 
   useEffect(() => {
     if (idp && editable) {
@@ -162,8 +162,8 @@ export default function SupervisorViewIDPPage() {
   const supName = (hasNonNumericSupName ? rawSupName : null) || (header.supervisor && getDisplayName(header.supervisor)) || getDisplayName(supervisorInfo) || '';
   const supPosition = header.supervisor_title || supervisorInfo?.position || supervisorInfo?.title || '';
 
-  // If the IDP is RETURNED and the current user is the supervisor owner, show full Create/Edit form so supervisor can modify and resubmit.
-  if (currentUser && currentUser.role === 'Supervisor' && header.status === 'RETURNED' && Number(supId) === Number(currentUser.id)) {
+  // If the IDP is RETURNED or FOR_COMPLETION and the current user is the supervisor owner, show full Create/Edit form so supervisor can modify and resubmit.
+  if (currentUser && currentUser.role === 'Supervisor' && (header.status === 'RETURNED' || header.status === 'FOR_COMPLETION') && Number(supId) === Number(currentUser.id)) {
     return <CreateIDPPage routeId={id} />;
   }
 

@@ -1,5 +1,5 @@
 // src/pages/Supervisor/CreateIDPPage.jsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import {
@@ -29,12 +29,27 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
   const [showScoringGuide, setShowScoringGuide] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [idpHeader, setIdpHeader] = useState(null); // for edit mode
+  const [missingAttachments, setMissingAttachments] = useState([]);
+  const [showMissingModal, setShowMissingModal] = useState(false);
 
   const [idpData, setIdpData] = useState({
     reviewPeriod: '1st Cycle Performance Review',
     nextReviewDate: new Date(new Date().getFullYear() + 1, 11, 31).toISOString().split('T')[0],
     items: []
   });
+  
+  const fromBackendActivity = useCallback((a = {}) => ({
+    type: a.type || a.activityType || 'Education',
+    activity: a.activity || a.developmentActivity || '',
+    targetCompletionDate: normalizeDate(a.targetDate || a.targetCompletionDate || a.target || ''),
+    actualCompletionDate: normalizeDate(a.actualDate || a.actualCompletionDate || ''),
+    completionStatus: a.status || a.completionStatus || '',
+    pdfPath: a.pdf_path || a.pdfPath || a.pdf || '',
+    expectedResults: a.expectedResults || a.expected_results || '',
+    sharingMethod: a.sharingMethod || a.sharing_method || '',
+    applicationMethod: a.applicationMethod || a.application_method || '',
+    score: a.score || 1
+  }), []);
 
   // Load for create or edit
   useEffect(() => {
@@ -116,7 +131,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 }]
               }));
               setIdpData(prev => ({ ...prev, items: fallbackItems }));
-            } catch (e) {
+            } catch {
               // ignore fallback failure
             }
           }
@@ -189,7 +204,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     if (id || employeeId) {
       loadData();
     }
-  }, [id, employeeId]);
+  }, [id, employeeId, fromBackendActivity]);
 
   // Update idpData.items when selected competencies change (create mode only)
   useEffect(() => {
@@ -257,24 +272,13 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     targetDate: normalizeDate(a.targetCompletionDate || a.targetDate || a.target || ''),
     actualDate: normalizeDate(a.actualCompletionDate || a.actualDate || ''),
     status: a.completionStatus || a.status || a.completion_status || '',
+    pdf_path: a.pdfPath || a.pdf_path || a.pdf || '',
     expectedResults: a.expectedResults || a.expected_results || '',
     sharingMethod: a.sharingMethod || a.sharing_method || '',
     applicationMethod: a.applicationMethod || a.application_method || '',
     score: Number(a.score || a.points || 1)
   });
-
-  const fromBackendActivity = (a = {}) => ({
-    type: a.type || a.activityType || 'Education',
-    activity: a.activity || a.developmentActivity || '',
-    targetCompletionDate: normalizeDate(a.targetDate || a.targetCompletionDate || a.target || ''),
-    actualCompletionDate: normalizeDate(a.actualDate || a.actualCompletionDate || ''),
-    completionStatus: a.status || a.completionStatus || '',
-    expectedResults: a.expectedResults || a.expected_results || '',
-    sharingMethod: a.sharingMethod || a.sharing_method || '',
-    applicationMethod: a.applicationMethod || a.application_method || '',
-    score: a.score || 1
-  });
-
+  
   function normalizeDate(value) {
     if (!value) return '';
     // Already ISO
@@ -297,8 +301,34 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     return '';
   }
 
+  // Return true only for explicit completed statuses (avoid matching "In Progress (...) Completed")
+  const isCompletedStatus = (s) => {
+    if (!s) return false;
+    const v = String(s).trim().toLowerCase();
+    const completedSet = new Set([
+      'completed & met expectations',
+      'completed & above target expectation',
+      'completed & exceeded competency'
+    ]);
+    return completedSet.has(v);
+  };
+
   // For create: submit new, for edit: update and resubmit
   const submitIDP = async () => {
+    // Validate: any Education activity marked Completed must have a pdfPath
+    const missing = [];
+    (idpData.items || []).forEach((it, idx) => {
+      const act = (it.developmentActivities || [])[0] || {};
+      if (act && (act.type === 'Education') && isCompletedStatus(act.completionStatus) && !act.pdfPath) {
+        missing.push({ itemIndex: idx, competencyName: it.competencyName || ('#' + (it.competencyId || idx)) });
+      }
+    });
+    if (missing.length > 0) {
+      setMissingAttachments(missing);
+      setShowMissingModal(true);
+      return;
+    }
+
     try {
       setSaving(true);
       const enforcedItems = (idpData.items || []).map(item => ({
@@ -416,6 +446,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     );
   }, [idpHeader?.status]);
 
+  const isForCompletion = editMode && idpHeader?.status === 'FOR_COMPLETION';
+
   const areaColor = (area) => {
     const safe = (CRAYON_COLORS && typeof CRAYON_COLORS === 'object') ? CRAYON_COLORS : {};
     // UI-only: pick deterministic chip colors without affecting logic.
@@ -503,7 +535,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 <span className="sm:hidden">Guide</span>
               </button>
 
-              {editMode && idpHeader?.status === 'RETURNED' ? (
+              {editMode && (idpHeader?.status === 'RETURNED' || idpHeader?.status === 'FOR_COMPLETION') ? (
                 <button
                   onClick={submitIDP}
                   disabled={saving}
@@ -561,6 +593,41 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                       <p className="text-black text-sm leading-relaxed">{guide.description}</p>
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showMissingModal && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setShowMissingModal(false)} />
+            <div className="relative h-full w-full flex items-center justify-center p-4">
+              <div className="w-full max-w-lg bg-white rounded-xl border border-gray-100 shadow-2xl p-6">
+                <div className="flex items-start justify-between">
+                  <h3 className="text-lg font-semibold text-black">Missing Attachment(s)</h3>
+                  <button onClick={() => setShowMissingModal(false)} className="text-black/60">✕</button>
+                </div>
+                <p className="text-sm text-gray-600 mt-2">One or more activities marked Completed have no attached PDF. Please attach proof before submitting.</p>
+                <ul className="mt-3 max-h-40 overflow-auto list-disc list-inside text-sm text-gray-800">
+                  {missingAttachments.map((m, i) => (
+                    <li key={i}>{m.competencyName}</li>
+                  ))}
+                </ul>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button onClick={() => setShowMissingModal(false)} className="px-4 py-2 rounded-md bg-white border border-gray-200">Close</button>
+                  <button
+                    onClick={() => {
+                      setShowMissingModal(false);
+                      // Scroll to first missing item
+                      const first = missingAttachments[0];
+                      const el = document.getElementById(`item-${first.itemIndex}`);
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}
+                    className="px-4 py-2 rounded-md bg-black text-white"
+                  >
+                    Go to first missing
+                  </button>
                 </div>
               </div>
             </div>
@@ -742,6 +809,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
                   return (
                     <div
+                      id={`item-${itemIndex}`}
                       key={item.competencyId}
                       className="rounded-xl border border-gray-100 bg-gray-50 overflow-hidden"
                     >
@@ -786,6 +854,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 <select
                                   value={activity.type}
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.type`, e.target.value)}
+                                  disabled={isForCompletion}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 >
                                   {DEVELOPMENT_TYPES.map(type => (
@@ -800,6 +869,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   type="date"
                                   value={activity.targetCompletionDate || ''}
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.targetCompletionDate`, e.target.value)}
+                                  disabled={isForCompletion}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
@@ -810,6 +880,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   type="date"
                                   value={activity.actualCompletionDate}
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.actualCompletionDate`, e.target.value)}
+                                  disabled={isForCompletion}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
@@ -825,7 +896,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 />
                               </div>
 
-                              <div>
+                              <div className="flex flex-col">
                                 <label className="block text-xs font-semibold text-gray-600 mb-1">Completion Status</label>
                                 <select
                                   value={activity.completionStatus}
@@ -836,29 +907,29 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                     <option key={status} value={status}>{status}</option>
                                   ))}
                                 </select>
-                              </div>
 
-                              {/* When Education selected, show file dropdown / upload */}
-                              {activity.type === 'Education' && (
-                                <div className="lg:col-span-3">
-                                  <label className="block text-xs font-semibold text-gray-600 mb-1">Attachment (PDF)</label>
-                                  <div className="flex items-center gap-2">
+                                {/* Attachment appears below the Completion Status dropdown when applicable */}
+                                  {activity.type === 'Education' && ((activity.pdfPath) || isCompletedStatus(activity.completionStatus)) && (
+                                  <div className="mt-2 flex items-center gap-2 w-full">
                                     <select
                                       value={activity.pdfPath || ''}
                                       onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, e.target.value)}
-                                      className="flex-1 bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100"
+                                      className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100 truncate"
                                     >
-                                      <option value="">-- No file selected --</option>
+                                      <option value="">-- No file --</option>
                                       {activity.pdfPath && (
                                         <option value={activity.pdfPath}>{activity.pdfPath.split('/').pop()}</option>
                                       )}
                                     </select>
-
-                                    <label className="inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm cursor-pointer">
+                                      <label className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm ${!isCompletedStatus(activity.completionStatus) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                                       <input
                                         type="file"
                                         accept="application/pdf"
                                         onChange={async (e) => {
+                                            if (!isCompletedStatus(activity.completionStatus)) {
+                                              alert('Please mark activity as Completed to upload proof.');
+                                              return;
+                                            }
                                           const f = e.target.files && e.target.files[0];
                                           if (!f) return;
                                           const form = new FormData();
@@ -889,20 +960,21 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         href={`${import.meta.env.VITE_API_BASE_URL}/${activity.pdfPath}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-sm text-blue-600 hover:underline"
+                                        className="text-sm text-blue-600 hover:underline truncate"
                                       >
                                         View
                                       </a>
                                     )}
                                   </div>
-                                </div>
-                              )}
+                                )}
+                              </div>
 
                               <div>
                                 <label className="block text-xs font-semibold text-gray-600 mb-1">Score</label>
                                 <select
                                   value={activity.score}
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.score`, parseInt(e.target.value))}
+                                  disabled={isForCompletion}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 >
                                   {[1, 2, 3, 4, 5].map(score => (
@@ -918,6 +990,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.expectedResults`, e.target.value)}
                                   placeholder="What new or enhanced skill or knowledge will you learn from this IDP?"
                                   rows={3}
+                                  disabled={isForCompletion}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
@@ -929,6 +1002,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.sharingMethod`, e.target.value)}
                                   placeholder="How will you share these enhanced skills or knowledge with your TLs, peers, or direct reports?"
                                   rows={3}
+                                  disabled={isForCompletion}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
@@ -940,6 +1014,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.applicationMethod`, e.target.value)}
                                   placeholder="How will you apply the skills or knowledge that you learned to improve your work performance?"
                                   rows={3}
+                                  disabled={isForCompletion}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
@@ -975,7 +1050,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                   Cancel
                 </button>
 
-                {editMode && idpHeader?.status === 'RETURNED' ? (
+                {editMode && (idpHeader?.status === 'RETURNED' || idpHeader?.status === 'FOR_COMPLETION') ? (
                   <button
                     onClick={submitIDP}
                     disabled={saving}
