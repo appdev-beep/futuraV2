@@ -9,6 +9,8 @@ export default function SupervisorViewIDPPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const searchParams = new URLSearchParams(location.search || '');
+  const viewOnly = searchParams.get('viewOnly') === 'true';
   const [idp, setIdp] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -84,7 +86,7 @@ export default function SupervisorViewIDPPage() {
     console.log('IDP (debug):', idp, 'employeeInfo:', employeeInfo, 'supervisorInfo:', supervisorInfo);
   }, [idp, employeeInfo, supervisorInfo]);
 
-  const editable = idp && idp.header && (idp.header.status === 'DRAFT' || idp.header.status === 'RETURNED' || idp.header.status === 'FOR_COMPLETION');
+  const editable = !viewOnly && idp && idp.header && (idp.header.status === 'DRAFT' || idp.header.status === 'RETURNED' || idp.header.status === 'FOR_COMPLETION');
 
   useEffect(() => {
     if (idp && editable) {
@@ -163,7 +165,8 @@ export default function SupervisorViewIDPPage() {
   const supPosition = header.supervisor_title || supervisorInfo?.position || supervisorInfo?.title || '';
 
   // If the IDP is RETURNED or FOR_COMPLETION and the current user is the supervisor owner, show full Create/Edit form so supervisor can modify and resubmit.
-  if (currentUser && currentUser.role === 'Supervisor' && (header.status === 'RETURNED' || header.status === 'FOR_COMPLETION') && Number(supId) === Number(currentUser.id)) {
+  // Do not render the editable Create form when viewing in view-only mode.
+  if (!viewOnly && currentUser && currentUser.role === 'Supervisor' && (header.status === 'RETURNED' || header.status === 'FOR_COMPLETION') && Number(supId) === Number(currentUser.id)) {
     return <CreateIDPPage routeId={id} />;
   }
 
@@ -312,7 +315,7 @@ export default function SupervisorViewIDPPage() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              {currentUser && currentUser.role === 'Supervisor' && Number(supId) === Number(currentUser.id) && (
+              {!viewOnly && currentUser && currentUser.role === 'Supervisor' && Number(supId) === Number(currentUser.id) && (
                 <button
                   onClick={async () => {
                     if (!window.confirm('Delete this IDP? This action cannot be undone.')) return;
@@ -383,7 +386,7 @@ export default function SupervisorViewIDPPage() {
       )}
 
       {/* Manager approve/return controls (shown when a manager opens a pending IDP) */}
-      {currentUser && currentUser.role === 'Manager' && header.status === 'PENDING_MANAGER' && (
+      {!viewOnly && currentUser && currentUser.role === 'Manager' && header.status === 'PENDING_MANAGER' && (
         <div className="mb-4 flex gap-2">
           <button
             onClick={handleApproveAsManager}
@@ -429,7 +432,7 @@ export default function SupervisorViewIDPPage() {
         );
       })()}
 
-      {currentUser && currentUser.role === 'Employee' && header.status === 'PENDING_EMPLOYEE' && Number(empId) === Number(currentUser.id) && (
+      {!viewOnly && currentUser && currentUser.role === 'Employee' && header.status === 'PENDING_EMPLOYEE' && Number(empId) === Number(currentUser.id) && (
         <div className="mb-4 flex gap-2">
           <button
             onClick={handleApproveAsEmployee}
@@ -451,7 +454,7 @@ export default function SupervisorViewIDPPage() {
 
         <h2 className="text-xl font-semibold mb-2">Development Items</h2>
       {/* Render full development plan for managers reviewing pending IDPs */}
-      {(currentUser && ((currentUser.role === 'Manager' && (header.status === 'PENDING_MANAGER' || header.status === 'PENDING_AM')) || (currentUser.role === 'Employee' && header.status === 'PENDING_EMPLOYEE' && Number(empId) === Number(currentUser.id)))) ? (
+      {(viewOnly || (currentUser && ((currentUser.role === 'Manager' && (header.status === 'PENDING_MANAGER' || header.status === 'PENDING_AM')) || (currentUser.role === 'Employee' && header.status === 'PENDING_EMPLOYEE' && Number(empId) === Number(currentUser.id))))) ? (
         <div className="space-y-4">
           {idp.items.map((item, itemIndex) => {
             let activity = item.development_activity;

@@ -124,6 +124,7 @@ function HRDashboard() {
       sections.push({ key: 'PENDING_AM', label: 'For Approval by Assistant Manager', icon: ClockIcon });
     }
     sections.push({ key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon });
+    sections.push({ key: 'FOR_COMPLETION', label: 'For Completion', icon: ClockIcon });
     sections.push({ key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon });
     sections.push({ key: 'CYCLE_COMPLETED', label: 'Cycle Completed', icon: CheckCircleIcon });
     return sections;
@@ -1191,7 +1192,7 @@ function IDPTable({ data, goTo }) {
               <Td>
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={(e) => { e.stopPropagation(); goTo(`/manager/idp/view/${item.id}`); }}
+                    onClick={(e) => { e.stopPropagation(); goTo(`/hr/idp/view/${item.id}?viewOnly=true`); }}
                     className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
                   >
                     View

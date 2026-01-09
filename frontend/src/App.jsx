@@ -54,6 +54,7 @@ function App() {
 
         {/* HR pages */}
         <Route path="/hr" element={<HRDashboard />} />
+        <Route path="/hr/idp/view/:id" element={<SupervisorViewIDPPage />} />
         <Route path="/cl/hr/review/:id" element={<HRReviewCLPage />} />
 
         {/* catch-all → login */}

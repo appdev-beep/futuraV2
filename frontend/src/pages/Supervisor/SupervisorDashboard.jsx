@@ -105,6 +105,9 @@ function SupervisorDashboard() {
     if (department && department.has_am) {
       sections.push({ key: 'PENDING_AM', label: 'For Approval by Assistant Manager', icon: ClockIcon });
     }
+    // Supervisor needs a dedicated section to see IDPs marked "For Completion"
+    // so they can browse and update those forms.
+    sections.push({ key: 'FOR_COMPLETION', label: 'For Completion', icon: ClockIcon });
     sections.push({ key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon });
     sections.push({ key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon });
     return sections;
@@ -645,6 +648,7 @@ function SupervisorDashboard() {
             )}
           </div>
         </div>
+
 
         <div className="border-t border-gray-200" />
 
