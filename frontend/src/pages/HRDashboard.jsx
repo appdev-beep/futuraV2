@@ -1143,24 +1143,10 @@ function CLTable({ data, goTo, onCLClick }) {
               <Td>
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={() => goTo(`/cl/hr/review/${item.id}`)}
-                    className="px-3 py-1 rounded text-white text-xs
-                               bg-gradient-to-r from-blue-500 to-blue-700
-                               hover:from-blue-600 hover:to-blue-800"
+                    onClick={(e) => { e.stopPropagation(); onCLClick(item.id); }}
+                    className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
                   >
-                    Review
-                  </button>
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCLClick(item.id);
-                    }}
-                    className="px-3 py-1 rounded text-white text-xs
-                               bg-gradient-to-r from-purple-500 to-purple-700
-                               hover:from-purple-600 hover:to-purple-800"
-                  >
-                    Details
+                    View
                   </button>
                 </div>
               </Td>
@@ -1205,46 +1191,11 @@ function IDPTable({ data, goTo }) {
               <Td>
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={() => goTo(`/manager/idp/view/${item.id}`)}
+                    onClick={(e) => { e.stopPropagation(); goTo(`/manager/idp/view/${item.id}`); }}
                     className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
                   >
-                    Review
+                    View
                   </button>
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      goTo(`/manager/idp/view/${item.id}`);
-                    }}
-                    className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-purple-500 to-purple-700 hover:from-purple-600 hover:to-purple-800"
-                  >
-                    Details
-                  </button>
-                  {item.status === 'PENDING_HR' && (() => {
-                    const anyIncomplete = (item.items || []).some(it => {
-                      let activity = it.development_activity;
-                      if (typeof activity === 'string') {
-                        try { activity = JSON.parse(activity); } catch { activity = activity || {}; }
-                      }
-                      return !isCompletedStatus(activity?.status || activity?.completionStatus || '');
-                    });
-
-                    return anyIncomplete ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleApproveForCompletion(item.id); }}
-                        className="px-3 py-1 rounded text-white text-xs bg-yellow-600 hover:bg-yellow-700"
-                      >
-                        Approve For Completion
-                      </button>
-                    ) : (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleApproveCycle(item.id); }}
-                        className="px-3 py-1 rounded text-white text-xs bg-emerald-600 hover:bg-emerald-700"
-                      >
-                        Approve Cycle Completed
-                      </button>
-                    );
-                  })()}
                 </div>
               </Td>
             </tr>
