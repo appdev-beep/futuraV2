@@ -1248,7 +1248,7 @@ function IDPTable({ data, goTo }) {
               <Td>{item.employee_name}</Td>
               <Td>{item.employee_code || item.employee_id}</Td>
               <Td>{item.department_name}</Td>
-              <Td>{item.position_title}</Td>
+              <Td>{item.position_title || '-'}</Td>
               <Td>{item.supervisor_name || '-'}</Td>
               <Td>{displayStatus(item.status)}</Td>
               <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>

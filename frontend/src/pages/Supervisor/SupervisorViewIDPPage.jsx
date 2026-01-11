@@ -221,7 +221,7 @@ export default function SupervisorViewIDPPage() {
 
   // HR actions
   async function handleApproveAsHR() {
-    // Determine whether any competency is incomplete and call the appropriate HR endpoint
+    // Determine whether any competency is incomplete
     const anyIncomplete = (idp.items || []).some(it => {
       let activity = it.development_activity;
       if (typeof activity === 'string') {
@@ -229,6 +229,15 @@ export default function SupervisorViewIDPPage() {
       }
       return !isCompletedStatus(activity?.status || activity?.completionStatus || '');
     });
+
+    // For initial HR review (PENDING_HR), can approve incomplete items to FOR_COMPLETION
+    // For FOR_COMPLETION status, must have all completed to approve cycle
+    const isForCompletion = header.status === 'FOR_COMPLETION';
+    
+    if (isForCompletion && anyIncomplete) {
+      alert('Need to complete all');
+      return;
+    }
 
     if (!window.confirm(anyIncomplete ? 'Approve this IDP for completion (notify supervisor)?' : 'Approve this IDP and mark cycle completed?')) return;
     try {
@@ -245,7 +254,6 @@ export default function SupervisorViewIDPPage() {
       console.error(err);
     }
   }
-
   async function handleReturnAsHR() {
     const remarks = window.prompt('Enter remarks for returning to supervisor:');
     if (!remarks) return;
@@ -619,8 +627,8 @@ export default function SupervisorViewIDPPage() {
         </div>
       )}
 
-      {/* HR approve/return controls (shown when HR opens a pending HR IDP) */}
-      {currentUser && currentUser.role === 'HR' && header.status === 'PENDING_HR' && (() => {
+      {/* HR approve/return controls (shown when HR opens a pending HR IDP or FOR_COMPLETION) */}
+      {currentUser && currentUser.role === 'HR' && (header.status === 'PENDING_HR' || header.status === 'FOR_COMPLETION') && (() => {
         const anyIncomplete = (idp.items || []).some(it => {
           let activity = it.development_activity;
           if (typeof activity === 'string') {
@@ -628,13 +636,19 @@ export default function SupervisorViewIDPPage() {
           }
           return !isCompletedStatus(activity?.status || activity?.completionStatus || '');
         });
+        
+        // For FOR_COMPLETION status, only allow approval if all are completed
+        const isForCompletion = header.status === 'FOR_COMPLETION';
+        const canApprove = !isForCompletion || !anyIncomplete;
+        
         return (
           <div className="mb-4 flex gap-2">
             <button
               onClick={handleApproveAsHR}
-              className="px-4 py-2 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+              disabled={!canApprove}
+              className={`px-4 py-2 rounded text-white text-sm ${!canApprove ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
             >
-              {anyIncomplete ? 'Approve For Completion' : 'Approve Cycle Completed'}
+              {isForCompletion ? (anyIncomplete ? 'Need to complete all' : 'Approve Cycle Completed') : (anyIncomplete ? 'Approve For Completion' : 'Approve Cycle Completed')}
             </button>
 
             <button

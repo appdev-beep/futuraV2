@@ -854,7 +854,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 <select
                                   value={activity.type}
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.type`, e.target.value)}
-                                  disabled={isForCompletion}
+                                  disabled={false}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 >
                                   {DEVELOPMENT_TYPES.map(type => (
@@ -869,7 +869,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   type="date"
                                   value={activity.targetCompletionDate || ''}
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.targetCompletionDate`, e.target.value)}
-                                  disabled={isForCompletion}
+                                  disabled={false}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
@@ -880,7 +880,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   type="date"
                                   value={activity.actualCompletionDate}
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.actualCompletionDate`, e.target.value)}
-                                  disabled={isForCompletion}
+                                  disabled={!isCompletedStatus(activity.completionStatus)}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
@@ -1024,7 +1024,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 <select
                                   value={activity.score}
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.score`, parseInt(e.target.value))}
-                                  disabled={isForCompletion}
+                                  disabled={false}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 >
                                   {[1, 2, 3, 4, 5].map(score => (
@@ -1040,7 +1040,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.expectedResults`, e.target.value)}
                                   placeholder="What new or enhanced skill or knowledge will you learn from this IDP?"
                                   rows={3}
-                                  disabled={isForCompletion}
+                                  disabled={false}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
@@ -1052,7 +1052,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.sharingMethod`, e.target.value)}
                                   placeholder="How will you share these enhanced skills or knowledge with your TLs, peers, or direct reports?"
                                   rows={3}
-                                  disabled={isForCompletion}
+                                  disabled={false}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
@@ -1064,7 +1064,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.applicationMethod`, e.target.value)}
                                   placeholder="How will you apply the skills or knowledge that you learned to improve your work performance?"
                                   rows={3}
-                                  disabled={isForCompletion}
+                                  disabled={false}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>

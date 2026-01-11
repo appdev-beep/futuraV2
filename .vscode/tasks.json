@@ -1,0 +1,10 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Apply patch - enable supervisor editing",
+			"type": "shell",
+			"command": "Write-Output \"Applying targeted replacements...\""
+		}
+	]
+}

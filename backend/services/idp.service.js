@@ -435,10 +435,10 @@ async function submit(id) {
   // Determine next status. If the IDP was RETURNED and the last return was made by the employee,
   // route back to the employee for acknowledgement. Otherwise route to AM/Manager as usual.
   let nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
-  // If HR previously returned this IDP for completion (FOR_COMPLETION),
-  // resubmission by the supervisor should route back to HR for review.
+  // If HR previously marked this IDP as FOR_COMPLETION, supervisor updates should keep it in FOR_COMPLETION
+  // until all competencies are completed. Do NOT change it back to PENDING_HR.
   if (String(header.status).toUpperCase() === 'FOR_COMPLETION') {
-    nextStatus = 'PENDING_HR';
+    nextStatus = 'FOR_COMPLETION';
   }
   if (header.status === 'RETURNED') {
     try {
@@ -748,10 +748,12 @@ async function employeeReturn(idpId, employeeId, remarks) {
 // HR: get incoming IDPs optionally filtered by department name and/or status
 async function getHRIncoming(hrId, departmentName = null, status = null) {
   // Build base query
-  let sql = `SELECT h.*, u.name AS employee_name, d.name AS department_name, u.position_id
+  let sql = `SELECT h.*, u.name AS employee_name, d.name AS department_name, u.position_id, p.title AS position_title, sup.name AS supervisor_name
              FROM idp_headers h
              JOIN users u ON h.employee_id = u.id
              LEFT JOIN departments d ON u.department_id = d.id
+             LEFT JOIN positions p ON u.position_id = p.id
+             LEFT JOIN users sup ON h.supervisor_id = sup.id
              WHERE 1=1`;
   const params = [];
 
@@ -780,7 +782,7 @@ async function hrApprove(idpId, hrId) {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
-    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ?', [idpId, 'PENDING_HR']);
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND (status = ? OR status = ?)', [idpId, 'PENDING_HR', 'FOR_COMPLETION']);
     if (rows.length === 0) {
       throw new Error('IDP not found or not pending HR approval.');
     }
@@ -1036,7 +1038,7 @@ async function hrForceCycleComplete(idpId, hrId) {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
-    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ?', [idpId, 'PENDING_HR']);
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND (status = ? OR status = ?)', [idpId, 'PENDING_HR', 'FOR_COMPLETION']);
     if (rows.length === 0) throw new Error('IDP not found or not pending HR review.');
 
     await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['CYCLE_COMPLETED', idpId]);
