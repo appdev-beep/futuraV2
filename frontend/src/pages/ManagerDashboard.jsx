@@ -21,6 +21,66 @@ import {
 // Only these roles can access Manager dashboard
 const MANAGER_ROLES = ['Manager', 'HR', 'Admin'];
 
+// IDPTable Component for rendering IDP lists
+function IDPTable({ data, openIdpView }) {
+  return (
+    <div className="bg-white shadow rounded overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">IDP No.</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Employee</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Supervisor</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Status</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Created At</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {data.map((idp) => (
+            <tr key={idp.id} className="hover:bg-gray-50">
+              <td className="px-4 py-3 whitespace-nowrap">
+                <span className="font-semibold text-purple-700">#{idp.id}</span>
+              </td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                <div className="font-medium text-gray-900">{idp.employee_name}</div>
+                <div className="text-xs text-gray-500">{idp.employee_position}</div>
+              </td>
+              <td className="px-4 py-3 whitespace-nowrap text-gray-700">{idp.supervisor_name}</td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                <span className={`px-2 py-1 text-xs font-medium rounded ${
+                  idp.status === 'APPROVED' || idp.status === 'CYCLE_COMPLETED'
+                    ? 'bg-green-100 text-green-800'
+                    : idp.status === 'PENDING_MANAGER' || idp.status === 'PENDING_AM'
+                    ? 'bg-yellow-100 text-yellow-800'
+                    : idp.status === 'PENDING_HR'
+                    ? 'bg-blue-100 text-blue-800'
+                    : idp.status === 'FOR_COMPLETION'
+                    ? 'bg-purple-100 text-purple-800'
+                    : 'bg-gray-100 text-gray-800'
+                }`}>
+                  {displayStatus(idp.status)}
+                </span>
+              </td>
+              <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                {new Date(idp.created_at).toLocaleDateString()}
+              </td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                <button
+                  onClick={() => openIdpView(idp)}
+                  className="text-purple-600 hover:text-purple-800 font-medium"
+                >
+                  View
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 
 // Dynamically build CL status sections based on department.has_am
 const getCLStatusSections = (department) => {
@@ -462,6 +522,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     const supervisor = supervisors.find(s => s.id === selectedSupervisorId);
     const supervisorSuffix = supervisor ? ` (${supervisor.name})` : '';
     if (activeSection === 'all') return `All Competency Levelings${supervisorSuffix}`;
+    if (activeSection === 'idp_all') return `All IDPs${supervisorSuffix}`;
+    if (activeSection === 'idp_pending_manager') return `${isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}${supervisorSuffix}`;
+    if (activeSection === 'idp_pending_hr') return `For Approval by HR${supervisorSuffix}`;
+    if (activeSection === 'idp_for_completion') return `For Completion${supervisorSuffix}`;
+    if (activeSection === 'idp_approved') return `Approved IDPs${supervisorSuffix}`;
     const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
     if (section) return `${section.label}${supervisorSuffix}`;
     // Fallback for AM dashboard
@@ -481,12 +546,44 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         const idps = await apiRequest('/api/idp/manager/pending');
         setPendingIDPs(idps || []);
       } catch (err) {
-        // Debug log for error
-        console.error('Error fetching pending IDPs:', err, err?.status, err?.message);
+        console.error('Error fetching pending IDPs:', err);
       }
     }
     fetchPendingIDPs();
   }, [user]);
+
+  // IDP status mapping - use pending IDPs as source
+  const idpByStatus = useMemo(() => {
+    return {
+      pending_manager: (pendingIDPs || []).filter(i => i.status === 'PENDING_MANAGER' || i.status === 'PENDING_AM'),
+      pending_hr: (pendingIDPs || []).filter(i => i.status === 'PENDING_HR'),
+      for_completion: (pendingIDPs || []).filter(i => i.status === 'FOR_COMPLETION'),
+      approved: (pendingIDPs || []).filter(i => i.status === 'APPROVED' || i.status === 'CYCLE_COMPLETED'),
+    };
+  }, [pendingIDPs]);
+
+  // Filter IDPs by selected supervisor
+  const filteredIDPsByStatus = useMemo(() => {
+    if (!selectedSupervisorId) {
+      return idpByStatus;
+    }
+    return {
+      pending_manager: idpByStatus.pending_manager.filter(i => i.supervisor_id === selectedSupervisorId),
+      pending_hr: idpByStatus.pending_hr.filter(i => i.supervisor_id === selectedSupervisorId),
+      for_completion: idpByStatus.for_completion.filter(i => i.supervisor_id === selectedSupervisorId),
+      approved: idpByStatus.approved.filter(i => i.supervisor_id === selectedSupervisorId),
+    };
+  }, [idpByStatus, selectedSupervisorId]);
+
+  const idpSectionCounts = useMemo(() => {
+    return {
+      pending_manager: filteredIDPsByStatus.pending_manager.length,
+      pending_hr: filteredIDPsByStatus.pending_hr.length,
+      for_completion: filteredIDPsByStatus.for_completion.length,
+      approved: filteredIDPsByStatus.approved.length,
+      all: Object.values(filteredIDPsByStatus).reduce((sum, arr) => sum + arr.length, 0),
+    };
+  }, [filteredIDPsByStatus]);
 
   const filteredPendingIDPs = useMemo(() => {
     if (!selectedSupervisorId) return pendingIDPs;
@@ -639,27 +736,88 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               </div>
             </div>
 
-            {/* NEW: IDP For Approval Section */}
+            {/* NEW: IDP Status Tracking Sections */}
             <div className="mt-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
-                IDP For Approval
+                IDP Sections
               </p>
 
               <button
-                onClick={() => setActiveSection('idp_pending')}
+                type="button"
+                onClick={() => setActiveSection('idp_all')}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                  ${activeSection === 'idp_pending' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  ${activeSection === 'idp_all' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
               >
                 <span className="flex items-center gap-2">
-                  <ClipboardDocumentCheckIcon className="w-4 h-4 text-purple-600" />
-                  Pending IDPs
+                  <Squares2X2Icon className="w-4 h-4" />
+                  All IDPs
                 </span>
-                {pendingIDPs.length > 0 && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
-                    {pendingIDPs.length}
-                  </span>
-                )}
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                  {idpSectionCounts.all || 0}
+                </span>
               </button>
+
+              <div className="mt-1 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('idp_pending_manager')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                    ${activeSection === 'idp_pending_manager' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <ClockIcon className="w-4 h-4" />
+                    {isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                    {idpSectionCounts.pending_manager || 0}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('idp_pending_hr')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                    ${activeSection === 'idp_pending_hr' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <ClockIcon className="w-4 h-4" />
+                    For Approval by HR
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                    {idpSectionCounts.pending_hr || 0}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('idp_for_completion')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                    ${activeSection === 'idp_for_completion' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <PencilSquareIcon className="w-4 h-4" />
+                    For Completion
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                    {idpSectionCounts.for_completion || 0}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('idp_approved')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                    ${activeSection === 'idp_approved' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <CheckCircleIcon className="w-4 h-4" />
+                    Approved
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                    {idpSectionCounts.approved || 0}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </nav>
@@ -846,6 +1004,60 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                 </div>
               )}
             </div>
+          ) : activeSection === 'idp_all' ? (
+            <>
+              {filteredIDPsByStatus.pending_manager.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">For Approval by Manager</h3>
+                  <IDPTable data={filteredIDPsByStatus.pending_manager} openIdpView={openIdpView} />
+                </div>
+              )}
+              {filteredIDPsByStatus.pending_hr.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">For Approval by HR</h3>
+                  <IDPTable data={filteredIDPsByStatus.pending_hr} openIdpView={openIdpView} />
+                </div>
+              )}
+              {filteredIDPsByStatus.for_completion.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">For Completion</h3>
+                  <IDPTable data={filteredIDPsByStatus.for_completion} openIdpView={openIdpView} />
+                </div>
+              )}
+              {filteredIDPsByStatus.approved.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Approved</h3>
+                  <IDPTable data={filteredIDPsByStatus.approved} openIdpView={openIdpView} />
+                </div>
+              )}
+              {idpSectionCounts.all === 0 && (
+                <p className="text-gray-400 text-sm italic">No IDPs found.</p>
+              )}
+            </>
+          ) : activeSection === 'idp_pending_manager' ? (
+            filteredIDPsByStatus.pending_manager.length === 0 ? (
+              <p className="text-gray-400 text-sm italic">No IDPs pending manager approval.</p>
+            ) : (
+              <IDPTable data={filteredIDPsByStatus.pending_manager} openIdpView={openIdpView} />
+            )
+          ) : activeSection === 'idp_pending_hr' ? (
+            filteredIDPsByStatus.pending_hr.length === 0 ? (
+              <p className="text-gray-400 text-sm italic">No IDPs pending HR approval.</p>
+            ) : (
+              <IDPTable data={filteredIDPsByStatus.pending_hr} openIdpView={openIdpView} />
+            )
+          ) : activeSection === 'idp_for_completion' ? (
+            filteredIDPsByStatus.for_completion.length === 0 ? (
+              <p className="text-gray-400 text-sm italic">No IDPs for completion.</p>
+            ) : (
+              <IDPTable data={filteredIDPsByStatus.for_completion} openIdpView={openIdpView} />
+            )
+          ) : activeSection === 'idp_approved' ? (
+            filteredIDPsByStatus.approved.length === 0 ? (
+              <p className="text-gray-400 text-sm italic">No approved IDPs.</p>
+            ) : (
+              <IDPTable data={filteredIDPsByStatus.approved} openIdpView={openIdpView} />
+            )
           ) : null}
         </section>
       </main>

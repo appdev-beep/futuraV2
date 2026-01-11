@@ -3,6 +3,8 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import CreateIDPPage from './CreateIDPPage';
 import { COMPLETION_STATUS_OPTIONS, DEVELOPMENT_TYPES, CRAYON_COLORS } from './idpConstants';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 
 export default function SupervisorViewIDPPage() {
@@ -164,6 +166,23 @@ export default function SupervisorViewIDPPage() {
   const supName = (hasNonNumericSupName ? rawSupName : null) || (header.supervisor && getDisplayName(header.supervisor)) || getDisplayName(supervisorInfo) || '';
   const supPosition = header.supervisor_title || supervisorInfo?.position || supervisorInfo?.title || '';
 
+  // Match create page chip color logic
+  const areaColor = (area) => {
+    const safe = (CRAYON_COLORS && typeof CRAYON_COLORS === 'object') ? CRAYON_COLORS : {};
+    if (safe[area]) return safe[area];
+    const key = String(area || 'Other');
+    const palette = [
+      { bg: 'bg-indigo-50', text: 'text-indigo-800', border: 'border-indigo-200', dot: 'bg-indigo-500' },
+      { bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200', dot: 'bg-rose-500' },
+      { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-500' },
+      { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+      { bg: 'bg-sky-50', text: 'text-sky-800', border: 'border-sky-200', dot: 'bg-sky-500' },
+    ];
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 100000;
+    return palette[hash % palette.length];
+  };
+
   // If the IDP is RETURNED or FOR_COMPLETION and the current user is the supervisor owner, show full Create/Edit form so supervisor can modify and resubmit.
   // Do not render the editable Create form when viewing in view-only mode.
   if (!viewOnly && currentUser && currentUser.role === 'Supervisor' && (header.status === 'RETURNED' || header.status === 'FOR_COMPLETION') && Number(supId) === Number(currentUser.id)) {
@@ -292,6 +311,142 @@ export default function SupervisorViewIDPPage() {
     return (<span className={`${base} bg-gray-50 text-gray-800 border-gray-200`}><span className="h-1.5 w-1.5 rounded-full bg-gray-500" />{status}</span>);
   })();
 
+  // Helpers for export formatting
+  const formatDate = (ts) => {
+    if (!ts) return '-';
+    const d = new Date(ts);
+    if (isNaN(d)) return String(ts);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const formatTime = (ts) => {
+    if (!ts) return '-';
+    const d = new Date(ts);
+    if (isNaN(d)) return '';
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+
+  function handleExportCSV() {
+    if (!idp || !idp.header) return;
+    const h = idp.header;
+    const csvRows = [];
+    // Header block
+    csvRows.push(['IDP Header']);
+    csvRows.push(['IDP ID', h.id || '-']);
+    csvRows.push(['Employee', empName || '-']);
+    csvRows.push(['Supervisor', supName || '-']);
+    csvRows.push(['Department', empDept || '-']);
+    csvRows.push(['Cycle ID', h.cycle_id || '-']);
+    csvRows.push(['Review Period', h.review_period || '-']);
+    csvRows.push(['Next Review Date', h.next_review_date || '-']);
+    csvRows.push(['Status', h.status || '-']);
+    if (h.created_at) csvRows.push(['Created At', `${formatDate(h.created_at)} ${formatTime(h.created_at)}`]);
+    if (h.updated_at) csvRows.push(['Last Updated', `${formatDate(h.updated_at)} ${formatTime(h.updated_at)}`]);
+    csvRows.push(['']);
+
+    // Items table
+    csvRows.push(['Development Plan Items']);
+    csvRows.push(['Competency','Area','Current Level','Target Level','Activity Type','Activity','Target Date','Actual Date','Status','Score','Expected Results','Sharing Method','Application Method','Attachment']);
+    (idp.items || []).forEach(item => {
+      let activity = item.development_activity;
+      if (typeof activity === 'string') {
+        try { activity = JSON.parse(activity); } catch { activity = activity || {}; }
+      }
+      const current = item.current_level ?? item.currentLevel ?? item.assigned_level ?? item.mplr ?? compAssignedMap[item.competency_id] ?? '';
+      const target = item.target_level ?? item.targetLevel ?? (current ? Math.min(Number(current) + 1, 5) : '');
+      csvRows.push([
+        item.competency_name || '',
+        item.development_area || item.competency_area || '',
+        String(current || ''),
+        String(target || ''),
+        activity?.type || '',
+        (activity?.activity || '').replace(/\n/g, ' '),
+        activity?.targetDate || activity?.targetCompletionDate || '',
+        activity?.actualDate || activity?.actualCompletionDate || '',
+        activity?.status || activity?.completionStatus || '',
+        activity?.score != null ? String(activity.score) : '',
+        (activity?.expectedResults || '').replace(/\n/g, ' '),
+        (activity?.sharingMethod || '').replace(/\n/g, ' '),
+        (activity?.applicationMethod || '').replace(/\n/g, ' '),
+        activity?.pdfPath ? 'Available' : '—',
+      ]);
+    });
+
+    const csvContent = csvRows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `IDP_${h.id || 'unknown'}_${(empName || 'employee').replace(/\s+/g,'_')}_View.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function handleExportPDF() {
+    if (!idp || !idp.header) return;
+    const h = idp.header;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+
+    doc.setFontSize(14);
+    doc.text('Individual Development Plan – View', 40, 40);
+
+    doc.setFontSize(10);
+    const lines = [
+      `IDP ID: ${h.id || '-'}`,
+      `Employee: ${empName || '-'}`,
+      `Supervisor: ${supName || '-'}`,
+      `Department: ${empDept || '-'}`,
+      `Cycle ID: ${h.cycle_id || '-'}`,
+      `Review Period: ${h.review_period || '-'}`,
+      `Next Review Date: ${h.next_review_date || '-'}`,
+      `Status: ${h.status || '-'}`,
+    ];
+    if (h.created_at) lines.push(`Created: ${formatDate(h.created_at)} ${formatTime(h.created_at)}`);
+    if (h.updated_at) lines.push(`Updated: ${formatDate(h.updated_at)} ${formatTime(h.updated_at)}`);
+    lines.forEach((l, i) => doc.text(l, 40, 60 + i * 14));
+
+    autoTable(doc, {
+      startY: 60 + lines.length * 14 + 10,
+      head: [[
+        'Competency','Area','Current','Target','Type','Activity','Target Date','Actual Date','Status','Score','Expected Results','Sharing','Application','Attachment'
+      ]],
+      body: (idp.items || []).map(item => {
+        let activity = item.development_activity;
+        if (typeof activity === 'string') {
+          try { activity = JSON.parse(activity); } catch { activity = activity || {}; }
+        }
+        const current = item.current_level ?? item.currentLevel ?? item.assigned_level ?? item.mplr ?? compAssignedMap[item.competency_id] ?? '';
+        const target = item.target_level ?? item.targetLevel ?? (current ? Math.min(Number(current) + 1, 5) : '');
+        return [
+          item.competency_name || '',
+          item.development_area || item.competency_area || '',
+          String(current || ''),
+          String(target || ''),
+          activity?.type || '',
+          (activity?.activity || '').replace(/\n/g, ' '),
+          activity?.targetDate || activity?.targetCompletionDate || '',
+          activity?.actualDate || activity?.actualCompletionDate || '',
+          activity?.status || activity?.completionStatus || '',
+          activity?.score != null ? String(activity.score) : '',
+          (activity?.expectedResults || '').replace(/\n/g, ' '),
+          (activity?.sharingMethod || '').replace(/\n/g, ' '),
+          (activity?.applicationMethod || '').replace(/\n/g, ' '),
+          (activity?.pdfPath ? 'Available' : '—'),
+        ];
+      }),
+      styles: { fontSize: 8, cellPadding: 4 },
+      headStyles: { fillColor: [68, 76, 85] },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+      columnStyles: { 5: { cellWidth: 160 }, 10: { cellWidth: 160 }, 11: { cellWidth: 130 }, 12: { cellWidth: 130 } },
+    });
+
+    doc.save(`IDP_${h.id || 'unknown'}_${(empName || 'employee').replace(/\s+/g,'_')}_View.pdf`);
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 text-black">
       <div className="border-b bg-black sticky top-0 z-40">
@@ -315,6 +470,18 @@ export default function SupervisorViewIDPPage() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <button
+                onClick={handleExportCSV}
+                className="bg-white text-black px-3 py-2 rounded-md hover:bg-gray-100 border border-gray-200"
+              >
+                Export CSV
+              </button>
+              <button
+                onClick={handleExportPDF}
+                className="bg-white text-black px-3 py-2 rounded-md hover:bg-gray-100 border border-gray-200"
+              >
+                Export PDF
+              </button>
               {!viewOnly && currentUser && currentUser.role === 'Supervisor' && Number(supId) === Number(currentUser.id) && (
                 <button
                   onClick={async () => {
@@ -353,24 +520,64 @@ export default function SupervisorViewIDPPage() {
           <div className="flex items-start justify-between gap-3 mb-4">
             <div>
               <h2 className="text-lg font-semibold text-black">Employee Information</h2>
+              <p className="text-sm text-gray-600 mt-1">Read-only snapshot of the IDP context.</p>
             </div>
             <div className="text-xs text-gray-500 text-right">
-              <div className="font-semibold text-gray-800">Cycle ID: {header.cycle_id}</div>
+              <div className="hidden sm:block">Cycle ID</div>
+              <div className="font-semibold text-gray-800">{header.cycle_id}</div>
             </div>
           </div>
-      <div className="mb-4">
-        <div><strong>Employee:</strong> {empName}{empId ? ` (${empId})` : ''}</div>
-        {empPosition && <div><strong>Position:</strong> {empPosition}</div>}
-        {empDept && <div><strong>Department:</strong> {empDept}</div>}
-        {empEmail && <div><strong>Email:</strong> {empEmail}</div>}
-        <div style={{height:8}} />
-        {header.review_period && <div><strong>Review Period:</strong> {header.review_period}</div>}
-        {header.next_review_date && <div><strong>Next Review Date:</strong> {header.next_review_date}</div>}
-        <div style={{height:8}} />
-        <div><strong>Supervisor:</strong> {supName || (supId ? `ID ${supId}` : '-')}</div>
-        {supPosition && <div><strong>Supervisor Title:</strong> {supPosition}</div>}
-        <div><strong>Cycle ID:</strong> {header.cycle_id}</div>
-      </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="min-w-0">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Name</label>
+              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100 truncate">
+                {empName}{empId ? ` (${empId})` : ''}
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Position</label>
+              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100 truncate">
+                {empPosition || '—'}
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
+              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100 truncate">
+                {empDept || '—'}
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Supervisor/Manager</label>
+              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100 truncate">
+                {supName || (supId ? `ID ${supId}` : '—')}
+              </div>
+            </div>
+
+            <div className="sm:col-span-1 lg:col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Review Period</label>
+              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 truncate">
+                {header.review_period || '—'}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Next Review Date</label>
+              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 truncate">
+                {header.next_review_date || '—'}
+              </div>
+            </div>
+
+            <div className="sm:hidden">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Cycle ID</label>
+              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                {header.cycle_id}
+              </div>
+            </div>
+          </div>
 
       {/* Show Save & Resubmit for DRAFT/RETURNED */}
       {editable && (
@@ -453,20 +660,15 @@ export default function SupervisorViewIDPPage() {
         </div>
 
         <h2 className="text-xl font-semibold mb-2">Development Items</h2>
-      {/* Render full development plan for managers reviewing pending IDPs */}
-      {(viewOnly || (currentUser && ((currentUser.role === 'Manager' && (header.status === 'PENDING_MANAGER' || header.status === 'PENDING_AM')) || (currentUser.role === 'Employee' && header.status === 'PENDING_EMPLOYEE' && Number(empId) === Number(currentUser.id))))) ? (
+        {/* Always render full card layout for uniformity */}
         <div className="space-y-4">
           {idp.items.map((item, itemIndex) => {
             let activity = item.development_activity;
             if (typeof activity === 'string') {
               try { activity = JSON.parse(activity); } catch { activity = activity || {}; }
             }
-
-            // area color selection (simple deterministic)
             const areaKey = item.development_area || item.competency_area || 'Other';
-            let hash = 0;
-            for (let i = 0; i < areaKey.length; i++) hash = (hash * 31 + areaKey.charCodeAt(i)) % CRAYON_COLORS.length;
-            const chipColor = CRAYON_COLORS[hash] || '#E5E7EB';
+            const chip = areaColor(areaKey);
 
             const displayCurrent = item.current_level ?? item.currentLevel ?? item.assigned_level ?? item.mplr ?? compAssignedMap[item.competency_id] ?? '';
             const displayTarget = item.target_level ?? item.targetLevel ?? (displayCurrent ? Math.min(Number(displayCurrent) + 1, 5) : '');
@@ -478,7 +680,10 @@ export default function SupervisorViewIDPPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-base font-semibold text-black">{item.competency_name}</span>
-                        <span className="text-xs font-semibold px-2 py-1 rounded-full border" style={{ background: chipColor }}>{item.development_area || item.competency_area || 'Area'}</span>
+                        <span className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border ${chip.bg} ${chip.text} ${chip.border}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
+                          {item.development_area || item.competency_area || 'Area'}
+                        </span>
                       </div>
                       <div className="mt-1 text-sm text-gray-600">Current level <span className="font-semibold text-gray-900">{displayCurrent}</span> → Target level <span className="font-semibold text-gray-900">{displayTarget}</span></div>
                     </div>
@@ -562,84 +767,6 @@ export default function SupervisorViewIDPPage() {
             );
           })}
         </div>
-      ) : (
-        /* existing compact table view for non-manager or non-pending */
-        <table className="min-w-full divide-y divide-gray-200 mb-4">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Competency</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Current Level</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target Level</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Activity Type</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Activity</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {editable && editData
-              ? editData.items.map((item, idx) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-2 align-top">{item.competency_name}</td>
-                    <td className="px-4 py-2 align-top">{item.current_level}</td>
-                    <td className="px-4 py-2 align-top">{item.target_level}</td>
-                    <td className="px-4 py-2 align-top">{item.activity.type || ''}</td>
-                    <td className="px-4 py-2 align-top">{item.activity.activity || ''}</td>
-                    <td className="px-4 py-2 align-top">{item.activity.targetDate || ''}</td>
-                    <td className="px-4 py-2 align-top">{item.activity.status || ''}</td>
-                  </tr>
-                ))
-              : idp.items.map(item => {
-                  let activity = item.development_activity;
-                  if (typeof activity === 'string') {
-                    try { activity = JSON.parse(activity); } catch { void 0; }
-                  }
-
-                  // Compute a robust current level with fallbacks.
-                  const rawCurrent = (item.current_level ?? item.currentLevel ?? item.assigned_level ?? item.assignedLevel ?? item.mplr ?? item.mplr_level ?? compAssignedMap[item.competency_id] ?? null);
-                  const rawTarget = (item.target_level ?? item.targetLevel ?? null);
-
-                  // If current is missing but target exists, derive a reasonable current (target - 1, min 1)
-                  let displayCurrent = rawCurrent;
-                  let displayTarget = rawTarget;
-
-                  if ((displayCurrent === null || displayCurrent === undefined || displayCurrent === '') && displayTarget != null) {
-                    const tnum = Number(displayTarget);
-                    if (!Number.isNaN(tnum)) {
-                      displayCurrent = Math.max(tnum - 1, 1);
-                    }
-                  }
-
-                  // If target missing but current exists, derive target as current + 1 (max 5)
-                  if ((displayTarget === null || displayTarget === undefined || displayTarget === '') && displayCurrent != null) {
-                    const cnum = Number(displayCurrent);
-                    if (!Number.isNaN(cnum)) {
-                      displayTarget = Math.min(cnum + 1, 5);
-                    }
-                  }
-
-                  return (
-                    <tr key={item.id}>
-                      <td className="px-4 py-2 align-top">{item.competency_name}</td>
-                      <td className="px-4 py-2 align-top">{(displayCurrent != null ? String(displayCurrent) : '')}</td>
-                      <td className="px-4 py-2 align-top">{(displayTarget != null ? String(displayTarget) : '')}</td>
-                      <td className="px-4 py-2 align-top">{activity?.type || ''}</td>
-                      <td className="px-4 py-2 align-top">
-                        <div className="truncate">{activity?.activity || ''}</div>
-                        {activity?.pdfPath && (
-                          <div className="text-xs mt-1">
-                            <a href={`${import.meta.env.VITE_API_BASE_URL}/${activity.pdfPath}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">View attachment</a>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 align-top">{activity?.targetDate || ''}</td>
-                      <td className="px-4 py-2 align-top">{activity?.status || ''}</td>
-                    </tr>
-                  );
-                })}
-          </tbody>
-        </table>
-      )}
     </div>
   </div>
   );
