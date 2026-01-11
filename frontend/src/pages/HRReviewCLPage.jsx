@@ -4,6 +4,8 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
 import Modal from '../components/Modal';
 import { displayStatus } from '../utils/statusHelper';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 function HRReviewCLPage() {
   const { id } = useParams();
@@ -101,6 +103,188 @@ function HRReviewCLPage() {
   };
 
   const proficiency = getProficiencyLevel(totalScore);
+
+  // Date formatting helpers
+  const formatDate = (ts) => {
+    if (!ts) return '-';
+    const d = new Date(ts);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const formatTime = (ts) => {
+    if (!ts) return '-';
+    const d = new Date(ts);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+
+  // ==========================
+  // EXPORT: CSV
+  // ==========================
+  function handleExportCSV() {
+    if (!cl) return;
+    const header = cl.header || cl;
+    const csvRows = [];
+
+    // Header Info
+    csvRows.push(['CL Header']);
+    csvRows.push(['CL ID', header.id || '-']);
+    csvRows.push(['Employee', header.employee_name || '-']);
+    csvRows.push(['Supervisor', header.supervisor_name || '-']);
+    csvRows.push(['Department', header.department_name || '-']);
+    csvRows.push(['Status', displayStatus(header.status)]);
+    if (header.created_at) csvRows.push(['Created At', formatDate(header.created_at) + ' ' + formatTime(header.created_at)]);
+    if (header.updated_at) csvRows.push(['Last Updated', formatDate(header.updated_at) + ' ' + formatTime(header.updated_at)]);
+    csvRows.push(['Total Score', totalScore.toFixed(2)]);
+    csvRows.push(['Proficiency', `Level ${proficiency.level} – ${proficiency.name}`]);
+    csvRows.push(['']);
+
+    // Competencies Table
+    csvRows.push(['Competency Leveling Summary']);
+    csvRows.push(['Competency','MPLR/Required','Assigned','Weight %','Score','Justification','PDF']);
+    (items || []).forEach(it => {
+      csvRows.push([
+        it.competency_name || '',
+        String(it.mplr_level || it.required_level || ''),
+        String(it.assigned_level || ''),
+        Number(it.weight || 0).toFixed(2),
+        Number(it.score || 0).toFixed(2),
+        (it.justification || '').replace(/\n/g, ' '),
+        it.pdf_path ? 'Available' : '—',
+      ]);
+    });
+    csvRows.push(['']);
+
+    // Process History
+    csvRows.push(['Process History']);
+    csvRows.push(['Date','Time','Actor','Role','Action','Remarks']);
+    (auditTrail || []).forEach(event => {
+      const action = (event.action_type || '-').replace(/_/g, ' ');
+      csvRows.push([
+        formatDate(event.timestamp),
+        formatTime(event.timestamp),
+        event.actor_name || '-',
+        event.actor_role || '-',
+        action,
+        (event.remarks || '').replace(/\n/g, ' '),
+      ]);
+    });
+    csvRows.push(['']);
+
+    // Remarks Section
+    csvRows.push(['Remarks']);
+    csvRows.push(['Supervisor Remarks', (header.supervisor_remarks || '').replace(/\n/g, ' ')]);
+    csvRows.push(['Manager Remarks', (header.manager_remarks || '').replace(/\n/g, ' ')]);
+    csvRows.push(['Employee Remarks', (header.employee_remarks || '').replace(/\n/g, ' ')]);
+    csvRows.push(['Previous HR Remarks', (header.hr_remarks || '').replace(/\n/g, ' ')]);
+    csvRows.push(['HR Remarks (Current)', (remarks || '').replace(/\n/g, ' ')]);
+
+    const csvContent = csvRows.map(r => r.map(v => `\"${String(v).replace(/\"/g, '\"\"')}\"`).join(',')).join('\n');
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const employee = header.employee_name || 'employee';
+    link.href = URL.createObjectURL(blob);
+    link.download = `CL_${header.id || 'unknown'}_${employee}_HR_Review.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  // ==========================
+  // EXPORT: PDF
+  // ==========================
+  function handleExportPDF() {
+    if (!cl) return;
+    const header = cl.header || cl;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+
+    const title = `Competency Leveling – HR Review`;
+    doc.setFontSize(14);
+    doc.text(title, 40, 40);
+
+    doc.setFontSize(10);
+    const infoLines = [
+      `CL ID: ${header.id || '-'}`,
+      `Employee: ${header.employee_name || '-'}`,
+      `Supervisor: ${header.supervisor_name || '-'}`,
+      `Department: ${header.department_name || '-'}`,
+      `Status: ${displayStatus(header.status)}`,
+      `Total Score: ${totalScore.toFixed(2)} | Proficiency: Level ${proficiency.level} – ${proficiency.name}`,
+    ];
+    if (header.created_at) infoLines.push(`Created: ${formatDate(header.created_at)} ${formatTime(header.created_at)}`);
+    if (header.updated_at) infoLines.push(`Updated: ${formatDate(header.updated_at)} ${formatTime(header.updated_at)}`);
+    infoLines.forEach((line, idx) => doc.text(line, 40, 60 + idx * 14));
+
+    autoTable(doc, {
+      startY: 60 + infoLines.length * 14 + 10,
+      head: [[
+        'Competency','MPLR/Required','Assigned','Weight %','Score','Justification','PDF'
+      ]],
+      body: (items || []).map(it => [
+        it.competency_name || '',
+        String(it.mplr_level || it.required_level || ''),
+        String(it.assigned_level || ''),
+        Number(it.weight || 0).toFixed(2),
+        Number(it.score || 0).toFixed(2),
+        (it.justification || '').replace(/\n/g, ' '),
+        it.pdf_path ? 'Available' : '—',
+      ]),
+      styles: { fontSize: 8, cellPadding: 4 },
+      headStyles: { fillColor: [68, 76, 85] },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+    });
+
+    let y = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 20 : 60 + infoLines.length * 14 + 20;
+
+    // Process History Table
+    doc.setFontSize(12);
+    doc.text('Process History', 40, y);
+    y += 6;
+    autoTable(doc, {
+      startY: y + 10,
+      head: [['Date','Time','Actor','Role','Action','Remarks']],
+      body: (auditTrail || []).map(event => [
+        formatDate(event.timestamp),
+        formatTime(event.timestamp),
+        event.actor_name || '-',
+        event.actor_role || '-',
+        (event.action_type || '-').replace(/_/g, ' '),
+        (event.remarks || '').replace(/\n/g, ' '),
+      ]),
+      styles: { fontSize: 8, cellPadding: 4 },
+      headStyles: { fillColor: [68, 76, 85] },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+    });
+
+    y = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 20 : y + 40;
+
+    // Remarks Section
+    doc.setFontSize(12);
+    doc.text('Remarks', 40, y);
+    y += 6;
+    autoTable(doc, {
+      startY: y + 10,
+      head: [['Type','Text']],
+      body: [
+        ['Supervisor Remarks', (header.supervisor_remarks || '').replace(/\n/g, ' ')],
+        ['Manager Remarks', (header.manager_remarks || '').replace(/\n/g, ' ')],
+        ['Employee Remarks', (header.employee_remarks || '').replace(/\n/g, ' ')],
+        ['Previous HR Remarks', (header.hr_remarks || '').replace(/\n/g, ' ')],
+        ['HR Remarks (Current)', (remarks || '').replace(/\n/g, ' ')],
+      ],
+      styles: { fontSize: 8, cellPadding: 4 },
+      headStyles: { fillColor: [68, 76, 85] },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+      columnStyles: { 1: { cellWidth: 420 } },
+    });
+
+    const employee = header.employee_name || 'employee';
+    doc.save(`CL_${header.id || 'unknown'}_${employee}_HR_Review.pdf`);
+  }
 
   // ==========================
   // APPROVE HANDLER
@@ -222,12 +406,26 @@ function HRReviewCLPage() {
                 Status: <strong>{displayStatus(header.status)}</strong>
               </p>
             </div>
-            <button
-              onClick={goBack}
-              className="text-slate-500 hover:text-slate-700 px-4 py-2 rounded-md hover:bg-slate-100 text-sm transition"
-            >
-              ← Back to Dashboard
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportCSV}
+                className="text-slate-600 hover:text-slate-800 px-3 py-2 rounded-md hover:bg-slate-100 text-sm border border-slate-200"
+              >
+                Export CSV
+              </button>
+              <button
+                onClick={handleExportPDF}
+                className="text-slate-600 hover:text-slate-800 px-3 py-2 rounded-md hover:bg-slate-100 text-sm border border-slate-200"
+              >
+                Export PDF
+              </button>
+              <button
+                onClick={goBack}
+                className="text-slate-500 hover:text-slate-700 px-4 py-2 rounded-md hover:bg-slate-100 text-sm transition"
+              >
+                ← Back
+              </button>
+            </div>
           </div>
 
           {/* Body */}
@@ -254,36 +452,36 @@ function HRReviewCLPage() {
 
             {/* All Previous Remarks (read-only) */}
             {supervisor_remarks && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold mb-1 text-yellow-800">Supervisor Remarks</h3>
-                <p className="text-sm text-yellow-900 whitespace-pre-wrap">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-slate-800">Supervisor Remarks</h3>
+                <p className="text-sm text-slate-800 whitespace-pre-wrap">
                   {supervisor_remarks}
                 </p>
               </div>
             )}
 
             {manager_remarks && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold mb-1 text-blue-800">Manager Remarks</h3>
-                <p className="text-sm text-blue-900 whitespace-pre-wrap">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-slate-800">Manager Remarks</h3>
+                <p className="text-sm text-slate-800 whitespace-pre-wrap">
                   {manager_remarks}
                 </p>
               </div>
             )}
 
             {employee_remarks && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold mb-1 text-green-800">Employee Remarks</h3>
-                <p className="text-sm text-green-900 whitespace-pre-wrap">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-slate-800">Employee Remarks</h3>
+                <p className="text-sm text-slate-800 whitespace-pre-wrap">
                   {employee_remarks}
                 </p>
               </div>
             )}
 
             {hr_remarks && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold mb-1 text-purple-800">Previous HR Remarks</h3>
-                <p className="text-sm text-purple-900 whitespace-pre-wrap">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-slate-800">Previous HR Remarks</h3>
+                <p className="text-sm text-slate-800 whitespace-pre-wrap">
                   {hr_remarks}
                 </p>
               </div>
@@ -332,16 +530,16 @@ function HRReviewCLPage() {
             )}
 
             {/* TOTAL SCORE CARD */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 border border-blue-800 rounded-lg p-3 mb-3 shadow">
+            <div className="bg-gradient-to-r from-slate-700 to-slate-800 border border-slate-900 rounded-lg p-3 mb-3 shadow">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">TOTAL FINAL SCORE</p>
+                  <p className="text-[10px] font-medium text-slate-200 mb-0.5">TOTAL FINAL SCORE</p>
                   <p className="text-2xl font-bold text-white">{totalScore.toFixed(2)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">PROFICIENCY LEVEL</p>
+                  <p className="text-[10px] font-medium text-slate-200 mb-0.5">PROFICIENCY LEVEL</p>
                   <p className="text-xl font-bold text-white">Level {proficiency.level}</p>
-                  <p className="text-xs font-semibold text-blue-100">{proficiency.name}</p>
+                  <p className="text-xs font-semibold text-slate-200">{proficiency.name}</p>
                 </div>
               </div>
             </div>
@@ -371,7 +569,7 @@ function HRReviewCLPage() {
                         <td className="px-2 py-1 text-slate-700">{it.mplr_level || it.required_level}</td>
                         <td className="px-2 py-1 text-slate-700">{it.assigned_level}</td>
                         <td className="px-2 py-1 text-slate-700">{Number(it.weight || 0).toFixed(2)}</td>
-                        <td className="px-2 py-1 font-semibold text-blue-600">{Number(it.score || 0).toFixed(2)}</td>
+                        <td className="px-2 py-1 font-semibold text-slate-800">{Number(it.score || 0).toFixed(2)}</td>
                         <td className="px-2 py-1 text-slate-700">{it.justification || '—'}</td>
                         <td className="px-2 py-1">
                           {it.pdf_path ? (
@@ -379,7 +577,7 @@ function HRReviewCLPage() {
                               href={`${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}`}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-blue-600 hover:text-blue-800 underline"
+                              className="text-slate-600 hover:text-slate-800 underline"
                             >
                               View
                             </a>
@@ -408,28 +606,28 @@ function HRReviewCLPage() {
                   </thead>
                   <tbody className="bg-white">
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-purple-600">5</td>
-                      <td className="px-2 py-1 font-semibold text-purple-600">Expert</td>
+                      <td className="px-2 py-1 font-semibold text-slate-800">5</td>
+                      <td className="px-2 py-1 font-semibold text-slate-800">Expert</td>
                       <td className="px-2 py-1 text-slate-700">Advanced mastery; recognized authority; can innovate and lead others</td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-green-600">4</td>
-                      <td className="px-2 py-1 font-semibold text-green-600">Advanced</td>
+                      <td className="px-2 py-1 font-semibold text-slate-800">4</td>
+                      <td className="px-2 py-1 font-semibold text-slate-800">Advanced</td>
                       <td className="px-2 py-1 text-slate-700">Can apply independently in complex scenarios; mentors others</td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-blue-600">3</td>
-                      <td className="px-2 py-1 font-semibold text-blue-600">Intermediate</td>
+                      <td className="px-2 py-1 font-semibold text-slate-800">3</td>
+                      <td className="px-2 py-1 font-semibold text-slate-800">Intermediate</td>
                       <td className="px-2 py-1 text-slate-700">Solid working knowledge; can perform tasks with minimal guidance</td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-yellow-600">2</td>
-                      <td className="px-2 py-1 font-semibold text-yellow-600">Novice</td>
+                      <td className="px-2 py-1 font-semibold text-slate-800">2</td>
+                      <td className="px-2 py-1 font-semibold text-slate-800">Novice</td>
                       <td className="px-2 py-1 text-slate-700">Basic understanding; requires supervision and support</td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-orange-600">1</td>
-                      <td className="px-2 py-1 font-semibold text-orange-600">Fundamental Awareness</td>
+                      <td className="px-2 py-1 font-semibold text-slate-800">1</td>
+                      <td className="px-2 py-1 font-semibold text-slate-800">Fundamental Awareness</td>
                       <td className="px-2 py-1 text-slate-700">Limited exposure; general familiarity with concepts</td>
                     </tr>
                   </tbody>
@@ -447,7 +645,7 @@ function HRReviewCLPage() {
                   )}
                 </label>
                 <textarea
-                  className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500"
                   rows="3"
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
@@ -457,8 +655,8 @@ function HRReviewCLPage() {
             )}
 
             {viewOnly && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-700">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <p className="text-sm text-slate-700">
                   This CL is being viewed in read-only mode.
                 </p>
               </div>
