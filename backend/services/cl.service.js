@@ -352,7 +352,7 @@ async function submit(id, supervisorRemarks = null) {
   await createNotification({
     recipient_id: clHeader.employee_id,
     message: `CL #${id} ${isResubmission ? 'resubmitted' : 'created'} for you by ${supervisorName}`,
-    module: 'Competency Leveling'
+    module: 'CL'
   }).catch(err => console.error('Failed to create notification:', err));
 
   // 9) Create notification for the next approver (Manager or AM)
@@ -372,7 +372,7 @@ async function submit(id, supervisorRemarks = null) {
     await createNotification({
       recipient_id: approver.id,
       message: `CL #${id} for ${employeeName} ${isResubmission ? 'resubmitted' : 'submitted'} by ${supervisorName} is awaiting your approval`,
-      module: 'Competency Leveling'
+      module: 'CL'
     }).catch(err => console.error('Failed to create notification for approver:', err));
   }
 
@@ -678,6 +678,8 @@ async function getManagerPending(managerId) {
     `
     SELECT 
       ch.id,
+      ch.employee_id,
+      ch.supervisor_id,
       e.name        AS employee_name,
       e.employee_id AS employee_code,
       d.name        AS department_name,
@@ -802,7 +804,7 @@ async function managerApprove(id, approverId, remarks) {
       await createNotification({
         recipient_id: employee_id,
         message: `CL #${id} approved by Manager ${managerRows[0].name}. Please review and approve.`,
-        module: 'Competency Leveling'
+        module: 'CL'
       }).catch(err => console.error('Failed to create notification:', err));
       
       // Log recent action
@@ -897,7 +899,7 @@ async function managerReturn(id, approverId, remarks) {
       await createNotification({
         recipient_id: supRows[0].supervisor_id,
         message: `CL #${id} was returned by Manager ${managerRows[0].name}. Reason: ${remarks || 'No reason provided'}`,
-        module: 'Competency Leveling'
+        module: 'CL'
       }).catch(err => console.error('Failed to create notification:', err));
     }
     
@@ -1238,7 +1240,7 @@ async function employeeApprove(id, approverId, remarks) {
       await createNotification({
         recipient_id: hrUsers[0].id,
         message: `CL #${id} for ${empRows[0].employee_name} approved by employee. Pending HR approval.`,
-        module: 'Competency Leveling'
+        module: 'CL'
       }).catch(err => console.error('Failed to create notification:', err));
     }
 
@@ -1417,7 +1419,7 @@ async function hrApprove(id, approverId, remarks) {
       await createNotification({
         recipient_id: employee_id,
         message: `CL #${id} has been approved by HR ${hrRows[0].name}! You can now proceed with IDP.`,
-        module: 'Competency Leveling'
+        module: 'CL'
       }).catch(err => console.error('Failed to create notification:', err));
 
       // Also notify supervisor
@@ -1429,7 +1431,7 @@ async function hrApprove(id, approverId, remarks) {
         await createNotification({
           recipient_id: supRows[0].supervisor_id,
           message: `CL #${id} for ${employee_name} has been approved by HR.`,
-          module: 'Competency Leveling'
+          module: 'CL'
         }).catch(err => console.error('Failed to create notification:', err));
       }
       
@@ -1524,7 +1526,7 @@ async function hrReturn(id, approverId, remarks) {
       await createNotification({
         recipient_id: supRows[0].supervisor_id,
         message: `CL #${id} was returned by HR ${hrRows[0].name}. Reason: ${remarks || 'No reason provided'}`,
-        module: 'Competency Leveling'
+        module: 'CL'
       }).catch(err => console.error('Failed to create notification:', err));
     }
 
@@ -1619,6 +1621,8 @@ async function getManagerAllCL(managerId) {
     `
     SELECT 
       ch.id,
+      ch.employee_id,
+      ch.supervisor_id,
       e.name AS employee_name,
       e.employee_id AS employee_code,
       d.name AS department_name,
@@ -1823,6 +1827,8 @@ async function getManagerDepartmentCL(managerId) {
       `
       SELECT 
         ch.id,
+        ch.employee_id,
+        ch.supervisor_id,
         e.name        AS employee_name,
         e.employee_id AS employee_code,
         s.name        AS supervisor_name,

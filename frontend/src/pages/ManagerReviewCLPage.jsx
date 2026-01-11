@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import Modal from '../components/Modal';
 import { displayStatus } from '../utils/statusHelper';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -128,6 +130,136 @@ function ManagerReviewCLPage() {
     }
   }
 
+  // ==========================
+  // EXPORT HANDLERS
+  // ==========================
+  function handleExportCSV() {
+    if (!cl || !cl.items) return;
+
+    const BOM = '\uFEFF';
+    let csvContent = BOM;
+
+    // Header info
+    csvContent += `CL Review #${cl.id}\n`;
+    csvContent += `Employee Name,${cl.employee_name || 'N/A'}\n`;
+    csvContent += `Employee ID,${cl.employee_id || 'N/A'}\n`;
+    csvContent += `Position,${cl.position_title || 'N/A'}\n`;
+    csvContent += `Department,${cl.department_name || 'N/A'}\n`;
+    csvContent += `Supervisor,${cl.supervisor_name || 'N/A'}\n`;
+    csvContent += `Status,${displayStatus(cl.status)}\n`;
+    csvContent += `\n`;
+
+    // Compute score
+    const totalScore = (cl.items || []).reduce((sum, it) => sum + (Number(it.score) || 0), 0);
+    const getProficiencyLevel = (score) => {
+      if (score >= 4.5) return { level: 5, name: 'Expert' };
+      if (score >= 3.5) return { level: 4, name: 'Advanced' };
+      if (score >= 2.5) return { level: 3, name: 'Intermediate' };
+      if (score >= 1.5) return { level: 2, name: 'Novice' };
+      return { level: 1, name: 'Fundamental Awareness' };
+    };
+    const proficiency = getProficiencyLevel(totalScore);
+
+    csvContent += `Total Score,${totalScore.toFixed(2)}\n`;
+    csvContent += `Proficiency Level,Level ${proficiency.level} - ${proficiency.name}\n`;
+    csvContent += `\n`;
+
+    // Table header
+    csvContent += `Competency,MPLR,Assigned Level,Weight (%),Score,Comments\n`;
+
+    // Table rows
+    cl.items.forEach((item) => {
+      const competency = (item.competency_name || '').replace(/,/g, ';');
+      const mplr = item.required_level || '';
+      const assigned = item.assigned_level || '';
+      const weight = Number(item.weight || 0).toFixed(2);
+      const score = Number(item.score || 0).toFixed(2);
+      const comments = (item.justification || '').replace(/,/g, ';').replace(/\n/g, ' ');
+
+      csvContent += `${competency},${mplr},${assigned},${weight},${score},${comments}\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `CL_Review_${cl.id}_${cl.employee_name || 'Employee'}.csv`;
+    link.click();
+  }
+
+  function handleExportPDF() {
+    if (!cl || !cl.items) return;
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Title
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`CL Review #${cl.id}`, pageWidth / 2, 15, { align: 'center' });
+
+    // Employee info block
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    let yPos = 25;
+    doc.text(`Employee Name: ${cl.employee_name || 'N/A'}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Employee ID: ${cl.employee_id || 'N/A'}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Position: ${cl.position_title || 'N/A'}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Department: ${cl.department_name || 'N/A'}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Supervisor: ${cl.supervisor_name || 'N/A'}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Status: ${displayStatus(cl.status)}`, 14, yPos);
+    yPos += 8;
+
+    // Score
+    const totalScore = (cl.items || []).reduce((sum, it) => sum + (Number(it.score) || 0), 0);
+    const getProficiencyLevel = (score) => {
+      if (score >= 4.5) return { level: 5, name: 'Expert' };
+      if (score >= 3.5) return { level: 4, name: 'Advanced' };
+      if (score >= 2.5) return { level: 3, name: 'Intermediate' };
+      if (score >= 1.5) return { level: 2, name: 'Novice' };
+      return { level: 1, name: 'Fundamental Awareness' };
+    };
+    const proficiency = getProficiencyLevel(totalScore);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Total Score: ${totalScore.toFixed(2)} | Proficiency: Level ${proficiency.level} - ${proficiency.name}`, 14, yPos);
+    yPos += 8;
+
+    // Competency table
+    const tableData = cl.items.map((item) => [
+      item.competency_name || '',
+      item.required_level || '',
+      item.assigned_level || '',
+      Number(item.weight || 0).toFixed(2),
+      Number(item.score || 0).toFixed(2),
+      item.justification || ''
+    ]);
+
+    doc.autoTable({
+      startY: yPos,
+      head: [['Competency', 'MPLR', 'Level', 'Weight %', 'Score', 'Comments']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [71, 85, 105], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 7, textColor: [51, 65, 85] },
+      columnStyles: {
+        0: { cellWidth: 35 },
+        1: { cellWidth: 15 },
+        2: { cellWidth: 15 },
+        3: { cellWidth: 20 },
+        4: { cellWidth: 15 },
+        5: { cellWidth: 'auto' }
+      },
+      margin: { top: 10, left: 14, right: 14 }
+    });
+
+    doc.save(`CL_Review_${cl.id}_${cl.employee_name || 'Employee'}.pdf`);
+  }
+
   if (!user) return null;
 
   if (loading) return <p className="p-4">Loading...</p>;
@@ -181,7 +313,7 @@ function ManagerReviewCLPage() {
   const getProficiencyLevel = (score) => {
     if (score >= 4.5) return { level: 5, name: 'Expert', color: 'bg-purple-100 border-purple-400' };
     if (score >= 3.5) return { level: 4, name: 'Advanced', color: 'bg-green-100 border-green-400' };
-    if (score >= 2.5) return { level: 3, name: 'Intermediate', color: 'bg-blue-100 border-blue-400' };
+    if (score >= 2.5) return { level: 3, name: 'Intermediate', color: 'bg-slate-100 border-slate-400' };
     if (score >= 1.5) return { level: 2, name: 'Novice', color: 'bg-yellow-100 border-yellow-400' };
     return { level: 1, name: 'Fundamental Awareness', color: 'bg-orange-100 border-orange-400' };
   };
@@ -202,12 +334,26 @@ function ManagerReviewCLPage() {
                 Status: <strong>{displayStatus(status)}</strong>
               </p>
             </div>
-            <button
-              onClick={goBack}
-              className="text-slate-500 hover:text-slate-700 px-4 py-2 rounded-md hover:bg-slate-100 text-sm transition"
-            >
-              ← Back to Dashboard
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportCSV}
+                className="text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-md hover:bg-slate-100 text-xs transition border border-slate-300"
+              >
+                Export CSV
+              </button>
+              <button
+                onClick={handleExportPDF}
+                className="text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-md hover:bg-slate-100 text-xs transition border border-slate-300"
+              >
+                Export PDF
+              </button>
+              <button
+                onClick={goBack}
+                className="text-slate-500 hover:text-slate-700 px-4 py-2 rounded-md hover:bg-slate-100 text-sm transition"
+              >
+                ← Back to Dashboard
+              </button>
+            </div>
           </div>
 
           {/* Body */}
@@ -255,32 +401,32 @@ function ManagerReviewCLPage() {
 
             {/* MANAGER REMARKS HISTORY (READ-ONLY) */}
             {manager_remarks && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-sm font-semibold text-blue-800">Manager Remarks (Previous)</h3>
+                  <h3 className="text-sm font-semibold text-slate-800">Manager Remarks (Previous)</h3>
                   {updated_at && (
                     <span className="text-xs text-slate-500">
                       {new Date(updated_at).toLocaleString()}
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-blue-900 whitespace-pre-wrap">
+                <p className="text-sm text-slate-900 whitespace-pre-wrap">
                   {manager_remarks}
                 </p>
               </div>
             )}
 
             {/* TOTAL SCORE CARD */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 border border-blue-800 rounded-lg p-3 mb-3 shadow">
+            <div className="bg-gradient-to-r from-slate-600 to-slate-700 border border-slate-800 rounded-lg p-3 mb-3 shadow">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">TOTAL FINAL SCORE</p>
+                  <p className="text-[10px] font-medium text-slate-100 mb-0.5">TOTAL FINAL SCORE</p>
                   <p className="text-2xl font-bold text-white">{totalScore.toFixed(2)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">PROFICIENCY LEVEL</p>
+                  <p className="text-[10px] font-medium text-slate-100 mb-0.5">PROFICIENCY LEVEL</p>
                   <p className="text-xl font-bold text-white">Level {proficiency.level}</p>
-                  <p className="text-xs font-semibold text-blue-100">{proficiency.name}</p>
+                  <p className="text-xs font-semibold text-slate-100">{proficiency.name}</p>
                 </div>
               </div>
             </div>
@@ -310,7 +456,7 @@ function ManagerReviewCLPage() {
                         <td className="px-2 py-1 text-slate-700">{it.required_level}</td>
                         <td className="px-2 py-1 text-slate-700">{it.assigned_level}</td>
                         <td className="px-2 py-1 text-slate-700">{Number(it.weight || 0).toFixed(2)}</td>
-                        <td className="px-2 py-1 font-semibold text-blue-600">{Number(it.score || 0).toFixed(2)}</td>
+                        <td className="px-2 py-1 font-semibold text-slate-700">{Number(it.score || 0).toFixed(2)}</td>
                         <td className="px-2 py-1 text-slate-700">{it.justification}</td>
                         <td className="px-2 py-1">
                           {it.pdf_path ? (
@@ -318,7 +464,7 @@ function ManagerReviewCLPage() {
                               href={`${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}`}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-blue-600 hover:text-blue-800 underline"
+                              className="text-slate-600 hover:text-slate-800 underline"
                             >
                               View
                             </a>
@@ -376,8 +522,8 @@ function ManagerReviewCLPage() {
             )}
 
             {viewOnly && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-700">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <p className="text-sm text-slate-700">
                   This CL has already been {cl.status === 'APPROVED' || cl.manager_decision === 'APPROVED' ? 'approved' : 'returned'} by the manager. 
                   You are viewing it in read-only mode.
                 </p>

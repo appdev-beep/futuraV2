@@ -2,7 +2,7 @@
 
 const { db } = require("../config/db"); 
 
-async function createNotification({ recipient_id, message, module = "Competency Leveling" }) {
+async function createNotification({ recipient_id, message, module = "CL" }) {
   if (!recipient_id) return;
 
   try {

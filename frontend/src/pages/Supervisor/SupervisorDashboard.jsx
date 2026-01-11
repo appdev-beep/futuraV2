@@ -52,7 +52,9 @@ function SupervisorDashboard() {
   const [clByStatus, setClByStatus] = useState({});
   const [idpEmployees, setIdpEmployees] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [notificationFilter, setNotificationFilter] = useState('ALL'); // 'ALL' | 'CL' | 'IDP'
   const [recentActions, setRecentActions] = useState([]);
+  const [recentFilter, setRecentFilter] = useState('ALL'); // 'ALL' | 'CL' | 'IDP'
 
   const [activePage, setActivePage] = useState('CL'); // 'CL' or 'IDP'
   const [activeSection, setActiveSection] = useState('ALL');
@@ -194,7 +196,8 @@ function SupervisorDashboard() {
 
     async function loadNotifications() {
       try {
-        const data = await apiRequest('/api/notifications');
+        const query = notificationFilter === 'ALL' ? '' : `?module=${notificationFilter}`;
+        const data = await apiRequest(`/api/notifications${query}`);
         setNotifications(data || []);
       } catch (err) {
         console.error('Failed to load notifications', err);
@@ -205,7 +208,7 @@ function SupervisorDashboard() {
     timer = setInterval(loadNotifications, 15000);
 
     return () => clearInterval(timer);
-  }, [user]);
+  }, [user, notificationFilter]);
 
   // Recent actions
   useEffect(() => {
@@ -213,7 +216,8 @@ function SupervisorDashboard() {
 
     async function loadRecentActions() {
       try {
-        const data = await apiRequest('/api/recent-actions');
+        const query = recentFilter === 'ALL' ? '' : `?module=${recentFilter}`;
+        const data = await apiRequest(`/api/recent-actions${query}`);
         setRecentActions(data || []);
       } catch (err) {
         console.error('Failed to load recent actions', err);
@@ -221,7 +225,7 @@ function SupervisorDashboard() {
     }
 
     loadRecentActions();
-  }, [user]);
+  }, [user, recentFilter]);
 
   function logout() {
     localStorage.clear();
@@ -442,7 +446,7 @@ function SupervisorDashboard() {
               </p>
               <button
                 type="button"
-                onClick={() => setActiveSection('ALL')}
+                onClick={() => { setActivePage('CL'); setActiveSection('ALL'); }}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
                   ${activeSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
               >
@@ -461,7 +465,7 @@ function SupervisorDashboard() {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => setActiveSection(key)}
+                      onClick={() => { setActivePage('CL'); setActiveSection(key); }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
                         ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
                     >
@@ -502,7 +506,7 @@ function SupervisorDashboard() {
               </p>
               <button
                 type="button"
-                onClick={() => setActiveIDPSection('ALL')}
+                onClick={() => { setActivePage('IDP'); setActiveIDPSection('ALL'); }}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
                   ${activeIDPSection === 'ALL' ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'}`}
               >
@@ -521,7 +525,7 @@ function SupervisorDashboard() {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => setActiveIDPSection(key)}
+                      onClick={() => { setActivePage('IDP'); setActiveIDPSection(key); }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
                         ${activeIDPSection === key ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'}`}
                     >
@@ -619,6 +623,24 @@ function SupervisorDashboard() {
             )}
           </button>
 
+          {/* Filter controls for Notifications */}
+          <div className="px-4 py-2 flex items-center gap-2 border-b border-gray-200">
+            {['ALL','CL','IDP'].map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => setNotificationFilter(opt)}
+                className={`px-2 py-1 rounded text-xs border transition ${
+                  notificationFilter === opt
+                    ? 'bg-orange-50 border-orange-300 text-orange-700'
+                    : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+
           <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
             {notifications.length === 0 ? (
               <p className="text-xs text-gray-400 italic">No notifications.</p>
@@ -634,9 +656,14 @@ function SupervisorDashboard() {
                       isUnread ? 'bg-orange-50 hover:bg-orange-100' : 'bg-gray-50 hover:bg-gray-100'
                     }`}
                   >
-                    <p className="font-medium text-gray-800 whitespace-pre-wrap">
-                      {n.message || n.title || 'Notification'}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      {n.module && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">{n.module}</span>
+                      )}
+                      <p className="font-medium text-gray-800 whitespace-pre-wrap">
+                        {n.message || n.title || 'Notification'}
+                      </p>
+                    </div>
                     {n.created_at && (
                       <p className="text-[11px] text-gray-400">
                         {new Date(n.created_at).toLocaleString()}
@@ -668,6 +695,24 @@ function SupervisorDashboard() {
             )}
           </button>
 
+          {/* Filter controls for Recent Actions */}
+          <div className="px-4 py-2 flex items-center gap-2 border-b border-gray-200">
+            {['ALL','CL','IDP'].map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => setRecentFilter(opt)}
+                className={`px-2 py-1 rounded text-xs border transition ${
+                  recentFilter === opt
+                    ? 'bg-blue-50 border-blue-300 text-blue-700'
+                    : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+
           <div className="flex-1 p-2 overflow-y-auto no-scrollbar">
             {recentActions.length === 0 ? (
               <p className="text-xs text-gray-400 italic px-2">No recent actions.</p>
@@ -689,9 +734,14 @@ function SupervisorDashboard() {
                       >
                         <td className="px-2 py-2">
                           <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
-                          {a.description && (
-                            <p className="text-gray-600 truncate text-[11px]">{a.description}</p>
-                          )}
+                          <div className="flex items-center gap-2 text-[11px] text-gray-600">
+                            {a.module && (
+                              <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">{a.module}</span>
+                            )}
+                            {a.description && (
+                              <span className="truncate">{a.description}</span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
                           {a.created_at ? new Date(a.created_at).toLocaleDateString() : '-'}

@@ -6,15 +6,23 @@ async function getMyNotifications(req, res, next) {
   try {
     const userId = req.user.id;
     const userRole = req.user.role;
+    const moduleFilter = req.query.module || null; // optional: 'CL' or 'IDP'
 
-    const [rows] = await db.query(
-      `SELECT id, recipient_id, message, module, status, read_at, created_at
-       FROM notifications
-       WHERE recipient_id = ?
-       ORDER BY created_at DESC
-       LIMIT 50`,
-      [userId]
-    );
+    let sql = `SELECT id, recipient_id, message, module, status, read_at, created_at
+               FROM notifications
+               WHERE recipient_id = ?`;
+    const params = [userId];
+    if (moduleFilter && (moduleFilter === 'CL' || moduleFilter === 'IDP')) {
+      // Filter by module, treating NULL and 'Competency Leveling' as 'CL'
+      if (moduleFilter === 'CL') {
+        sql += ` AND (module = 'CL' OR module = 'Competency Leveling' OR module IS NULL)`;
+      } else {
+        sql += ' AND module = ?';
+        params.push(moduleFilter);
+      }
+    }
+    sql += ' ORDER BY created_at DESC LIMIT 50';
+    const [rows] = await db.query(sql, params);
 
     // Your frontend expects: id, title, url, created_at
     // DB has only: message/module. So we map them and determine the correct URL
@@ -76,7 +84,7 @@ async function getMyNotifications(req, res, next) {
         url: url,
         created_at: n.created_at,
         message: n.message,
-        module: n.module,
+        module: n.module === 'Competency Leveling' || !n.module ? 'CL' : n.module, // Normalize to 'CL' or 'IDP'
         status: n.status,
         read_at: n.read_at,
       };

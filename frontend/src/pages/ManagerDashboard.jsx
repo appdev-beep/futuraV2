@@ -61,9 +61,12 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [selectedSupervisorId, setSelectedSupervisorId] = useState(null); // Selected supervisor to view employees
   const [searchQuery, setSearchQuery] = useState(''); // Search for employees
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+  const [hasCompetenciesOnly, setHasCompetenciesOnly] = useState(false); // Filter: only employees with competencies
   // ✅ NEW: notifications + recent actions (right sidebar)
   const [notifications, setNotifications] = useState([]);
   const [recentActions, setRecentActions] = useState([]);
+  const [notificationFilter, setNotificationFilter] = useState('ALL'); // 'ALL', 'CL', 'IDP'
+  const [recentFilter, setRecentFilter] = useState('ALL'); // 'ALL', 'CL', 'IDP'
 
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
@@ -245,7 +248,10 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
     async function loadNotifications() {
       try {
-        const data = await apiRequest('/api/notifications');
+        const endpoint = notificationFilter === 'ALL'
+          ? '/api/notifications'
+          : `/api/notifications?module=${notificationFilter}`;
+        const data = await apiRequest(endpoint);
         setNotifications(data || []);
       } catch (err) {
         console.error('Failed to load notifications', err);
@@ -256,7 +262,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     timer = setInterval(loadNotifications, 15000);
 
     return () => clearInterval(timer);
-  }, [user]);
+  }, [user, notificationFilter]);
 
   // ==========================
   // LOAD RECENT ACTIONS
@@ -266,7 +272,10 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
     async function loadRecentActions() {
       try {
-        const data = await apiRequest('/api/recent-actions');
+        const endpoint = recentFilter === 'ALL'
+          ? '/api/recent-actions'
+          : `/api/recent-actions?module=${recentFilter}`;
+        const data = await apiRequest(endpoint);
         setRecentActions(data || []);
       } catch (err) {
         console.error('Failed to load recent actions', err);
@@ -274,7 +283,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     }
 
     loadRecentActions();
-  }, [user]);
+  }, [user, recentFilter]);
 
   // ==========================
   // HELPERS
@@ -395,28 +404,44 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     ).length;
   }, [notifications]);
 
-  // Filter CLs by section
-  const approvedCLs = allCL.filter(item => item.manager_decision === 'APPROVED');
-  // Only show returned CLs that are still in DRAFT status (not yet resubmitted)
-  const returnedCLs = allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT');
+  // Filter CLs by section and supervisor (if selected)
+  const filterBySupervisor = (items) => {
+    if (!selectedSupervisorId) return items;
+    // Filter by supervisor_id field or by employee's supervisor_id
+    return items.filter(item => {
+      if (item.supervisor_id === selectedSupervisorId) return true;
+      // Fallback: check if the employee's supervisor matches
+      const emp = employees.find(e => e.id === item.employee_id);
+      return emp && emp.supervisor_id === selectedSupervisorId;
+    });
+  };
 
-  // Filter department CLs by status
+  const filteredPendingCL = filterBySupervisor(pendingCL);
+  const approvedCLs = filterBySupervisor(allCL.filter(item => item.manager_decision === 'APPROVED'));
+  // Only show returned CLs that are still in DRAFT status (not yet resubmitted)
+  const returnedCLs = filterBySupervisor(allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT'));
+
+  // Filter department CLs by status and supervisor (if selected)
   const filteredDepartmentCLs = useMemo(() => {
-    if (departmentStatusFilter === 'ALL') {
-      return departmentCLs;
+    let items = departmentCLs;
+    if (selectedSupervisorId) {
+      items = items.filter(item => item.supervisor_id === selectedSupervisorId);
     }
-    return departmentCLs.filter(item => item.status === departmentStatusFilter);
-  }, [departmentCLs, departmentStatusFilter]);
+    if (departmentStatusFilter === 'ALL') {
+      return items;
+    }
+    return items.filter(item => item.status === departmentStatusFilter);
+  }, [departmentCLs, departmentStatusFilter, selectedSupervisorId]);
 
   const sectionCounts = useMemo(() => {
     return {
-      pending: pendingCL.length,
+      pending: filteredPendingCL.length,
       approved: approvedCLs.length,
       returned: returnedCLs.length,
-      department: departmentCLs.length,
-      all: pendingCL.length + approvedCLs.length + returnedCLs.length,
+      department: filteredDepartmentCLs.length,
+      all: filteredPendingCL.length + approvedCLs.length + returnedCLs.length,
     };
-  }, [pendingCL, approvedCLs, returnedCLs, departmentCLs]);
+  }, [filteredPendingCL, approvedCLs, returnedCLs, filteredDepartmentCLs]);
 
 
   // Dynamically build CL status sections based on department
@@ -434,16 +459,18 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }, [department, isAMDashboard]);
 
   const activeSectionLabel = useMemo(() => {
-    if (activeSection === 'all') return 'All Competency Levelings';
+    const supervisor = supervisors.find(s => s.id === selectedSupervisorId);
+    const supervisorSuffix = supervisor ? ` (${supervisor.name})` : '';
+    if (activeSection === 'all') return `All Competency Levelings${supervisorSuffix}`;
     const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
-    if (section) return section.label;
+    if (section) return `${section.label}${supervisorSuffix}`;
     // Fallback for AM dashboard
     if (isAMDashboard) {
-      if (activeSection === 'pending') return 'For Approval by Assistant Manager';
-      if (activeSection === 'approved') return 'Approved by Assistant Manager';
+      if (activeSection === 'pending') return `For Approval by Assistant Manager${supervisorSuffix}`;
+      if (activeSection === 'approved') return `Approved by Assistant Manager${supervisorSuffix}`;
     }
-    return 'Competency Levelings';
-  }, [activeSection, CL_STATUS_SECTIONS, isAMDashboard]);
+    return `Competency Levelings${supervisorSuffix}`;
+  }, [activeSection, CL_STATUS_SECTIONS, isAMDashboard, selectedSupervisorId, supervisors]);
 
   // Fetch pending IDPs for manager
   const [pendingIDPs, setPendingIDPs] = useState([]);
@@ -460,6 +487,15 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     }
     fetchPendingIDPs();
   }, [user]);
+
+  const filteredPendingIDPs = useMemo(() => {
+    if (!selectedSupervisorId) return pendingIDPs;
+    return pendingIDPs.filter(idp => idp.supervisor_id === selectedSupervisorId);
+  }, [pendingIDPs, selectedSupervisorId]);
+
+  const selectedSupervisor = useMemo(() => {
+    return supervisors.find(s => s.id === selectedSupervisorId);
+  }, [supervisors, selectedSupervisorId]);
 
   if (!user) return null;
 
@@ -544,6 +580,19 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                 </div>
               )}
             </div>
+
+            {/* Clear Filter Button */}
+            {selectedSupervisorId && selectedSupervisor && (
+              <div className="mt-2 px-3 py-2 bg-blue-50 rounded border border-blue-200">
+                <p className="text-xs text-blue-700 font-medium mb-2">Filtered by: <span className="font-semibold">{selectedSupervisor.name}</span></p>
+                <button
+                  onClick={() => setSelectedSupervisorId(null)}
+                  className="w-full px-2 py-1.5 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition font-medium"
+                >
+                  Clear Filter
+                </button>
+              </div>
+            )}
 
             {/* CL Sections */}
             <div className="pr-0">
@@ -673,10 +722,10 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             <>
               {/* Pending Section */}
 
-              {pendingCL.length > 0 && (
+              {filteredPendingCL.length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-lg font-semibold text-gray-700 mb-2">{isAMDashboard ? 'For Approval by Assistant Manager' : 'For Approval by Manager'}</h3>
-                  <PendingTable data={pendingCL} goTo={goTo} isAMDashboard={isAMDashboard} />
+                  <PendingTable data={filteredPendingCL} goTo={goTo} isAMDashboard={isAMDashboard} />
                 </div>
               )}
 
@@ -701,10 +750,10 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               )}
             </>
           ) : activeSection === 'pending' ? (
-            pendingCL.length === 0 ? (
+            filteredPendingCL.length === 0 ? (
               <p className="text-gray-400 text-sm italic">No pending CLs for manager approval.</p>
             ) : (
-              <PendingTable data={pendingCL} goTo={goTo} />
+              <PendingTable data={filteredPendingCL} goTo={goTo} />
             )
           ) : activeSection === 'returned' ? (
             returnedCLs.length === 0 ? (
@@ -753,12 +802,14 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               setSearchQuery={setSearchQuery}
               viewMode={viewMode}
               setViewMode={setViewMode}
+              hasCompetenciesOnly={hasCompetenciesOnly}
+              setHasCompetenciesOnly={setHasCompetenciesOnly}
               goTo={goTo}
             />
           ) : activeSection === 'idp_pending' ? (
             <div className="mb-6">
-              <h2 className="text-xl font-semibold mb-3">IDPs For Your Approval</h2>
-              {pendingIDPs.length === 0 ? (
+              <h2 className="text-xl font-semibold mb-3">IDPs For Your Approval{selectedSupervisor ? ` (${selectedSupervisor.name})` : ''}</h2>
+              {filteredPendingIDPs.length === 0 ? (
                 <p className="text-gray-400 text-sm italic">No IDPs pending your approval.</p>
               ) : (
                 <div className="bg-white shadow rounded overflow-x-auto">
@@ -774,7 +825,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {pendingIDPs.map(idp => (
+                      {filteredPendingIDPs.map(idp => (
                         <tr key={idp.id} className="hover:bg-gray-50">
                           <td className="px-4 py-2">{idp.id}</td>
                           <td className="px-4 py-2">{idp.employee_name}</td>
@@ -819,6 +870,22 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                 </span>
               )}
             </button>
+            {/* Filter Buttons */}
+            <div className="mt-2 flex gap-1">
+              {['ALL', 'CL', 'IDP'].map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setNotificationFilter(filter)}
+                  className={`flex-1 px-2 py-1 text-[11px] font-medium rounded transition ${
+                    notificationFilter === filter
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllAsRead}
@@ -843,9 +910,18 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                     className={`w-full text-left px-3 py-2 rounded text-sm transition
                       ${isUnread ? 'bg-orange-50 hover:bg-orange-100' : 'bg-gray-50 hover:bg-gray-100'}`}
                   >
-                    <p className="font-medium text-gray-800 whitespace-pre-wrap">
-                      {n.message || n.title || 'Notification'}
-                    </p>
+                    <div className="flex items-start gap-2">
+                      <p className="flex-1 font-medium text-gray-800 whitespace-pre-wrap">
+                        {n.message || n.title || 'Notification'}
+                      </p>
+                      {n.module && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                          n.module === 'CL' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                        }`}>
+                          {n.module}
+                        </span>
+                      )}
+                    </div>
                     {n.created_at && (
                       <p className="text-[11px] text-gray-400">
                         {new Date(n.created_at).toLocaleString()}
@@ -863,20 +939,38 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
         {/* BOTTOM: RECENT ACTIONS */}
         <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
-          <button
-            onClick={() => setShowFullRecentActions(true)}
-            className="p-4 border-b border-gray-200 flex items-center justify-between hover:bg-gray-50 transition text-left"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-gray-700">Recent Actions</span>
-              <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
+          <div className="p-4 border-b border-gray-200">
+            <button
+              onClick={() => setShowFullRecentActions(true)}
+              className="w-full flex items-center justify-between hover:bg-gray-50 transition text-left rounded px-2 py-1 -mx-2"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-gray-700">Recent Actions</span>
+                <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
+              </div>
+              {recentActions.length > 0 && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500 text-white">
+                  {recentActions.length}
+                </span>
+              )}
+            </button>
+            {/* Filter Buttons */}
+            <div className="mt-2 flex gap-1">
+              {['ALL', 'CL', 'IDP'].map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setRecentFilter(filter)}
+                  className={`flex-1 px-2 py-1 text-[11px] font-medium rounded transition ${
+                    recentFilter === filter
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
             </div>
-            {recentActions.length > 0 && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500 text-white">
-                {recentActions.length}
-              </span>
-            )}
-          </button>
+          </div>
 
           <div className="flex-1 p-2 overflow-y-auto no-scrollbar">
             {recentActions.length === 0 ? (
@@ -898,7 +992,16 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                         className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
                       >
                         <td className="px-2 py-2">
-                          <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
+                          <div className="flex items-center gap-1">
+                            <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
+                            {a.module && (
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap ${
+                                a.module === 'CL' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                              }`}>
+                                {a.module}
+                              </span>
+                            )}
+                          </div>
                           {a.description && (
                             <p className="text-gray-600 truncate text-[11px]">{a.description}</p>
                           )}
@@ -1408,7 +1511,7 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
 }
 
 // Employee Competencies View Component
-function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId, searchQuery, setSearchQuery, viewMode, setViewMode, goTo }) {
+function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId, searchQuery, setSearchQuery, viewMode, setViewMode, hasCompetenciesOnly, setHasCompetenciesOnly, goTo }) {
   // Filter employees by selected supervisor
   const employeesForSupervisor = useMemo(() => {
     if (!selectedSupervisorId) return [];
@@ -1421,15 +1524,18 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
   }, [supervisors, selectedSupervisorId]);
 
   const filteredEmployees = useMemo(() => {
-    if (!searchQuery.trim()) return employeesForSupervisor;
-    
+    let list = employeesForSupervisor;
+    if (hasCompetenciesOnly) {
+      list = list.filter(emp => (emp.competencyCount || 0) > 0);
+    }
+    if (!searchQuery.trim()) return list;
     const query = searchQuery.toLowerCase();
-    return employeesForSupervisor.filter(emp => 
+    return list.filter(emp => 
       emp.name?.toLowerCase().includes(query) ||
       emp.employee_id?.toLowerCase().includes(query) ||
       emp.position_title?.toLowerCase().includes(query)
     );
-  }, [employeesForSupervisor, searchQuery]);
+  }, [employeesForSupervisor, hasCompetenciesOnly, searchQuery]);
 
   return (
     <div>
@@ -1473,16 +1579,27 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
         </div>
       </div>
 
-      {/* Search Input */}
-      <div className="mb-4 relative">
-        <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Search by name, employee ID, or position..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-        />
+      {/* Search + Filters */}
+      <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+        <div className="relative md:col-span-2">
+          <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by name, employee ID, or position..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+          />
+        </div>
+        <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={hasCompetenciesOnly}
+            onChange={(e) => setHasCompetenciesOnly(e.target.checked)}
+            className="rounded border-gray-300"
+          />
+          Show only employees with competencies
+        </label>
       </div>
 
       {!selectedSupervisorId ? (

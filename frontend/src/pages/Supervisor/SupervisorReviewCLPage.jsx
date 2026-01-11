@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import Modal from '../../components/Modal';
 import { displayStatus } from '../../utils/statusHelper';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -214,6 +216,138 @@ function SupervisorReviewCLPage() {
     updated_at,
   } = cl;
 
+  // Export CL to CSV (competencies + header info)
+  function handleExportCSV() {
+    try {
+      const headers = [
+        ['Employee Name', employee_name || ''],
+        ['Employee ID', employee_id || ''],
+        ['Email', employee_email || ''],
+        ['Department', department_name || ''],
+        ['Position', position_title || ''],
+        ['Status', status || ''],
+        ['Total Final Score', totalScore.toFixed(2)],
+        ['Proficiency Level', `Level ${proficiency.level} - ${proficiency.name}`],
+      ];
+
+      const tableHeader = [
+        'Competency',
+        'MPLR',
+        'Assigned Level',
+        'Weight (%)',
+        'Score',
+        'Comments',
+        'PDF Path'
+      ];
+
+      const tableRows = (items || []).map(it => [
+        it.competency_name ?? '',
+        it.required_level ?? '',
+        it.assigned_level ?? '',
+        Number(it.weight || 0).toFixed(2),
+        Number(it.score || 0).toFixed(2),
+        (it.justification || '').replace(/\n/g, ' '),
+        it.pdf_path ? `${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}` : ''
+      ]);
+
+      // Build CSV content
+      const escape = (v) => {
+        const s = String(v ?? '');
+        if (s.includes(',') || s.includes('\n') || s.includes('"')) {
+          return '"' + s.replace(/"/g, '""') + '"';
+        }
+        return s;
+      };
+
+      const lines = [];
+      headers.forEach(row => lines.push(row.map(escape).join(',')));
+      lines.push('');
+      lines.push(tableHeader.map(escape).join(','));
+      tableRows.forEach(row => lines.push(row.map(escape).join(',')));
+
+      const csv = '\ufeff' + lines.join('\n'); // BOM for Excel compatibility
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeName = (employee_name || 'employee').replace(/[^a-z0-9_\-]/gi, '_');
+      a.href = url;
+      a.download = `CL_${id}_${safeName}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('CSV export failed', e);
+      alert('Failed to export CSV.');
+    }
+  }
+
+  // Export structured PDF using jsPDF + autoTable
+  function handleExportPDF() {
+    try {
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+
+      const safeName = (employee_name || 'employee').replace(/[^a-z0-9_\-]/gi, '_');
+
+      // Title
+      doc.setFontSize(14);
+      doc.text(`Competency Leveling (CL) Review`, 40, 40);
+      doc.setFontSize(10);
+      doc.text(`Status: ${displayStatus(status)}`, 40, 58);
+
+      // Employee info block
+      const infoY = 80;
+      const infoLines = [
+        `Employee Name: ${employee_name || ''}`,
+        `Employee ID: ${employee_id || ''}`,
+        `Email: ${employee_email || ''}`,
+        `Position: ${position_title || ''}`,
+        `Department: ${department_name || ''}`,
+        `Total Final Score: ${totalScore.toFixed(2)}`,
+        `Proficiency Level: Level ${proficiency.level} - ${proficiency.name}`,
+      ];
+      let y = infoY;
+      doc.setFontSize(9);
+      infoLines.forEach(line => { doc.text(line, 40, y); y += 14; });
+
+      // Competency table
+      const head = [[
+        'Competency', 'MPLR', 'Assigned Level', 'Weight (%)', 'Score', 'Comments'
+      ]];
+      const body = (items || []).map(it => [
+        it.competency_name ?? '',
+        it.required_level ?? '',
+        it.assigned_level ?? '',
+        Number(it.weight || 0).toFixed(2),
+        Number(it.score || 0).toFixed(2),
+        (it.justification || '').replace(/\n/g, ' ')
+      ]);
+
+      doc.autoTable({
+        startY: y + 10,
+        head,
+        body,
+        styles: { fontSize: 8, cellPadding: 3 },
+        headStyles: { fillColor: [240, 240, 240], textColor: 20 },
+        theme: 'grid',
+      });
+
+      // Footer
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        const footerText = `CL Review • Generated ${new Date().toLocaleString()} • Page ${i} of ${pageCount}`;
+        doc.text(footerText, 40, doc.internal.pageSize.getHeight() - 20);
+      }
+
+      doc.save(`CL_${id}_${safeName}.pdf`);
+    } catch (e) {
+      console.error('PDF export failed', e);
+      alert('Failed to export PDF.');
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
       <div className="max-w-6xl mx-auto">
@@ -224,12 +358,28 @@ function SupervisorReviewCLPage() {
               <h1 className="text-lg font-semibold text-slate-800">Review CL</h1>
               <p className="text-xs text-slate-500 mt-0.5">Status: <strong>{displayStatus(status)}</strong></p>
             </div>
-            <button
-              onClick={() => navigate('/supervisor')}
-              className="text-slate-500 hover:text-slate-700 px-4 py-2 rounded-md hover:bg-slate-100 text-sm transition"
-            >
-              ← Back to Dashboard
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportCSV}
+                className="px-3 py-2 text-sm rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
+                title="Download CSV"
+              >
+                Export CSV
+              </button>
+              <button
+                onClick={handleExportPDF}
+                className="px-3 py-2 text-sm rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
+                title="Print to PDF"
+              >
+                Export PDF
+              </button>
+              <button
+                onClick={() => navigate('/supervisor')}
+                className="text-slate-500 hover:text-slate-700 px-4 py-2 rounded-md hover:bg-slate-100 text-sm transition"
+              >
+                ← Back to Dashboard
+              </button>
+            </div>
           </div>
 
           {/* Body */}
@@ -371,16 +521,16 @@ function SupervisorReviewCLPage() {
             )}
 
             {/* TOTAL SCORE CARD */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 border border-blue-800 rounded-lg p-3 mb-3 shadow">
+            <div className="bg-gradient-to-r from-slate-600 to-slate-700 border border-slate-800 rounded-lg p-3 mb-3 shadow">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">TOTAL FINAL SCORE</p>
+                  <p className="text-[10px] font-medium text-slate-100 mb-0.5">TOTAL FINAL SCORE</p>
                   <p className="text-2xl font-bold text-white">{totalScore.toFixed(2)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">PROFICIENCY LEVEL</p>
+                  <p className="text-[10px] font-medium text-slate-100 mb-0.5">PROFICIENCY LEVEL</p>
                   <p className="text-xl font-bold text-white">Level {proficiency.level}</p>
-                  <p className="text-xs font-semibold text-blue-100">{proficiency.name}</p>
+                  <p className="text-xs font-semibold text-slate-100">{proficiency.name}</p>
                 </div>
               </div>
             </div>
@@ -445,7 +595,7 @@ function SupervisorReviewCLPage() {
                         />
                       ) : `${Number(item.weight || 0).toFixed(2)}%`}
                     </td>
-                    <td className="px-2 py-1 font-semibold text-blue-600">
+                    <td className="px-2 py-1 font-semibold text-slate-700">
                       {Number(item.score || 0).toFixed(2)}
                     </td>
                     <td className="px-2 py-1">
@@ -507,8 +657,8 @@ function SupervisorReviewCLPage() {
                       <td className="px-2 py-1 text-slate-700">Can apply independently in complex scenarios; mentors others</td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-blue-600">3</td>
-                      <td className="px-2 py-1 font-semibold text-blue-600">Intermediate</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">3</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">Intermediate</td>
                       <td className="px-2 py-1 text-slate-700">Solid working knowledge; can perform tasks with minimal guidance</td>
                     </tr>
                     <tr className="border-t border-slate-100">
