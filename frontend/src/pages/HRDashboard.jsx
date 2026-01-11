@@ -73,6 +73,8 @@ function HRDashboard() {
     }, []);
   const [notifications, setNotifications] = useState([]);
   const [recentActions, setRecentActions] = useState([]);
+  const [notificationFilter, setNotificationFilter] = useState('ALL');
+  const [recentActionFilter, setRecentActionFilter] = useState('ALL');
 
   const [activeSection, setActiveSection] = useState('ALL');
   const [activeModule, setActiveModule] = useState('CL'); // 'CL' or 'IDP'
@@ -317,6 +319,16 @@ function HRDashboard() {
       (n) => String(n.status || '').toLowerCase() === 'unread'
     ).length;
   }, [notifications]);
+
+  const filteredNotifications = useMemo(() => {
+    if (notificationFilter === 'ALL') return notifications;
+    return notifications.filter(n => n.module === notificationFilter);
+  }, [notifications, notificationFilter]);
+
+  const filteredRecentActions = useMemo(() => {
+    if (recentActionFilter === 'ALL') return recentActions;
+    return recentActions.filter(a => a.module === recentActionFilter);
+  }, [recentActions, recentActionFilter]);
 
   // Get unique departments from incoming CLs
   const departments = useMemo(() => {
@@ -765,7 +777,7 @@ function HRDashboard() {
           <div className="p-4 border-b border-gray-200">
             <button
               onClick={() => setShowFullNotifications(true)}
-              className="w-full flex items-center justify-between hover:bg-gray-50 transition text-left rounded px-2 py-1 -mx-2"
+              className="w-full flex items-center justify-between hover:bg-gray-50 transition text-left rounded px-2 py-1 -mx-2 mb-3"
             >
               <div className="flex items-center gap-2">
                 <BellIcon className="w-5 h-5 text-orange-500" />
@@ -782,18 +794,34 @@ function HRDashboard() {
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllAsRead}
-                className="mt-2 w-full text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition text-center"
+                className="mt-2 w-full text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition text-center mb-3"
               >
                 Mark All as Read
               </button>
             )}
+            {/* Filters: ALL / CL / IDP */}
+            <div className="flex gap-2 flex-wrap">
+              {['ALL', 'CL', 'IDP'].map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setNotificationFilter(filter)}
+                  className={`px-3 py-1 text-xs rounded-full font-semibold transition ${
+                    notificationFilter === filter
+                      ? 'bg-gray-700 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
-            {notifications.length === 0 ? (
+            {filteredNotifications.length === 0 ? (
               <p className="text-xs text-gray-400 italic">No notifications.</p>
             ) : (
-              notifications.map((n, idx) => {
+              filteredNotifications.map((n, idx) => {
                 const isUnread = String(n.status || '').toLowerCase() === 'unread';
                 return (
                   <button
@@ -804,9 +832,18 @@ function HRDashboard() {
                       isUnread ? 'bg-orange-50 hover:bg-orange-100' : 'bg-gray-50 hover:bg-gray-100'
                     }`}
                   >
-                    <p className="font-medium text-gray-800 whitespace-pre-wrap">
-                      {n.message || n.title || 'Notification'}
-                    </p>
+                    <div className="flex items-start gap-2">
+                      <p className="flex-1 font-medium text-gray-800 whitespace-pre-wrap">
+                        {n.message || n.title || 'Notification'}
+                      </p>
+                      {n.module && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                          n.module === 'CL' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                        }`}>
+                          {n.module}
+                        </span>
+                      )}
+                    </div>
                     {n.created_at && (
                       <p className="text-[11px] text-gray-400">
                         {new Date(n.created_at).toLocaleString()}
@@ -822,23 +859,41 @@ function HRDashboard() {
         <div className="border-t border-gray-200" />
 
         <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
-          <button
-            onClick={() => setShowFullRecentActions(true)}
-            className="p-4 border-b border-gray-200 flex items-center justify-between hover:bg-gray-50 transition text-left"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-gray-700">Recent Actions</span>
-              <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
+          <div className="p-4 border-b border-gray-200">
+            <button
+              onClick={() => setShowFullRecentActions(true)}
+              className="w-full flex items-center justify-between hover:bg-gray-50 transition text-left rounded px-2 py-1 -mx-2 mb-3"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-gray-700">Recent Actions</span>
+                <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
+              </div>
+              {filteredRecentActions.length > 0 && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500 text-white">
+                  {filteredRecentActions.length}
+                </span>
+              )}
+            </button>
+            {/* Filters: ALL / CL / IDP */}
+            <div className="flex gap-2 flex-wrap">
+              {['ALL', 'CL', 'IDP'].map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setRecentActionFilter(filter)}
+                  className={`px-3 py-1 text-xs rounded-full font-semibold transition ${
+                    recentActionFilter === filter
+                      ? 'bg-gray-700 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
             </div>
-            {recentActions.length > 0 && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500 text-white">
-                {recentActions.length}
-              </span>
-            )}
-          </button>
+          </div>
 
           <div className="flex-1 p-2 overflow-y-auto no-scrollbar">
-            {recentActions.length === 0 ? (
+            {filteredRecentActions.length === 0 ? (
               <p className="text-xs text-gray-400 italic px-2">No recent actions.</p>
             ) : (
               <div className="overflow-x-auto">
@@ -850,14 +905,23 @@ function HRDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {recentActions.slice(0, 10).map((a, idx) => (
+                    {filteredRecentActions.slice(0, 10).map((a, idx) => (
                       <tr
                         key={`${a.id}-${idx}`}
                         onClick={() => handleRecentActionClick(a)}
                         className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
                       >
                         <td className="px-2 py-2">
-                          <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
+                          <div className="flex items-center gap-1">
+                            <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
+                            {a.module && (
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap ${
+                                a.module === 'CL' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                              }`}>
+                                {a.module}
+                              </span>
+                            )}
+                          </div>
                           {a.description && (
                             <p className="text-gray-600 truncate text-[11px]">{a.description}</p>
                           )}
