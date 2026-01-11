@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api/client';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 function EmployeeReviewCLPage() {
   const { id } = useParams();
@@ -58,6 +60,66 @@ function EmployeeReviewCLPage() {
 
   function goBack() {
     window.location.href = '/employee';
+  }
+
+  // ==========================
+  // EXPORT FUNCTIONS
+  // ==========================
+  function handleExportCSV() {
+    if (!cl || !Array.isArray(items) || items.length === 0) return;
+
+    let csv = '\uFEFF'; // BOM for Excel
+    csv += 'CL ID,Cycle,Status,Total Score\n';
+    csv += `${clId},"${cl.cycle_name || cl.cycle_id || ''}",${status || ''},${totalScore.toFixed(2)}\n\n`;
+    csv += 'Competency,MPLR,Assigned,Weight (%),Score,Justification\n';
+
+    items.forEach((it) => {
+      const w = Number(it.weight || 0).toFixed(2);
+      const s = Number(it.score || 0).toFixed(2);
+      const just = String(it.justification || '').replace(/"/g, '""');
+      csv += `"${it.competency_name || ''}",${it.required_level || ''},${it.assigned_level || ''},${w},${s},"${just}"\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `CL-${clId}-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  }
+
+  function handleExportPDF() {
+    if (!cl || !Array.isArray(items) || items.length === 0) return;
+
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Competency Leveling Form', 14, 15);
+
+    doc.setFontSize(10);
+    doc.text(`CL ID: ${clId}`, 14, 25);
+    doc.text(`Cycle: ${cl.cycle_name || cl.cycle_id || ''}`, 14, 32);
+    doc.text(`Status: ${status || ''}`, 14, 39);
+    doc.text(`Total Score: ${totalScore.toFixed(2)}`, 14, 46);
+
+    const tableData = items.map((it) => [
+      it.competency_name || '',
+      it.required_level || '',
+      it.assigned_level || '',
+      Number(it.weight || 0).toFixed(2),
+      Number(it.score || 0).toFixed(2),
+      it.justification || '',
+    ]);
+
+    autoTable(doc, {
+      head: [['Competency', 'MPLR', 'Assigned', 'Weight (%)', 'Score', 'Justification']],
+      body: tableData,
+      startY: 55,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+      bodyStyles: { textColor: [0, 0, 0] },
+      alternateRowStyles: { fillColor: [241, 245, 249] },
+    });
+
+    doc.save(`CL-${clId}-${new Date().toISOString().split('T')[0]}.pdf`);
   }
 
   // ==========================
@@ -187,12 +249,26 @@ function EmployeeReviewCLPage() {
                 Status: <strong>{status}</strong>
               </p>
             </div>
-            <button
-              onClick={goBack}
-              className="text-slate-500 hover:text-slate-700 px-4 py-2 rounded-md hover:bg-slate-100 text-sm transition"
-            >
-              ← Back to Dashboard
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportCSV}
+                className="px-3 py-1.5 text-sm rounded bg-slate-600 text-white hover:bg-slate-700 transition"
+              >
+                Export CSV
+              </button>
+              <button
+                onClick={handleExportPDF}
+                className="px-3 py-1.5 text-sm rounded bg-slate-600 text-white hover:bg-slate-700 transition"
+              >
+                Export PDF
+              </button>
+              <button
+                onClick={goBack}
+                className="text-slate-600 hover:text-slate-700 px-3 py-1.5 rounded-md hover:bg-slate-100 text-sm transition"
+              >
+                ← Back
+              </button>
+            </div>
           </div>
 
           {/* Body */}
@@ -215,38 +291,38 @@ function EmployeeReviewCLPage() {
 
             {/* Supervisor & Manager Remarks (read-only) */}
             {supervisor_remarks && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold mb-1 text-yellow-800">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-slate-700">
                   Supervisor Remarks
                 </h3>
-                <p className="text-sm text-yellow-900 whitespace-pre-wrap">
+                <p className="text-sm text-slate-800 whitespace-pre-wrap">
                   {supervisor_remarks}
                 </p>
               </div>
             )}
 
             {manager_remarks && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold mb-1 text-blue-800">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h3 className="text-sm font-semibold mb-1 text-slate-700">
                   Manager Remarks
                 </h3>
-                <p className="text-sm text-blue-900 whitespace-pre-wrap">
+                <p className="text-sm text-slate-800 whitespace-pre-wrap">
                   {manager_remarks}
                 </p>
               </div>
             )}
 
             {/* TOTAL SCORE CARD */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 border border-blue-800 rounded-lg p-3 mb-3 shadow">
+            <div className="bg-gradient-to-r from-slate-600 to-slate-700 border border-slate-800 rounded-lg p-3 mb-3 shadow">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">TOTAL FINAL SCORE</p>
+                  <p className="text-[10px] font-medium text-slate-100 mb-0.5">TOTAL FINAL SCORE</p>
                   <p className="text-2xl font-bold text-white">{totalScore.toFixed(2)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-medium text-blue-100 mb-0.5">PROFICIENCY LEVEL</p>
+                  <p className="text-[10px] font-medium text-slate-100 mb-0.5">PROFICIENCY LEVEL</p>
                   <p className="text-xl font-bold text-white">Level {proficiency.level}</p>
-                  <p className="text-xs font-semibold text-blue-100">{proficiency.name}</p>
+                  <p className="text-xs font-semibold text-slate-100">{proficiency.name}</p>
                 </div>
               </div>
             </div>
@@ -276,7 +352,7 @@ function EmployeeReviewCLPage() {
                         <td className="px-2 py-1 text-slate-700">{it.required_level}</td>
                         <td className="px-2 py-1 text-slate-700">{it.assigned_level}</td>
                         <td className="px-2 py-1 text-slate-700">{Number(it.weight || 0).toFixed(2)}</td>
-                        <td className="px-2 py-1 font-semibold text-blue-600">{Number(it.score || 0).toFixed(2)}</td>
+                        <td className="px-2 py-1 font-semibold text-slate-600">{Number(it.score || 0).toFixed(2)}</td>
                         <td className="px-2 py-1 text-slate-700">{it.justification || '—'}</td>
                         <td className="px-2 py-1">
                           {it.pdf_path ? (
@@ -284,7 +360,7 @@ function EmployeeReviewCLPage() {
                               href={`${import.meta.env.VITE_API_BASE_URL}/${it.pdf_path}`}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-blue-600 hover:text-blue-800 underline"
+                              className="text-slate-700 hover:text-slate-900 underline"
                             >
                               View PDF
                             </a>
@@ -313,28 +389,28 @@ function EmployeeReviewCLPage() {
                   </thead>
                   <tbody className="bg-white">
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-purple-600">5</td>
-                      <td className="px-2 py-1 font-semibold text-purple-600">Expert</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">5</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">Expert</td>
                       <td className="px-2 py-1 text-slate-700">Advanced mastery; recognized authority; can innovate and lead others</td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-green-600">4</td>
-                      <td className="px-2 py-1 font-semibold text-green-600">Advanced</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">4</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">Advanced</td>
                       <td className="px-2 py-1 text-slate-700">Can apply independently in complex scenarios; mentors others</td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-blue-600">3</td>
-                      <td className="px-2 py-1 font-semibold text-blue-600">Intermediate</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">3</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">Intermediate</td>
                       <td className="px-2 py-1 text-slate-700">Solid working knowledge; can perform tasks with minimal guidance</td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-yellow-600">2</td>
-                      <td className="px-2 py-1 font-semibold text-yellow-600">Novice</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">2</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">Novice</td>
                       <td className="px-2 py-1 text-slate-700">Basic understanding; requires supervision and support</td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1 font-semibold text-orange-600">1</td>
-                      <td className="px-2 py-1 font-semibold text-orange-600">Fundamental Awareness</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">1</td>
+                      <td className="px-2 py-1 font-semibold text-slate-600">Fundamental Awareness</td>
                       <td className="px-2 py-1 text-slate-700">Limited exposure; general familiarity with concepts</td>
                     </tr>
                   </tbody>
@@ -352,7 +428,7 @@ function EmployeeReviewCLPage() {
                   )}
                 </label>
                 <textarea
-                  className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500"
                   rows="3"
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
@@ -362,8 +438,8 @@ function EmployeeReviewCLPage() {
             )}
 
             {viewOnly && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-700">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <p className="text-sm text-slate-700">
                   View only - This is a historical record from recent actions.
                 </p>
               </div>
