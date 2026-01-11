@@ -536,19 +536,23 @@ export default function SupervisorViewIDPPage() {
               </div>
             </div>
 
-            <div className="min-w-0">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Position</label>
-              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100 truncate">
-                {empPosition || '—'}
+            {empPosition && (
+              <div className="min-w-0">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Position</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100 truncate">
+                  {empPosition}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="min-w-0">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
-              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100 truncate">
-                {empDept || '—'}
+            {empDept && (
+              <div className="min-w-0">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100 truncate">
+                  {empDept}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="min-w-0">
               <label className="block text-xs font-semibold text-gray-600 mb-1">Supervisor/Manager</label>
@@ -557,19 +561,23 @@ export default function SupervisorViewIDPPage() {
               </div>
             </div>
 
-            <div className="sm:col-span-1 lg:col-span-2">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Review Period</label>
-              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 truncate">
-                {header.review_period || '—'}
+            {header.review_period && (
+              <div className="sm:col-span-1 lg:col-span-2">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Review Period</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 truncate">
+                  {header.review_period}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Next Review Date</label>
-              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 truncate">
-                {header.next_review_date || '—'}
+            {header.next_review_date && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Next Review Date</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 truncate">
+                  {header.next_review_date}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="sm:hidden">
               <label className="block text-xs font-semibold text-gray-600 mb-1">Cycle ID</label>

@@ -166,7 +166,7 @@ async function getById(id) {
   const header = headers[0];
 
   const [items] = await db.query(
-    `SELECT ii.*, c.name AS competency_name
+    `SELECT ii.*, c.name AS competency_name, c.competency_area
      FROM idp_items ii
      JOIN competencies c ON ii.competency_id = c.id
      WHERE ii.idp_header_id = ?`,
