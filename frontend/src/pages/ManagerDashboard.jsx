@@ -49,7 +49,7 @@ function IDPTable({ data, openIdpView }) {
               <td className="px-4 py-3 whitespace-nowrap text-gray-700">{idp.supervisor_name}</td>
               <td className="px-4 py-3 whitespace-nowrap">
                 <span className={`px-2 py-1 text-xs font-medium rounded ${
-                  idp.status === 'APPROVED' || idp.status === 'CYCLE_COMPLETED'
+                  idp.status === 'CYCLE_COMPLETED'
                     ? 'bg-green-100 text-green-800'
                     : idp.status === 'PENDING_MANAGER' || idp.status === 'PENDING_AM'
                     ? 'bg-yellow-100 text-yellow-800'
@@ -526,7 +526,8 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     if (activeSection === 'idp_pending_manager') return `${isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}${supervisorSuffix}`;
     if (activeSection === 'idp_pending_hr') return `For Approval by HR${supervisorSuffix}`;
     if (activeSection === 'idp_for_completion') return `For Completion${supervisorSuffix}`;
-    if (activeSection === 'idp_approved') return `Approved IDPs${supervisorSuffix}`;
+    if (activeSection === 'idp_approved') return `Manager Approved IDPs${supervisorSuffix}`;
+    if (activeSection === 'idp_cycle_completed') return `Cycle Completed IDPs${supervisorSuffix}`;
     const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
     if (section) return `${section.label}${supervisorSuffix}`;
     // Fallback for AM dashboard
@@ -543,14 +544,18 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     if (!user) return;
     async function fetchPendingIDPs() {
       try {
-        const idps = await apiRequest('/api/idp/manager/pending');
-        setPendingIDPs(idps || []);
+        // Fetch grouped IDPs for the manager so we can display approved/completed items
+        const endpoint = isAMDashboard ? '/api/idp/am/pending' : '/api/idp/manager/grouped';
+        const grouped = await apiRequest(endpoint);
+        // Flatten grouped object into an array for existing UI consumers
+        const all = grouped ? Object.values(grouped).flat() : [];
+        setPendingIDPs(all || []);
       } catch (err) {
-        console.error('Error fetching pending IDPs:', err);
+        console.error('Error fetching manager IDPs grouped:', err);
       }
     }
     fetchPendingIDPs();
-  }, [user]);
+  }, [user, isAMDashboard]);
 
   // IDP status mapping - use pending IDPs as source
   const idpByStatus = useMemo(() => {
@@ -558,7 +563,10 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       pending_manager: (pendingIDPs || []).filter(i => i.status === 'PENDING_MANAGER' || i.status === 'PENDING_AM'),
       pending_hr: (pendingIDPs || []).filter(i => i.status === 'PENDING_HR'),
       for_completion: (pendingIDPs || []).filter(i => i.status === 'FOR_COMPLETION'),
-      approved: (pendingIDPs || []).filter(i => i.status === 'APPROVED' || i.status === 'CYCLE_COMPLETED'),
+      // manager-approved (employee pending acknowledgement)
+      approved: (pendingIDPs || []).filter(i => i.status === 'PENDING_EMPLOYEE'),
+      // final cycle completed
+      cycle_completed: (pendingIDPs || []).filter(i => i.status === 'CYCLE_COMPLETED'),
     };
   }, [pendingIDPs]);
 
@@ -572,6 +580,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       pending_hr: idpByStatus.pending_hr.filter(i => i.supervisor_id === selectedSupervisorId),
       for_completion: idpByStatus.for_completion.filter(i => i.supervisor_id === selectedSupervisorId),
       approved: idpByStatus.approved.filter(i => i.supervisor_id === selectedSupervisorId),
+      cycle_completed: idpByStatus.cycle_completed.filter(i => i.supervisor_id === selectedSupervisorId),
     };
   }, [idpByStatus, selectedSupervisorId]);
 
@@ -581,6 +590,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       pending_hr: filteredIDPsByStatus.pending_hr.length,
       for_completion: filteredIDPsByStatus.for_completion.length,
       approved: filteredIDPsByStatus.approved.length,
+      cycle_completed: filteredIDPsByStatus.cycle_completed.length,
       all: Object.values(filteredIDPsByStatus).reduce((sum, arr) => sum + arr.length, 0),
     };
   }, [filteredIDPsByStatus]);
@@ -815,6 +825,20 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
                     {idpSectionCounts.approved || 0}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('idp_cycle_completed')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                    ${activeSection === 'idp_cycle_completed' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <CheckCircleIcon className="w-4 h-4" />
+                    Cycle Completed
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                    {idpSectionCounts.cycle_completed || 0}
                   </span>
                 </button>
               </div>
@@ -1054,9 +1078,15 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             )
           ) : activeSection === 'idp_approved' ? (
             filteredIDPsByStatus.approved.length === 0 ? (
-              <p className="text-gray-400 text-sm italic">No approved IDPs.</p>
+              <p className="text-gray-400 text-sm italic">No manager-approved IDPs.</p>
             ) : (
               <IDPTable data={filteredIDPsByStatus.approved} openIdpView={openIdpView} />
+            )
+          ) : activeSection === 'idp_cycle_completed' ? (
+            filteredIDPsByStatus.cycle_completed.length === 0 ? (
+              <p className="text-gray-400 text-sm italic">No cycle-completed IDPs.</p>
+            ) : (
+              <IDPTable data={filteredIDPsByStatus.cycle_completed} openIdpView={openIdpView} />
             )
           ) : null}
         </section>

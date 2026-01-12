@@ -209,6 +209,7 @@ async function getById(id) {
       actualDate: normalizeDate(activity.actualDate || activity.actualCompletionDate || ''),
       status: activity.status || activity.completionStatus || '',
       pdfPath: activity.pdf_path || activity.pdfPath || activity.pdf || '',
+      educationJustificationPdf: activity.educationJustificationPdf || activity.educationJustification || activity.education_justification_pdf || activity.education_pdf || '',
       expectedResults: activity.expectedResults || activity.expected_results || '',
       sharingMethod: activity.sharingMethod || activity.sharing_method || '',
       applicationMethod: activity.applicationMethod || activity.application_method || '',
@@ -330,7 +331,10 @@ async function update(id, payload, actorId = null, actorRole = null) {
       const headerAfter = hdrRowsAfter[0] || {};
       const statusAfter = headerAfter.status;
 
-      if (String(statusAfter).toUpperCase() === 'FOR_COMPLETION' && String(actorRole || '').toLowerCase() === 'supervisor') {
+      // Notify stakeholders when a supervisor modifies the IDP.
+      // Previously this only ran when status was FOR_COMPLETION; expand to notify
+      // manager, AM (if any), employee and HR for any supervisor-made update.
+      if (String(actorRole || '').toLowerCase() === 'supervisor') {
         // Actor name
         const [actorRows] = await db.query('SELECT name FROM users WHERE id = ?', [actorId]);
         const actorName = actorRows[0]?.name || 'Supervisor';
@@ -354,26 +358,29 @@ async function update(id, payload, actorId = null, actorRole = null) {
         const [hrRows] = await db.query("SELECT id FROM users WHERE role = 'HR' LIMIT 1");
         const hrId = hrRows[0]?.id || null;
 
+        // Determine action type for logging
+        const actionType = String(statusAfter).toUpperCase() === 'FOR_COMPLETION' ? 'IDP_UPDATED_FOR_COMPLETION' : 'IDP_UPDATED_BY_SUPERVISOR';
+
         // Log recent action
         await logRecentAction({
           actor_id: actorId,
           module: 'IDP',
-          action_type: 'IDP_UPDATED_FOR_COMPLETION',
+          action_type: actionType,
           cl_id: null,
           employee_id: employeeId,
           title: `Supervisor updated IDP for ${employeeName}`,
-          description: `Supervisor ${actorName} updated IDP #${id} while status FOR_COMPLETION`,
+          description: `Supervisor ${actorName} updated IDP #${id} (status: ${statusAfter})`,
           url: `/supervisor/idp/view/${id}`,
         }).catch(() => {});
 
         // Build notification message
-        const note = `Supervisor ${actorName} updated IDP #${id} for ${employeeName} while status FOR_COMPLETION.`;
+        const note = `Supervisor ${actorName} updated IDP #${id} for ${employeeName}.` + (statusAfter ? ` Status: ${statusAfter}.` : '');
 
         // Notify employee
         if (employeeId) {
           await createNotification({ recipient_id: employeeId, message: note, module: 'IDP' }).catch(() => {});
         }
-        // Notify supervisor (actor) - optional: skip notifying self
+        // Notify supervisor (actor) - skip notifying self
         const supervisorId = headerAfter.supervisor_id || null;
         if (supervisorId && supervisorId !== actorId) {
           await createNotification({ recipient_id: supervisorId, message: note, module: 'IDP' }).catch(() => {});
@@ -532,6 +539,26 @@ async function submit(id) {
         module: 'IDP'
       }).catch(() => {});
     }
+    // Also notify manager, AM and HR so all stakeholders see the new submission
+    try {
+      if (managerId) {
+        await createNotification({ recipient_id: managerId, message: `IDP #${id} for ${employeeName} has been submitted by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
+      }
+      if (amId) {
+        await createNotification({ recipient_id: amId, message: `IDP #${id} for ${employeeName} has been submitted by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
+      }
+      try {
+        const [hrRowsAll] = await db.query("SELECT id FROM users WHERE role = 'HR' LIMIT 1");
+        const hrIdAll = hrRowsAll[0]?.id || null;
+        if (hrIdAll) {
+          await createNotification({ recipient_id: hrIdAll, message: `IDP #${id} for ${employeeName} has been submitted by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
+        }
+      } catch (e) {
+        // ignore HR lookup failures
+      }
+    } catch (e) {
+      // swallow any additional notification failures
+    }
   } catch (e) {
     // don't block submit on notification/log failures
     console.error('IDP post-submit notifications/logging failed', e);
@@ -594,6 +621,28 @@ async function getIDPsGroupedByStatus(supervisorId) {
   // Note: selecting e.position_title and e.position for broader compatibility
 
   // Group by status
+  const grouped = {};
+  for (const header of headers) {
+    const status = header.status || 'UNKNOWN';
+    if (!grouped[status]) grouped[status] = [];
+    grouped[status].push(header);
+  }
+  return grouped;
+}
+
+// Get all IDPs for a manager, grouped by status
+async function getIDPsGroupedByManager(managerId) {
+  const [headers] = await db.query(
+    `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id,
+      COALESCE(p.title, '') AS position_title
+     FROM idp_headers h
+     JOIN users e ON h.employee_id = e.id
+     LEFT JOIN positions p ON e.position_id = p.id
+     WHERE h.manager_id = ?
+     ORDER BY h.created_at DESC`,
+    [managerId]
+  );
+
   const grouped = {};
   for (const header of headers) {
     const status = header.status || 'UNKNOWN';
@@ -969,6 +1018,7 @@ module.exports = {
   submit,
   getEmployeesForIDPCreation,
   getIDPsGroupedByStatus,
+  getIDPsGroupedByManager,
   deleteById,
   getIDPsPendingManager,
   managerReturnIDP,
@@ -1162,6 +1212,7 @@ async function createWithItems(payload) {
                     applicationMethod: activity.applicationMethod,
                     score: activity.score,
                     pdf_path: activity.pdf_path || activity.pdfPath || activity.pdf || null,
+                    educationJustificationPdf: activity.educationJustificationPdf || activity.educationJustification || activity.education_justification_pdf || null,
                     currentLevel: item.currentLevel,
                     developmentArea: item.developmentArea
                   }),

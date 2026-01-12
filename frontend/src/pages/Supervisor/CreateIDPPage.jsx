@@ -31,6 +31,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
   const [idpHeader, setIdpHeader] = useState(null); // for edit mode
   const [missingAttachments, setMissingAttachments] = useState([]);
   const [showMissingModal, setShowMissingModal] = useState(false);
+  const [missingActualDates, setMissingActualDates] = useState([]);
+  const [showMissingDateModal, setShowMissingDateModal] = useState(false);
 
   const [idpData, setIdpData] = useState({
     reviewPeriod: '1st Cycle Performance Review',
@@ -45,6 +47,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     actualCompletionDate: normalizeDate(a.actualDate || a.actualCompletionDate || ''),
     completionStatus: a.status || a.completionStatus || '',
     pdfPath: a.pdf_path || a.pdfPath || a.pdf || '',
+    educationJustification: a.educationJustification || a.justification || a.education_justification || '',
+    educationJustificationPdf: a.educationJustificationPdf || a.education_justification_pdf || a.educationPdf || '',
     expectedResults: a.expectedResults || a.expected_results || '',
     sharingMethod: a.sharingMethod || a.sharing_method || '',
     applicationMethod: a.applicationMethod || a.application_method || '',
@@ -273,6 +277,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     actualDate: normalizeDate(a.actualCompletionDate || a.actualDate || ''),
     status: a.completionStatus || a.status || a.completion_status || '',
     pdf_path: a.pdfPath || a.pdf_path || a.pdf || '',
+    educationJustification: a.educationJustification || a.justification || a.education_justification || '',
+    educationJustificationPdf: a.educationJustificationPdf || a.education_justification_pdf || a.educationPdf || '',
     expectedResults: a.expectedResults || a.expected_results || '',
     sharingMethod: a.sharingMethod || a.sharing_method || '',
     applicationMethod: a.applicationMethod || a.application_method || '',
@@ -315,11 +321,25 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
   // For create: submit new, for edit: update and resubmit
   const submitIDP = async () => {
-    // Validate: any Education activity marked Completed must have a pdfPath
+    // Validate: any activity marked Completed MUST have an Actual Completion Date
+    const missingDates = [];
+    (idpData.items || []).forEach((it, idx) => {
+      const act = (it.developmentActivities || [])[0] || {};
+      if (act && isCompletedStatus(act.completionStatus) && !act.actualCompletionDate) {
+        missingDates.push({ itemIndex: idx, competencyName: it.competencyName || ('#' + (it.competencyId || idx)) });
+      }
+    });
+    if (missingDates.length > 0) {
+      setMissingActualDates(missingDates);
+      setShowMissingDateModal(true);
+      return;
+    }
+
+    // Validate: any Education activity MUST have an uploaded justification PDF
     const missing = [];
     (idpData.items || []).forEach((it, idx) => {
       const act = (it.developmentActivities || [])[0] || {};
-      if (act && (act.type === 'Education') && isCompletedStatus(act.completionStatus) && !act.pdfPath) {
+      if (act && (act.type === 'Education') && !act.educationJustificationPdf) {
         missing.push({ itemIndex: idx, competencyName: it.competencyName || ('#' + (it.competencyId || idx)) });
       }
     });
@@ -430,7 +450,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         </span>
       );
     }
-    if (status === 'APPROVED') {
+    if (status === 'CYCLE_COMPLETED') {
       return (
         <span className={`${base} bg-emerald-50 text-emerald-800 border-emerald-200`}>
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -621,6 +641,40 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                       setShowMissingModal(false);
                       // Scroll to first missing item
                       const first = missingAttachments[0];
+                      const el = document.getElementById(`item-${first.itemIndex}`);
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}
+                    className="px-4 py-2 rounded-md bg-black text-white"
+                  >
+                    Go to first missing
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showMissingDateModal && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setShowMissingDateModal(false)} />
+            <div className="relative h-full w-full flex items-center justify-center p-4">
+              <div className="w-full max-w-lg bg-white rounded-xl border border-gray-100 shadow-2xl p-6">
+                <div className="flex items-start justify-between">
+                  <h3 className="text-lg font-semibold text-black">Missing Actual Completion Date(s)</h3>
+                  <button onClick={() => setShowMissingDateModal(false)} className="text-black/60">✕</button>
+                </div>
+                <p className="text-sm text-gray-600 mt-2">One or more activities marked Completed are missing the Actual Completion Date. Please provide the date before submitting.</p>
+                <ul className="mt-3 max-h-40 overflow-auto list-disc list-inside text-sm text-gray-800">
+                  {missingActualDates.map((m, i) => (
+                    <li key={i}>{m.competencyName}</li>
+                  ))}
+                </ul>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button onClick={() => setShowMissingDateModal(false)} className="px-4 py-2 rounded-md bg-white border border-gray-200">Close</button>
+                  <button
+                    onClick={() => {
+                      setShowMissingDateModal(false);
+                      const first = missingActualDates[0];
                       const el = document.getElementById(`item-${first.itemIndex}`);
                       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }}
@@ -881,9 +935,103 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   value={activity.actualCompletionDate}
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.actualCompletionDate`, e.target.value)}
                                   disabled={!isCompletedStatus(activity.completionStatus)}
+                                  required={isCompletedStatus(activity.completionStatus)}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 />
                               </div>
+
+                              {/* Education justification dropdown: only for Education activities */}
+                              {activity.type === 'Education' && (
+                                <div>
+                                  <label className="block text-xs font-semibold text-gray-600 mb-1">Education Justification (PDF)</label>
+                                  <div className="mt-1 flex items-center gap-2">
+                                    <label className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm cursor-pointer`}>
+                                      <input
+                                        type="file"
+                                        accept="application/pdf"
+                                        onChange={async (e) => {
+                                          const f = e.target.files && e.target.files[0];
+                                          if (!f) return;
+                                          const form = new FormData();
+                                          form.append('pdf', f);
+                                          try {
+                                            const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/idp/upload`, {
+                                              method: 'POST',
+                                              headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+                                              body: form
+                                            });
+                                            const data = await res.json();
+                                            if (!res.ok) throw new Error(data.message || 'Upload failed');
+                                            updateIdpData(`items.${itemIndex}.developmentActivities.0.educationJustificationPdf`, data.pdf_path || data.pdfPath || data.pdf_path);
+
+                                            // Persist immediately in edit mode
+                                            try {
+                                              if (editMode && id) {
+                                                const item = idpData.items[itemIndex] || {};
+                                                const itemId = item.id || null;
+                                                const competencyId = item.competency_id || item.competencyId || null;
+                                                const activityObj = (item.developmentActivities || [])[0] || {};
+                                                const uploadedPath = data.pdf_path || data.pdfPath || '';
+                                                const mergedActivity = { ...activityObj, educationJustificationPdf: uploadedPath };
+
+                                                const payloadItem = { development_activity: JSON.stringify(toBackendActivity(mergedActivity)) };
+                                                if (itemId) payloadItem.id = itemId;
+                                                if (competencyId && !itemId) payloadItem.competency_id = competencyId;
+
+                                                await apiRequest(`/api/idp/${id}`, {
+                                                  method: 'PUT',
+                                                  body: JSON.stringify({ items: [payloadItem] })
+                                                });
+                                                try {
+                                                  const fresh = await apiRequest(`/api/idp/${id}`);
+                                                  const mapped = (fresh.items || []).map(it => {
+                                                    let rawAct = it.development_activity;
+                                                    if (typeof rawAct === 'string') {
+                                                      try { rawAct = JSON.parse(rawAct); } catch { rawAct = {}; }
+                                                    }
+                                                    return {
+                                                      id: it.id,
+                                                      competencyId: it.competency_id,
+                                                      competency_id: it.competency_id,
+                                                      competencyName: it.competency_name,
+                                                      developmentArea: it.competency_area || 'Technical',
+                                                      currentLevel: it.current_level,
+                                                      targetLevel: it.target_level,
+                                                      developmentActivities: [ fromBackendActivity(rawAct || {}) ]
+                                                    };
+                                                  });
+                                                  setIdpData(prev => ({ ...prev, items: mapped }));
+                                                } catch (refreshErr) {
+                                                  console.error('Failed to refresh after persisting justification upload', refreshErr);
+                                                }
+                                              }
+                                            } catch (persistErr) {
+                                              console.error('Failed to persist justification upload', persistErr);
+                                            }
+
+                                            alert('Justification PDF uploaded');
+                                          } catch (err) {
+                                            console.error('Upload failed', err);
+                                            alert('Upload failed: ' + (err.message || ''));
+                                          }
+                                        }}
+                                        style={{ display: 'none' }}
+                                      />
+                                      Upload PDF
+                                    </label>
+                                    {activity.educationJustificationPdf && (
+                                      <a
+                                        href={`${import.meta.env.VITE_API_BASE_URL}/${activity.educationJustificationPdf}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-blue-600 hover:underline truncate"
+                                      >
+                                        View
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
 
                               <div className="lg:col-span-3">
                                 <label className="block text-xs font-semibold text-gray-600 mb-1">Development Activity</label>
@@ -909,7 +1057,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 </select>
 
                                 {/* Attachment appears below the Completion Status dropdown when applicable */}
-                                  {activity.type === 'Education' && ((activity.pdfPath) || isCompletedStatus(activity.completionStatus)) && (
+                                  {((activity.pdfPath) || isCompletedStatus(activity.completionStatus)) && (
                                   <div className="mt-2 flex items-center gap-2 w-full">
                                     <select
                                       value={activity.pdfPath || ''}

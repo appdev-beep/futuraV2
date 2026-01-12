@@ -40,6 +40,17 @@ async function getManagerPendingIDPs(req, res, next) {
   }
 }
 
+// GET /api/idp/manager/grouped
+async function getManagerGroupedIDPs(req, res, next) {
+  try {
+    const managerId = req.user.id;
+    const grouped = await idpService.getIDPsGroupedByManager(managerId);
+    res.json(grouped);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // GET /api/idp/employee/my - return IDPs for the logged-in employee
 async function getEmployeeIDPs(req, res, next) {
   try {
@@ -301,6 +312,7 @@ module.exports = {
   submit,
   getSupervisorForCreation,
   getSupervisorIDPsGrouped,
+  getManagerGroupedIDPs,
   deleteIDP,
   getManagerPendingIDPs,
   managerReturnIDP,

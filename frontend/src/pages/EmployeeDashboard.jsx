@@ -715,13 +715,13 @@ function EmployeeDashboard() {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                   <DocumentTextIcon className="w-6 h-6 text-purple-600" />
-                  IDP — {activeView === 'idp_pending' ? 'For Your Acknowledgement' : activeView === 'idp_returned' ? 'Returned to You' : activeView === 'idp_approved' ? 'Approved IDPs' : 'My IDPs'}
+                  IDP — {activeView === 'idp_pending' ? 'For Your Acknowledgement' : activeView === 'idp_returned' ? 'Returned to You' : activeView === 'idp_approved' ? 'Cycle Completed IDPs' : 'My IDPs'}
                 </h2>
                 <span className="px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm font-semibold">
                   {employeeIDPs.filter(h => {
                     if (activeView === 'idp_pending') return h.status === 'PENDING_EMPLOYEE';
                     if (activeView === 'idp_returned') return h.status === 'RETURNED';
-                    if (activeView === 'idp_approved') return h.status === 'APPROVED';
+                    if (activeView === 'idp_approved') return (h.status === 'CYCLE_COMPLETED');
                     return true;
                   }).length} {activeView === 'idp_pending' ? 'Pending' : 'Total'}
                 </span>
@@ -752,7 +752,7 @@ function EmployeeDashboard() {
                         {employeeIDPs.filter(h => {
                           if (activeView === 'idp_pending') return h.status === 'PENDING_EMPLOYEE';
                           if (activeView === 'idp_returned') return h.status === 'RETURNED';
-                          if (activeView === 'idp_approved') return h.status === 'APPROVED';
+                          if (activeView === 'idp_approved') return (h.status === 'CYCLE_COMPLETED');
                           return true;
                         }).map((h) => (
                           <tr key={h.id} className="hover:bg-slate-50 transition">

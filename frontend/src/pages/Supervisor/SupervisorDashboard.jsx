@@ -45,7 +45,7 @@ function SupervisorDashboard() {
   const [idpSummary, setIdpSummary] = useState({
     idpCreation: 0,
     idpPending: 0,
-    idpApproved: 0,
+    idpCycleCompleted: 0,
     idpReturned: 0,
   });
   const [idpByStatus, setIdpByStatus] = useState({});
@@ -111,7 +111,7 @@ function SupervisorDashboard() {
     // so they can browse and update those forms.
     sections.push({ key: 'FOR_COMPLETION', label: 'For Completion', icon: ClockIcon });
     sections.push({ key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon });
-    sections.push({ key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon });
+    sections.push({ key: 'CYCLE_COMPLETED', label: 'Cycle Completed', icon: CheckCircleIcon });
     return sections;
   }, [department]);
 
@@ -172,7 +172,7 @@ function SupervisorDashboard() {
       setIdpSummary({
         idpCreation: (idpCreation || []).length,
         idpPending: (idpGrouped?.PENDING_AM?.length || 0) + (idpGrouped?.PENDING_MANAGER?.length || 0),
-        idpApproved: (idpGrouped?.APPROVED?.length || 0),
+        idpCycleCompleted: (idpGrouped?.CYCLE_COMPLETED?.length || 0),
         idpReturned: (idpGrouped?.RETURNED?.length || 0),
       });
     } catch (err) {

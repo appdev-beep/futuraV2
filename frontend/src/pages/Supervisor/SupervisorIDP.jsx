@@ -42,7 +42,7 @@ export default function SupervisorIDP({ idpSummary, idpEmployees, idpByStatus, a
         <SummaryCard label="FOR IDP CREATION" value={idpSummary.idpCreation} gradientClass="from-blue-400 to-blue-600" />
         <SummaryCard label="IDP For Approval" value={idpSummary.idpPending} gradientClass="from-yellow-400 to-orange-500" />
         <SummaryCard label="IDP Returns" value={idpSummary.idpReturned} gradientClass="from-red-400 to-red-600" />
-        <SummaryCard label="IDP Approved" value={idpSummary.idpApproved} gradientClass="from-emerald-400 to-emerald-700" />
+        <SummaryCard label="Cycle Completed" value={idpSummary.idpCycleCompleted} gradientClass="from-emerald-400 to-emerald-700" />
       </section>
 
       {/* IDP Creation Table */}

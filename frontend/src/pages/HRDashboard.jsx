@@ -127,7 +127,6 @@ function HRDashboard() {
     }
     sections.push({ key: 'PENDING_MANAGER', label: 'For Approval by Manager', icon: ClockIcon });
     sections.push({ key: 'FOR_COMPLETION', label: 'For Completion', icon: ClockIcon });
-    sections.push({ key: 'APPROVED', label: 'Approved', icon: CheckCircleIcon });
     sections.push({ key: 'CYCLE_COMPLETED', label: 'Cycle Completed', icon: CheckCircleIcon });
     return sections;
   }, [allDepartments, selectedDepartment]);
@@ -694,12 +693,12 @@ function HRDashboard() {
             (() => {
               const pendingHR = filteredIncomingIDPs.filter(i => i.status === 'PENDING_HR').length;
               const returns = filteredIncomingIDPs.filter(i => i.status === 'DRAFT' || i.status === 'RETURNED').length;
-              const approved = filteredIncomingIDPs.filter(i => i.status === 'APPROVED' || i.status === 'CYCLE_COMPLETED').length;
+              const approved = filteredIncomingIDPs.filter(i => i.status === 'CYCLE_COMPLETED').length;
               return (
                 <>
                   <SummaryCard label="IDP - Pending HR" value={pendingHR} gradientClass="from-yellow-400 to-orange-500" />
                   <SummaryCard label="IDP - Returns" value={returns} gradientClass="from-red-400 to-red-600" />
-                  <SummaryCard label="IDP – Approved" value={approved} gradientClass="from-emerald-400 to-emerald-700" />
+                  <SummaryCard label="IDP – Cycle Completed" value={approved} gradientClass="from-emerald-400 to-emerald-700" />
                 </>
               );
             })()
@@ -1461,6 +1460,7 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                         onActionClick(a);
                         if (!a.title || !a.title.toLowerCase().includes('deleted')) {
                           onClose();
+                        
                         }
                       }}
                       className="hover:bg-gray-50 cursor-pointer"

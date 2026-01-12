@@ -9,6 +9,16 @@ export const COMPLETION_STATUS_OPTIONS = [
 
 export const DEVELOPMENT_TYPES = ['Education', 'Experience', 'Exposure'];
 
+export const EDUCATION_JUSTIFICATIONS = [
+  'Course/Training',
+  'Certification',
+  'Degree Program',
+  'Conference/Workshop',
+  'On-the-job/Project',
+  'Self-study',
+  'Other'
+];
+
 export const CRAYON_COLORS = [
   '#FF6B35', '#F7931E', '#FFD23F', '#FFF200', '#8BC34A', '#4CAF50', '#009688', '#00BCD4', 
   '#2196F3', '#3F51B5', '#9C27B0', '#E91E63', '#F44336', '#FF5722', '#795548', '#9E9E9E',

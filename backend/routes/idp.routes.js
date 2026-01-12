@@ -15,6 +15,13 @@ router.get(
   idpController.getManagerPendingIDPs
 );
 
+// GET /api/idp/manager/grouped (IDPs for manager, grouped by status)
+router.get(
+  '/manager/grouped',
+  requireRole('Manager', 'HR', 'Admin'),
+  idpController.getManagerGroupedIDPs
+);
+
 // GET /api/idp/employee/my (IDPs for current employee)
 router.get(
   '/employee/my',
