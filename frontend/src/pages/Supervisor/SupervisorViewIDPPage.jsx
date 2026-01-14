@@ -61,7 +61,7 @@ export default function SupervisorViewIDPPage() {
           });
           setPositionsMap(map);
         }
-      } catch (e) { /* ignore lookup failures */ }
+      } catch { /* ignore lookup failures */ }
     })();
     const empId = idp.header.employee_id || idp.header.employee || idp.employee_id;
     if (!empId) return;
@@ -87,7 +87,7 @@ export default function SupervisorViewIDPPage() {
     // Prefer location state (manager passed data) to avoid permission issues
     const passed = location?.state || {};
     const rawEmpName = h.employee_name;
-    const hasNonNumericEmpName = rawEmpName && String(rawEmpName).trim() !== '' && isNaN(Number(String(rawEmpName).trim()));
+    const _hasNonNumericEmpName = rawEmpName && String(rawEmpName).trim() !== '' && isNaN(Number(String(rawEmpName).trim()));
     // Always try to fetch employee info if we don't have it yet — some headers omit position fields
     if (!employeeInfo) {
       if (passed.employee) setEmployeeInfo(passed.employee);
@@ -97,7 +97,7 @@ export default function SupervisorViewIDPPage() {
     }
 
     const rawSupName = h.supervisor_name;
-    const hasNonNumericSupName = rawSupName && String(rawSupName).trim() !== '' && isNaN(Number(String(rawSupName).trim()));
+    const _hasNonNumericSupName = rawSupName && String(rawSupName).trim() !== '' && isNaN(Number(String(rawSupName).trim()));
     // Ensure we fetch supervisor info when missing so we can display full name/title
     if (!supervisorInfo) {
       if (passed.supervisor) setSupervisorInfo(passed.supervisor);
@@ -203,7 +203,7 @@ export default function SupervisorViewIDPPage() {
     || (employeeInfo?.position_id ? positionsMap[employeeInfo.position_id] : '')
     || '';
   const empDept = header.department_name || employeeInfo?.department_name || employeeInfo?.department || '';
-  const empEmail = header.employee_email || employeeInfo?.email || '';
+  const _empEmail = header.employee_email || employeeInfo?.email || '';
   // Prefer a real name; ignore numeric supervisor_name fields that appear to be IDs
   const rawSupName = header.supervisor_name;
   const hasNonNumericSupName = rawSupName && String(rawSupName).trim() !== '' && isNaN(Number(String(rawSupName).trim()));
@@ -211,7 +211,7 @@ export default function SupervisorViewIDPPage() {
   const supInfoName = getDisplayName(supervisorInfo) || null;
   const supName = supObjName || supInfoName || (hasNonNumericSupName ? rawSupName : '') || '';
   const supPosition = header.supervisor_title || supervisorInfo?.position || supervisorInfo?.title || '';
-  const supDept = header.supervisor_department_name || supervisorInfo?.department_name || supervisorInfo?.department || '';
+  const _supDept = header.supervisor_department_name || supervisorInfo?.department_name || supervisorInfo?.department || '';
 
   // Match create page chip color logic
   const areaColor = (area) => {
@@ -842,7 +842,7 @@ export default function SupervisorViewIDPPage() {
         <h2 className="text-xl font-semibold mb-2">Development Items</h2>
         {/* Always render full card layout for uniformity */}
         <div className="space-y-4">
-          {idp.items.map((item, itemIndex) => {
+          {idp.items.map((item) => {
             let activity = item.development_activity;
             if (typeof activity === 'string') {
               try { activity = JSON.parse(activity); } catch { activity = activity || {}; }

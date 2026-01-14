@@ -28,6 +28,96 @@ function AMReviewCLPage() {
     setModal({ isOpen: true, title, message, type, isConfirm: true, onConfirm });
   };
 
+  const goBack = () => {
+    if (window && window.history && typeof window.history.back === 'function') window.history.back();
+    else window.location.href = '/';
+  };
+
+  const handleExportCSV = () => {
+    try {
+      const rows = (cl.items || []).map(it => ({
+        competency: it.competency_name,
+        mplr: it.required_level,
+        assigned_level: it.assigned_level,
+        weight: Number(it.weight || 0).toFixed(2),
+        score: Number(it.score || 0).toFixed(2),
+        justification: it.justification || ''
+      }));
+      const columns = Object.keys(rows[0] || {});
+      const csv = [columns.join(',')].concat(rows.map(r => columns.map(c => `"${String(r[c] || '')}"`).join(','))).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `CL_${cl.id || 'export'}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export CSV failed', err);
+      showModal('Export Failed', 'Unable to export CSV.');
+    }
+  };
+
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' });
+      const tableCols = ['Competency', 'MPLR', 'Assigned Level', 'Weight (%)', 'Score', 'Comments'];
+      const tableRows = (cl.items || []).map(it => [it.competency_name, it.required_level, it.assigned_level, Number(it.weight || 0).toFixed(2), Number(it.score || 0).toFixed(2), it.justification || '']);
+      doc.setFontSize(12);
+      doc.text(`CL Review - #${cl.id}`, 40, 40);
+      // autopopulate table
+      doc.autoTable({ head: [tableCols], body: tableRows, startY: 60 });
+      doc.save(`CL_${cl.id || 'export'}.pdf`);
+    } catch (err) {
+      console.error('Export PDF failed', err);
+      showModal('Export Failed', 'Unable to export PDF.');
+    }
+  };
+
+  const confirmApprove = () => {
+    showConfirmModal('Confirm Approve', 'Are you sure you want to approve this CL?', async () => {
+      setActionLoading(true);
+      try {
+        await apiRequest(`/api/cl/${id}/am/approve`, {
+          method: 'POST',
+          body: JSON.stringify({ remarks }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+        closeModal();
+        showModal('Success', 'CL approved successfully.', 'success');
+        setTimeout(() => goBack(), 800);
+      } catch (err) {
+        console.error('Approve failed', err);
+        showModal('Error', err?.message || 'Failed to approve CL', 'error');
+      } finally {
+        setActionLoading(false);
+      }
+    }, 'warning');
+  };
+
+  const confirmReturn = () => {
+    showConfirmModal('Confirm Return', 'Return this CL to the supervisor?', async () => {
+      setActionLoading(true);
+      try {
+        await apiRequest(`/api/cl/${id}/am/return`, {
+          method: 'POST',
+          body: JSON.stringify({ remarks }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+        closeModal();
+        showModal('Success', 'CL returned to supervisor.', 'success');
+        setTimeout(() => goBack(), 800);
+      } catch (err) {
+        console.error('Return failed', err);
+        showModal('Error', err?.message || 'Failed to return CL', 'error');
+      } finally {
+        setActionLoading(false);
+      }
+    }, 'warning');
+  };
+
   const closeModal = () => {
     setModal({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
   };
@@ -167,12 +257,34 @@ function AMReviewCLPage() {
 
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><h3 className="text-sm font-semibold text-slate-700 mb-2">Proficiency Level Guide</h3><div className="overflow-x-auto"><table className="w-full text-xs border border-slate-200 rounded-md overflow-hidden"><thead className="bg-slate-100"><tr><th className="px-2 py-1 text-left text-slate-700">Level</th><th className="px-2 py-1 text-left text-slate-700">Proficiency</th><th className="px-2 py-1 text-left text-slate-700">Definition</th></tr></thead><tbody className="bg-white"><tr className="border-t border-slate-100"><td className="px-2 py-1">1</td><td className="px-2 py-1">Fundamental Awareness</td><td className="px-2 py-1">Basic understanding…</td></tr><tr className="border-t border-slate-100"><td className="px-2 py-1">2</td><td className="px-2 py-1">Novice</td><td className="px-2 py-1">Limited experience…</td></tr><tr className="border-t border-slate-100"><td className="px-2 py-1">3</td><td className="px-2 py-1">Intermediate</td><td className="px-2 py-1">Works independently…</td></tr><tr className="border-t border-slate-100"><td className="px-2 py-1">4</td><td className="px-2 py-1">Advanced</td><td className="px-2 py-1">Handles complex tasks…</td></tr><tr className="border-t border-slate-100"><td className="px-2 py-1">5</td><td className="px-2 py-1">Expert</td><td className="px-2 py-1">Top-level mastery…</td></tr></tbody></table></div></div>
 
-            {!viewOnly && (<div className="bg-white border border-slate-200 rounded-lg p-3"><label className="block text-xs font-medium mb-1 text-slate-700">AM Remarks <span className="text-red-600">*</span></label><textarea className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500" rows="3" value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Enter your remarks before approving or returning..."></textarea></div>)}
+            {!viewOnly && cl.status !== 'PENDING_MANAGER' && (
+              <div className="bg-white border border-slate-200 rounded-lg p-3">
+                <label className="block text-xs font-medium mb-1 text-slate-700">AM Remarks <span className="text-red-600">*</span></label>
+                <textarea
+                  className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  rows="3"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Enter your remarks before approving or returning..."
+                />
+              </div>
+            )}
 
             {viewOnly && (<div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><p className="text-sm text-slate-700">This CL has already been processed. You are viewing it in read-only mode.</p></div>)}
           </div>
 
-          {!viewOnly && (<div className="px-6 py-3 border-t border-slate-200 bg-slate-50/80 flex justify-end gap-2"><button className="px-5 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50 shadow-sm" onClick={confirmApprove} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Approve'}</button><button className="px-5 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md disabled:opacity-50 shadow-sm" onClick={confirmReturn} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Return to Supervisor'}</button></div>)}
+          {!viewOnly && cl.status !== 'PENDING_MANAGER' && (
+            <div className="px-6 py-3 border-t border-slate-200 bg-slate-50/80 flex justify-end gap-2">
+              <button className="px-5 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50 shadow-sm" onClick={confirmApprove} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Approve'}</button>
+              <button className="px-5 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md disabled:opacity-50 shadow-sm" onClick={confirmReturn} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Return to Supervisor'}</button>
+            </div>
+          )}
+
+          {!viewOnly && cl.status === 'PENDING_MANAGER' && (
+            <div className="px-6 py-3 border-t border-slate-200 bg-slate-50/80">
+              <p className="text-sm text-gray-600">This CL has been routed to Manager for review. You can view it here for tracking only; approval actions are restricted.</p>
+            </div>
+          )}
         </div>
       </div>
 

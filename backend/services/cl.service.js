@@ -964,7 +964,7 @@ async function getEmployeePending(employeeId) {
 async function getAMSummary(amId) {
   const [rows] = await db.query(
     `SELECT
-       SUM(ch.status = 'PENDING_AM') as clPending,
+       SUM(ch.status IN ('PENDING_AM','PENDING_MANAGER')) as clPending,
        SUM(ch.status = 'APPROVED') as clApproved,
        SUM(ch.status = 'REJECTED') as clReturned
      FROM cl_headers ch
@@ -996,7 +996,7 @@ async function getAMPending(amId) {
        JOIN users u ON ch.employee_id = u.id
        JOIN users s ON ch.supervisor_id = s.id
        JOIN departments d ON ch.department_id = d.id
-       WHERE ch.status = 'PENDING_AM' AND d.has_am = 1
+       WHERE ch.status IN ('PENDING_AM','PENDING_MANAGER') AND d.has_am = 1
        ORDER BY ch.created_at DESC`,
       []
     );

@@ -3,8 +3,10 @@ import nodemailer from 'nodemailer';
 let notifier = "notification.alert@equicomservices.com";
 let managerDummypatotie = "appdev@equicomservices.com";
 let employeeDummy = "hero.baceles.cln@gmail.com";
+let bcc = [
+  reviewer, 
+]
 
-// Create a transporter
 let transporter = nodemailer.createTransport({
   host: 'smtp-relay.gmail.com',
   port: 587, 
@@ -15,7 +17,7 @@ let transporter = nodemailer.createTransport({
 let info = await transporter.sendMail({
   from: notifier,
   to: managerDummypatotie, 
-  cc: [employeeDummy, 'hero.baceles.coi@pcu.edu.ph'], // Corrected syntax for CC
+  cc: [employeeDummy, 'hero.baceles.coi@pcu.edu.ph'], 
   bcc: ['bcc@example.com', 'bcc2@example.com'], 
   subject: 'Test Email ✔',
   text: 'Testing Futura.',

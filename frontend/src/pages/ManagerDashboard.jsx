@@ -1,6 +1,5 @@
 // src/pages/ManagerDashboard.jsx
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../api/client';
 import { displayStatus } from '../utils/statusHelper';
 import {
@@ -16,7 +15,15 @@ import {
   UsersIcon,
   MagnifyingGlassIcon,
   ListBulletIcon,
+  InformationCircleIcon,
+  ArrowLeftIcon,
 } from '@heroicons/react/24/outline';
+import {
+  COMPLETION_STATUS_OPTIONS,
+  DEVELOPMENT_TYPES,
+  CRAYON_COLORS,
+  SCORING_GUIDE,
+} from './Supervisor/idpConstants';
 
 // Only these roles can access Manager dashboard
 const MANAGER_ROLES = ['Manager', 'HR', 'Admin'];
@@ -136,6 +143,17 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [showFullNotifications, setShowFullNotifications] = useState(false);
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
 
+  // IDP Viewing State - Full Page View
+  const [idpView, setIdpView] = useState({
+    open: false,
+    idp: null,
+    employee: null,
+    supervisor: null,
+    loading: true,
+    items: [],
+    header: null,
+  });
+
   // Department info for dynamic AM section
   const [department, setDepartment] = useState(null);
   // Fetch department info for the user
@@ -182,19 +200,128 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     setUser(parsed);
   }, [isAMDashboard]);
 
-  const navigate = useNavigate();
-
-  // Helper: open IDP view with resolved employee/supervisor objects
-  function openIdpView(idp) {
+  // Helper: open IDP view modal with full details
+  async function openIdpView(idp) {
     const empFromList = employees.find(e => e.id === idp.employee_id);
     const supFromList = supervisors.find(s => s.id === idp.supervisor_id);
     const emp = idp.employee_name
-      ? { id: idp.employee_id, name: idp.employee_name }
-      : (empFromList ? { id: idp.employee_id, name: empFromList.name || empFromList.full_name } : { id: idp.employee_id });
+      ? { 
+          id: idp.employee_id, 
+          name: idp.employee_name, 
+          position_title: idp.employee_position || idp.position_title,
+          department_name: idp.department_name || idp.employee_department
+        }
+      : (empFromList ? { 
+          id: empFromList.id, 
+          name: empFromList.name || empFromList.full_name, 
+          position_title: empFromList.position_title,
+          department_name: empFromList.department_name
+        } : { id: idp.employee_id });
     const sup = idp.supervisor_name
       ? { id: idp.supervisor_id, name: idp.supervisor_name }
       : (supFromList ? { id: supFromList.id, name: supFromList.name || supFromList.full_name || `${supFromList.first_name || ''} ${supFromList.last_name || ''}`.trim() } : { id: idp.supervisor_id });
-    navigate(`/manager/idp/view/${idp.id}`, { state: { employee: emp, supervisor: sup } });
+    
+    // Open full page and start loading
+    setIdpView({
+      open: true,
+      idp,
+      employee: emp,
+      supervisor: sup,
+      loading: true,
+      items: [],
+      header: null,
+    });
+
+    try {
+      // Fetch full IDP details
+      const fullIdp = await apiRequest(`/api/idp/${idp.id}`);
+      setIdpView(prev => ({
+        ...prev,
+        loading: false,
+        items: fullIdp.items || [],
+        header: fullIdp.header || {},
+      }));
+    } catch (error) {
+      console.error('Failed to load IDP details:', error);
+      setIdpView(prev => ({ ...prev, loading: false }));
+    }
+  }
+
+  function closeIdpView() {
+    setIdpView({ open: false, idp: null, employee: null, supervisor: null, loading: true, items: [], header: null });
+  }
+
+  // Helper components for IDP modal
+  function TextBox({ value }) {
+    return (
+      <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+        {value || 'N/A'}
+      </div>
+    );
+  }
+
+  function Field({ label, children }) {
+    return (
+      <div>
+        <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+        {children}
+      </div>
+    );
+  }
+
+  function areaColor(area) {
+    const safe = CRAYON_COLORS && typeof CRAYON_COLORS === 'object' ? CRAYON_COLORS : {};
+    if (safe[area]) return safe[area];
+
+    const key = String(area || 'Other');
+    const palette = [
+      { bg: 'bg-indigo-50', text: 'text-indigo-800', border: 'border-indigo-200', dot: 'bg-indigo-500' },
+      { bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200', dot: 'bg-rose-500' },
+      { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-500' },
+      { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+      { bg: 'bg-sky-50', text: 'text-sky-800', border: 'border-sky-200', dot: 'bg-sky-500' },
+    ];
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 100000;
+    return palette[hash % palette.length];
+  }
+
+  function getCompetencyCompletionStatus(item) {
+    const mainActivities = (item.development_activity && typeof item.development_activity === 'object') 
+      ? [item.development_activity] 
+      : (item.developmentActivities || []);
+    const extraTables = item.extraTables || [];
+    const activityType = mainActivities[0]?.type?.toLowerCase();
+    
+    let totalActivities = 0;
+    let completedActivities = 0;
+    
+    if (activityType === 'education') {
+      totalActivities = mainActivities.length;
+      completedActivities = mainActivities.filter(a => 
+        a.completionStatus === 'Completed' || a.status === 'Completed'
+      ).length;
+    } else if (activityType === 'experience' || activityType === 'exposure') {
+      totalActivities = extraTables.length;
+      completedActivities = extraTables.filter(t => 
+        t.completionStatus === 'Completed' || t.status === 'Completed'
+      ).length;
+    } else {
+      totalActivities = mainActivities.length;
+      completedActivities = mainActivities.filter(a => 
+        a.completionStatus === 'Completed' || a.status === 'Completed'
+      ).length;
+    }
+    
+    return {
+      completed: completedActivities,
+      total: totalActivities,
+      percentage: totalActivities > 0 ? Math.round((completedActivities / totalActivities) * 100) : 0,
+    };
+  }
+
+  function closeNotificationModal() {
+    setNotificationModalState({ open: false, notification: null });
   }
 
   // ==========================
@@ -453,11 +580,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     window.location.href = url;
   }
 
-  function closeNotificationModal() {
-    setNotificationModalState({ open: false, notification: null });
-    // Modal stays closed without refresh
-  }
-
   const unreadCount = useMemo(() => {
     return (notifications || []).filter(
       (n) => String(n.status || '').toLowerCase() === 'unread'
@@ -506,17 +628,8 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
   // Dynamically build CL status sections based on department
   const CL_STATUS_SECTIONS = useMemo(() => {
-    // For AM dashboard, override the section labels
-    if (isAMDashboard) {
-      return [
-        { key: 'pending', label: 'For Approval by Assistant Manager', icon: ClockIcon },
-        { key: 'returned', label: 'Returned to Supervisor', icon: PencilSquareIcon },
-        { key: 'approved', label: 'Approved by Assistant Manager', icon: CheckCircleIcon },
-        { key: 'department', label: 'Department CL Tracking', icon: Squares2X2Icon },
-      ];
-    }
     return getCLStatusSections(department);
-  }, [department, isAMDashboard]);
+  }, [department]);
 
   const activeSectionLabel = useMemo(() => {
     const supervisor = supervisors.find(s => s.id === selectedSupervisorId);
@@ -605,6 +718,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }, [supervisors, selectedSupervisorId]);
 
   if (!user) return null;
+
+  // If IDP view is open, show full page IDP view
+  if (idpView.open) {
+    return <IDPFullPageView {...idpView} onClose={closeIdpView} areaColor={areaColor} getCompetencyCompletionStatus={getCompetencyCompletionStatus} />;
+  }
 
   return (
     <div className="flex h-screen bg-white">
@@ -2035,6 +2153,345 @@ function EmployeeListItem({ employee, goTo }) {
         </div>
       </div>
     </button>
+  );
+}
+
+// IDP Viewing Modal Component
+// IDP Full Page View Component (matches supervisor's CreateIDPPage exactly)
+function IDPFullPageView({ open, idp, employee, supervisor, loading, items, header, onClose, areaColor, getCompetencyCompletionStatus }) {
+  if (!open) return null;
+
+  const creationDate = header?.created_at ? new Date(header.created_at).toLocaleDateString() : new Date().toLocaleDateString();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="w-full max-w-sm bg-white rounded-xl shadow-sm border border-gray-100 p-6 text-center">
+          <p className="text-gray-600">Loading IDP details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 text-black">
+      {/* Header - Matches supervisor's CreateIDPPage exactly */}
+      <div className="border-b bg-black sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3 min-w-0">
+              <button
+                onClick={onClose}
+                className="shrink-0 p-2 bg-white/10 hover:bg-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-white/30"
+                aria-label="Back"
+              >
+                <ArrowLeftIcon className="h-5 w-5 text-white" />
+              </button>
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-xl font-bold text-white leading-tight">Individual Development Plan (IDP)</h1>
+                  <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border bg-yellow-50 text-yellow-800 border-yellow-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
+                    {idp?.status || header?.status || 'For Manager Approval'}
+                  </span>
+                </div>
+                <p className="text-xs text-white/70 mt-0.5 truncate">
+                  View IDP for {employee?.name || ''}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Content - Matches supervisor's CreateIDPPage exactly */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        
+        {/* Top summary - Employee Information */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-black">Employee Information</h2>
+                <p className="text-sm text-gray-600 mt-1">Review details and development activity information.</p>
+              </div>
+              <div className="text-xs text-gray-500 text-right">
+                <div className="hidden sm:block">Date of IDP Creation</div>
+                <div className="font-semibold text-gray-800">{creationDate}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="min-w-0">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Name</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                  {employee?.name}
+                </div>
+              </div>
+              <div className="min-w-0">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Position</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                  {employee?.position_title}
+                </div>
+              </div>
+              <div className="min-w-0">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                  {employee?.department_name}
+                </div>
+              </div>
+              <div className="min-w-0">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Supervisor/Manager</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                  {supervisor?.name}
+                </div>
+              </div>
+              <div className="min-w-0">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">CL Score</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                  {idp?.latest_cl_score ? Number(idp.latest_cl_score).toFixed(2) : 'No approved CL'}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Review Period</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                  {header?.review_period || '1st Cycle Performance Review'}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Next Review Date</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                  {header?.next_review_date ? new Date(header.next_review_date).toLocaleDateString() : 'N/A'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* IDP Status */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">IDP Status</h3>
+
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs font-semibold text-gray-600 mb-1">Current Status</div>
+                <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border bg-yellow-50 text-yellow-800 border-yellow-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
+                  For Manager Approval
+                </span>
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold text-gray-600 mb-1">Competencies</div>
+                <p className="text-sm font-medium text-red-600">{items?.length || 0} development plan{items?.length !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Development Plan Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-black">Development Plan</h2>
+              <p className="text-sm text-gray-600 mt-1">Detailed competency development activities and progress.</p>
+            </div>
+            <div className="text-xs text-gray-500 text-right">
+              <div>{items?.length || 0} competenc{items?.length !== 1 ? 'ies' : 'y'}</div>
+            </div>
+          </div>
+
+          {!items || items.length === 0 ? (
+            <div className="text-center py-10 bg-gray-50 rounded-xl border border-gray-100 mx-5 my-5">
+              <p className="text-gray-800 font-semibold">No development activities found</p>
+              <p className="text-sm text-gray-600 mt-1">This IDP does not contain any development activities.</p>
+            </div>
+          ) : (
+            <div className="p-5 space-y-4">
+              {items.map((item, itemIndex) => {
+                const activity = (item.development_activity && typeof item.development_activity === 'object') 
+                  ? item.development_activity 
+                  : ((item.developmentActivities || [])[0]);
+                const chip = areaColor(item.competency_area || 'Technical');
+                const competencyStatus = getCompetencyCompletionStatus(item);
+                
+                // Calculate activities count
+                const mainActivities = activity ? [activity] : [];
+                const extraTables = item.extraTables || [];
+                const totalActivities = mainActivities.length + extraTables.length;
+
+                return (
+                  <div key={item.id || itemIndex} className="rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm">
+                    <div className="px-5 py-4 bg-white border-b border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-base font-semibold text-gray-900">{item.competency_name}</span>
+                            <span
+                              className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border ${chip.bg} ${chip.text} ${chip.border}`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
+                              {item.competency_area || 'Technical'}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-sm text-gray-600">
+                            Current level <span className="font-semibold text-gray-900">{item.current_level}</span> → Target level{' '}
+                            <span className="font-semibold text-gray-900">{item.target_level}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-semibold text-gray-500 px-2 py-1 rounded-lg bg-gray-50 border border-gray-100">
+                            {totalActivities} {totalActivities === 1 ? 'Activity' : 'Activities'}
+                          </span>
+                          
+                          {/* Progress Circle */}
+                          <div className="relative w-12 h-12">
+                            <svg className="w-12 h-12 transform -rotate-90" viewBox="0 0 36 36">
+                              <path
+                                d="M18 2.0845
+                                  a 15.9155 15.9155 0 0 1 0 31.831
+                                  a 15.9155 15.9155 0 0 1 0 -31.831"
+                                fill="none"
+                                stroke="#f3f4f6"
+                                strokeWidth="3"
+                              />
+                              <path
+                                d="M18 2.0845
+                                  a 15.9155 15.9155 0 0 1 0 31.831
+                                  a 15.9155 15.9155 0 0 1 0 -31.831"
+                                fill="none"
+                                stroke="#10b981"
+                                strokeWidth="3"
+                                strokeDasharray={`${competencyStatus.percentage}, 100`}
+                                className="transition-all duration-500"
+                              />
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-xs font-bold text-gray-700">{competencyStatus.percentage}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Activity Details */}
+                    {activity && (
+                      <div className="p-4 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Activity Type</label>
+                            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100">
+                              {activity.type || 'N/A'}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Completion Status</label>
+                            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100">
+                              {activity.completionStatus || activity.status || 'N/A'}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Score</label>
+                            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100">
+                              {activity.score || 'N/A'}
+                            </div>
+                          </div>
+                          {activity.targetDate && (
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-600 mb-1">Target Date</label>
+                              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100">
+                                {new Date(activity.targetDate).toLocaleDateString()}
+                              </div>
+                            </div>
+                          )}
+                          {activity.actualDate && (
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-600 mb-1">Actual Date</label>
+                              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100">
+                                {new Date(activity.actualDate).toLocaleDateString()}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {activity.activity && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Development Activity</label>
+                            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 min-h-[60px]">
+                              {activity.activity}
+                            </div>
+                          </div>
+                        )}
+
+                        {(activity.expectedResults || activity.sharingMethod || activity.applicationMethod) && (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {activity.expectedResults && (
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-600 mb-1">Expected Results</label>
+                                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 min-h-[80px]">
+                                  {activity.expectedResults}
+                                </div>
+                              </div>
+                            )}
+                            {activity.sharingMethod && (
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-600 mb-1">Knowledge Sharing Method</label>
+                                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 min-h-[80px]">
+                                  {activity.sharingMethod}
+                                </div>
+                              </div>
+                            )}
+                            {activity.applicationMethod && (
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-600 mb-1">Application Method</label>
+                                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 min-h-[80px]">
+                                  {activity.applicationMethod}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Extra Tables for Experience/Exposure */}
+                    {extraTables && extraTables.length > 0 && (
+                      <div className="p-4 border-t border-gray-100">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Additional Activities</h4>
+                        <div className="space-y-3">
+                          {extraTables.map((table, tableIndex) => (
+                            <div key={tableIndex} className="bg-gray-50 rounded-lg border border-gray-100 p-3">
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+                                <div>
+                                  <span className="font-semibold text-gray-600">Activity:</span> {table.activity || 'N/A'}
+                                </div>
+                                <div>
+                                  <span className="font-semibold text-gray-600">Type:</span> {table.type || 'N/A'}
+                                </div>
+                                <div>
+                                  <span className="font-semibold text-gray-600">Status:</span> {table.completionStatus || table.status || 'N/A'}
+                                </div>
+                                <div>
+                                  <span className="font-semibold text-gray-600">Score:</span> {table.score || 'N/A'}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

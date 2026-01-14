@@ -426,7 +426,7 @@ function HRDashboard() {
     }
   }
 
-  async function handleApproveForCompletion(id) {
+  async function _handleApproveForCompletion(id) {
     if (!window.confirm('Mark this IDP as "For Completion" and notify supervisor?')) return;
     try {
       await apiRequest(`/api/idp/${id}/hr/approve-for-completion`, { method: 'PUT' });
@@ -438,7 +438,7 @@ function HRDashboard() {
     }
   }
 
-  async function handleApproveCycle(id) {
+  async function _handleApproveCycle(id) {
     if (!window.confirm('Mark this IDP as Cycle Completed?')) return;
     try {
       await apiRequest(`/api/idp/${id}/hr/approve-cycle`, { method: 'PUT' });
@@ -722,7 +722,7 @@ function HRDashboard() {
                     {items.length === 0 ? (
                       <p className="text-gray-400 text-sm italic">No employees in this status.</p>
                     ) : (
-                      <CLTable data={items} goTo={goTo} onCLClick={handleCLClick} />
+                      <CLTable data={items} onCLClick={handleCLClick} />
                     )}
                   </div>
                 );
@@ -734,7 +734,7 @@ function HRDashboard() {
                 if (items.length === 0) {
                   return <p className="text-gray-400 text-sm italic">No employees in this status.</p>;
                 }
-                return <CLTable data={items} goTo={goTo} onCLClick={handleCLClick} />;
+                return <CLTable data={items} onCLClick={handleCLClick} />;
               })()
             )
             ) : (
@@ -1151,7 +1151,7 @@ function HRDashboard() {
 }
 
 // Helper to determine explicit completed statuses (shared for HR dashboard tables)
-function isCompletedStatus(status) {
+function _isCompletedStatus(status) {
   if (!status) return false;
   const s = String(status).trim().toLowerCase();
   return COMPLETION_STATUS_OPTIONS.slice(2).some(opt => String(opt).toLowerCase() === s || s.startsWith('completed'));
@@ -1168,7 +1168,7 @@ function SummaryCard({ label, value, gradientClass }) {
   );
 }
 
-function CLTable({ data, goTo, onCLClick }) {
+function CLTable({ data, onCLClick }) {
   return (
     <div className="bg-white shadow rounded overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-200 text-sm">
