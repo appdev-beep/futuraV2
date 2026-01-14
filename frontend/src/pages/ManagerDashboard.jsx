@@ -208,8 +208,8 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       ? { 
           id: idp.employee_id, 
           name: idp.employee_name, 
-          position_title: idp.employee_position || idp.position_title,
-          department_name: idp.department_name || idp.employee_department
+          position_title: idp.position_title || idp.employee_position,
+          department_name: idp.department_name || idp.employee_department || empFromList?.department_name
         }
       : (empFromList ? { 
           id: empFromList.id, 
@@ -235,11 +235,27 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     try {
       // Fetch full IDP details
       const fullIdp = await apiRequest(`/api/idp/${idp.id}`);
+      
+      // Fetch CL score from competency levelling history
+      let latestCLScore = null;
+      try {
+        const history = await apiRequest(`/api/cl/employee/${idp.employee_id}/history`);
+        const approved = (history || []).find((h) => String(h.status).toUpperCase() === 'APPROVED');
+        if (approved?.total_score) {
+          latestCLScore = approved.total_score;
+        } else if (approved?.id) {
+          const clFull = await apiRequest(`/api/cl/${approved.id}`);
+          latestCLScore = clFull?.total_score || null;
+        }
+      } catch (e) {
+        console.warn('Could not fetch CL score:', e);
+      }
+      
       setIdpView(prev => ({
         ...prev,
         loading: false,
         items: fullIdp.items || [],
-        header: fullIdp.header || {},
+        header: { ...fullIdp.header, latest_cl_score: latestCLScore },
       }));
     } catch (error) {
       console.error('Failed to load IDP details:', error);
@@ -2159,6 +2175,50 @@ function EmployeeListItem({ employee, goTo }) {
 // IDP Viewing Modal Component
 // IDP Full Page View Component (matches supervisor's CreateIDPPage exactly)
 function IDPFullPageView({ open, idp, employee, supervisor, loading, items, header, onClose, areaColor, getCompetencyCompletionStatus }) {
+  const [showScoringGuide, setShowScoringGuide] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [remarks, setRemarks] = useState('');
+
+  // Approve IDP handler
+  const handleApproveIDP = async () => {
+    try {
+      setActionLoading(true);
+      await apiRequest(`/api/idp/${idp.id}/manager/approve`, {
+        method: 'PUT',
+      });
+      alert('IDP approved successfully');
+      onClose(); // Close the view and refresh
+    } catch (err) {
+      console.error('Error approving IDP:', err);
+      alert('Failed to approve IDP: ' + (err.message || 'Unknown error'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Return IDP handler
+  const handleReturnIDP = async () => {
+    if (!remarks.trim()) {
+      alert('Please provide remarks before returning the IDP');
+      return;
+    }
+    
+    try {
+      setActionLoading(true);
+      await apiRequest(`/api/idp/${idp.id}/manager/return`, {
+        method: 'PUT',
+        body: JSON.stringify({ remarks }),
+      });
+      alert('IDP returned to supervisor');
+      onClose(); // Close the view and refresh
+    } catch (err) {
+      console.error('Error returning IDP:', err);
+      alert('Failed to return IDP: ' + (err.message || 'Unknown error'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+  
   if (!open) return null;
 
   const creationDate = header?.created_at ? new Date(header.created_at).toLocaleDateString() : new Date().toLocaleDateString();
@@ -2250,7 +2310,7 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
               <div className="min-w-0">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">CL Score</label>
                 <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
-                  {idp?.latest_cl_score ? Number(idp.latest_cl_score).toFixed(2) : 'No approved CL'}
+                  {header?.latest_cl_score ? Number(header.latest_cl_score).toFixed(2) : 'No approved CL'}
                 </div>
               </div>
             </div>
@@ -2289,8 +2349,55 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
                 <p className="text-sm font-medium text-red-600">{items?.length || 0} development plan{items?.length !== 1 ? 's' : ''}</p>
               </div>
             </div>
+
+            <div className="mt-4">
+              <button
+                onClick={() => setShowScoringGuide(true)}
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-black/10"
+              >
+                <InformationCircleIcon className="h-5 w-5" />
+                View Scoring Guide
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Scoring Guide Modal */}
+        {showScoringGuide && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setShowScoringGuide(false)} aria-hidden="true" />
+            <div className="relative h-full w-full flex items-center justify-center p-4">
+              <div className="w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl bg-white rounded-xl border border-gray-100">
+                <div className="flex justify-between items-center px-5 py-4 border-b border-gray-200">
+                  <h2 className="text-lg font-bold text-black">
+                    Scoring Guide for IDP Completion and Competency Mastery
+                  </h2>
+                  <button
+                    onClick={() => setShowScoringGuide(false)}
+                    className="text-black text-2xl font-bold bg-gray-100 hover:bg-gray-200 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-black/10"
+                    aria-label="Close scoring guide"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-3 overflow-y-auto max-h-[calc(85vh-64px)]">
+                  {SCORING_GUIDE.map((guide) => (
+                    <div key={guide.score} className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="font-bold text-lg text-black bg-white rounded-md px-3 py-1 border border-gray-200">
+                          {guide.score}
+                        </span>
+                        <span className="font-semibold text-black">{guide.status}</span>
+                      </div>
+                      <p className="text-black text-sm leading-relaxed">{guide.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Development Plan Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -2489,6 +2596,45 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
               })}
             </div>
           )}
+        </div>
+
+        {/* Manager Remarks Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 className="text-lg font-semibold text-gray-800 mb-3">Manager Remarks</h3>
+          <textarea
+            className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black resize-none"
+            rows="4"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Enter your remarks for approval or return to supervisor..."
+          />
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex justify-end gap-3 pt-4">
+          <button
+            onClick={onClose}
+            className="px-6 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-gray-300/50"
+            disabled={actionLoading}
+          >
+            Cancel
+          </button>
+          
+          <button
+            onClick={handleReturnIDP}
+            className="px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
+            disabled={actionLoading}
+          >
+            {actionLoading ? 'Processing...' : 'Return to Supervisor'}
+          </button>
+          
+          <button
+            onClick={handleApproveIDP}
+            className="px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500/50 disabled:opacity-50"
+            disabled={actionLoading}
+          >
+            {actionLoading ? 'Processing...' : 'Approve IDP'}
+          </button>
         </div>
       </div>
     </div>
