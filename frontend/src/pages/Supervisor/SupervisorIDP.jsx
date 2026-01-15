@@ -38,7 +38,8 @@ export default function SupervisorIDP({ idpSummary, idpEmployees, idpByStatus, a
 
   return (
     <>
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <SummaryCard label="IDP DRAFTS" value={idpSummary.idpDrafts} gradientClass="from-purple-400 to-purple-600" />
         <SummaryCard label="FOR IDP CREATION" value={idpSummary.idpCreation} gradientClass="from-blue-400 to-blue-600" />
         <SummaryCard label="IDP For Approval" value={idpSummary.idpPending} gradientClass="from-yellow-400 to-orange-500" />
         <SummaryCard label="IDP Returns" value={idpSummary.idpReturned} gradientClass="from-red-400 to-red-600" />

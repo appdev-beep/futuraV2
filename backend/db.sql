@@ -968,6 +968,61 @@ DELIMITER ;
 --
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
+--
+-- Table structure for table `idp_extra_tables`
+--
+
+DROP TABLE IF EXISTS `idp_extra_tables`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `idp_extra_tables` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `idp_item_id` int NOT NULL,
+  `quarter` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `development_activity` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `target_completion_date` date DEFAULT NULL,
+  `actual_completion_date` date DEFAULT NULL,
+  `completion_status` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `score` int DEFAULT '1',
+  `expected_results` text COLLATE utf8mb4_unicode_ci,
+  `sharing_method` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `application_method` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pdf_path` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `education_justification_pdf` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `exposure_start_date` date DEFAULT NULL,
+  `learning` text COLLATE utf8mb4_unicode_ci,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_idp_extra_tables_item` (`idp_item_id`),
+  CONSTRAINT `fk_idp_extra_tables_item` FOREIGN KEY (`idp_item_id`) REFERENCES `idp_items` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `idp_areas_of_exposure`
+--
+
+DROP TABLE IF EXISTS `idp_areas_of_exposure`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `idp_areas_of_exposure` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `extra_table_id` int NOT NULL,
+  `area` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `status` enum('Not Started','On Going','Completed') COLLATE utf8mb4_unicode_ci DEFAULT 'Not Started',
+  `datetime` datetime DEFAULT NULL,
+  `duration_hours` decimal(10,2) DEFAULT NULL,
+  `trainer_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `comments` text COLLATE utf8mb4_unicode_ci,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_idp_areas_extra_table` (`extra_table_id`),
+  CONSTRAINT `fk_idp_areas_extra_table` FOREIGN KEY (`extra_table_id`) REFERENCES `idp_extra_tables` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
 /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
 /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;

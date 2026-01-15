@@ -47,6 +47,7 @@ function SupervisorDashboard() {
     idpPending: 0,
     idpCycleCompleted: 0,
     idpReturned: 0,
+    idpDrafts: 0,
   });
   const [idpByStatus, setIdpByStatus] = useState({});
   const [clByStatus, setClByStatus] = useState({});
@@ -100,7 +101,8 @@ function SupervisorDashboard() {
 
   const IDP_STATUS_SECTIONS = useMemo(() => {
     const sections = [
-      { key: 'DRAFT', label: 'Returned for Review', icon: PencilSquareIcon },
+      { key: 'DRAFT', label: 'Drafts', icon: PencilSquareIcon },
+      { key: 'RETURNED', label: 'Returned for Review', icon: PencilSquareIcon },
       { key: 'PENDING_EMPLOYEE', label: 'For Approval by Employee', icon: UserIcon },
       { key: 'PENDING_HR', label: 'For Approval by HR', icon: BriefcaseIcon },
     ];
@@ -174,6 +176,7 @@ function SupervisorDashboard() {
         idpPending: (idpGrouped?.PENDING_AM?.length || 0) + (idpGrouped?.PENDING_MANAGER?.length || 0),
         idpCycleCompleted: (idpGrouped?.CYCLE_COMPLETED?.length || 0),
         idpReturned: (idpGrouped?.RETURNED?.length || 0),
+        idpDrafts: (idpGrouped?.DRAFT?.length || 0),
       });
     } catch (err) {
       console.error(err);

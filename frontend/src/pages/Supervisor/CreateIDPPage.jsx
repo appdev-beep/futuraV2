@@ -366,6 +366,34 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 rawActivity = {};
               }
             }
+
+            // Map extra tables with areas of exposure
+            const extraTables = (item.extra_tables || []).map(et => ({
+              id: et.id,
+              quarter: et.quarter,
+              targetCompletionDate: et.targetCompletionDate || '',
+              actualCompletionDate: et.actualCompletionDate || '',
+              developmentActivity: et.developmentActivity || '',
+              completionStatus: et.completionStatus || 'Not Started/In Progress (<50%)',
+              score: et.score || 1,
+              expectedResults: et.expectedResults || '',
+              sharingMethod: et.sharingMethod || '',
+              applicationMethod: et.applicationMethod || '',
+              pdfPath: et.pdfPath || '',
+              educationJustificationPdf: et.educationJustificationPdf || '',
+              exposureStartDate: et.exposureStartDate || '',
+              learning: et.learning || '',
+              areasOfExposure: (et.areasOfExposure || []).map(area => ({
+                id: area.id,
+                area: area.area || '',
+                status: area.status || 'Not Started',
+                datetime: area.datetime || '',
+                durationHours: area.durationHours || '',
+                trainerName: area.trainerName || '',
+                comments: area.comments || ''
+              }))
+            }));
+
             return {
               id: item.id,
               competencyId: item.competency_id,
@@ -375,7 +403,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               currentLevel: item.current_level,
               targetLevel: item.target_level,
               developmentActivities: [fromBackendActivity(rawActivity || {})],
-              extraTables: [],
+              extraTables: extraTables,
             };
           });
 
@@ -511,6 +539,36 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       // Safety: keep ONLY one activity per competency
       if (Array.isArray(newData.items)) newData.items = enforceOneActivity(newData.items);
 
+      // Auto-create one extra table for Experience/Exposure if not already created
+      if (path.includes('developmentActivities.0.type') && (value === 'Experience' || value === 'Exposure')) {
+        const itemIndex = parseInt(pathArray[1]);
+        if (newData.items && newData.items[itemIndex]) {
+          if (!Array.isArray(newData.items[itemIndex].extraTables) || newData.items[itemIndex].extraTables.length === 0) {
+            newData.items[itemIndex].extraTables = [
+              {
+                targetCompletionDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0],
+                actualCompletionDate: '',
+                developmentActivity: '',
+                completionStatus: 'Not Started/In Progress (<50%)',
+                score: 1,
+                pdfPath: '',
+                expectedResults: '',
+                sharingMethod: '',
+                applicationMethod: '',
+              }
+            ];
+          }
+        }
+      }
+      
+      // Clear extra tables when switching away from Experience/Exposure
+      if (path.includes('developmentActivities.0.type') && value !== 'Experience' && value !== 'Exposure') {
+        const itemIndex = parseInt(pathArray[1]);
+        if (newData.items && newData.items[itemIndex]) {
+          newData.items[itemIndex].extraTables = [];
+        }
+      }
+
       return newData;
     });
   };
@@ -520,7 +578,10 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       const items = (prev.items || []).map((it, idx) => {
         if (idx !== itemIndex) return it;
         const extra = Array.isArray(it.extraTables) ? [...it.extraTables] : [];
+        const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
+        const quarterLabel = quarters[extra.length % 4];
         extra.push({
+          quarter: quarterLabel,
           targetCompletionDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0],
           actualCompletionDate: '',
           developmentActivity: '',
@@ -531,6 +592,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           applicationMethod: '',
           pdfPath: '',
           educationJustificationPdf: '',
+          areasOfExposure: [],
+          exposureStartDate: '',
+          learning: '',
         });
         return { ...it, extraTables: extra };
       });
@@ -606,6 +670,31 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             id: it.id,
             competency_id: it.competency_id || it.competencyId || it.competency_id,
             development_activity: JSON.stringify(toBackendActivity((it.developmentActivities || [])[0] || {})),
+            extraTables: (it.extraTables || []).map(et => ({
+              id: et.id,
+              quarter: et.quarter,
+              targetCompletionDate: et.targetCompletionDate,
+              actualCompletionDate: et.actualCompletionDate,
+              developmentActivity: et.developmentActivity,
+              completionStatus: et.completionStatus,
+              score: et.score,
+              expectedResults: et.expectedResults,
+              sharingMethod: et.sharingMethod,
+              applicationMethod: et.applicationMethod,
+              pdfPath: et.pdfPath,
+              educationJustificationPdf: et.educationJustificationPdf,
+              exposureStartDate: et.exposureStartDate,
+              learning: et.learning,
+              areasOfExposure: (et.areasOfExposure || []).map(area => ({
+                id: area.id,
+                area: area.area,
+                status: area.status,
+                datetime: area.datetime,
+                durationHours: area.durationHours,
+                trainerName: area.trainerName,
+                comments: area.comments
+              }))
+            }))
           })),
         };
 
@@ -631,6 +720,29 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         items: enforcedItems.map((it) => ({
           ...it,
           developmentActivities: (it.developmentActivities || []).map((a) => toBackendActivity(a)),
+          extraTables: (it.extraTables || []).map(et => ({
+            quarter: et.quarter,
+            targetCompletionDate: et.targetCompletionDate,
+            actualCompletionDate: et.actualCompletionDate,
+            developmentActivity: et.developmentActivity,
+            completionStatus: et.completionStatus,
+            score: et.score,
+            expectedResults: et.expectedResults,
+            sharingMethod: et.sharingMethod,
+            applicationMethod: et.applicationMethod,
+            pdfPath: et.pdfPath,
+            educationJustificationPdf: et.educationJustificationPdf,
+            exposureStartDate: et.exposureStartDate,
+            learning: et.learning,
+            areasOfExposure: (et.areasOfExposure || []).map(area => ({
+              area: area.area,
+              status: area.status,
+              datetime: area.datetime,
+              durationHours: area.durationHours,
+              trainerName: area.trainerName,
+              comments: area.comments
+            }))
+          }))
         })),
       };
 
@@ -649,6 +761,129 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     } catch (err) {
       console.error('Failed to submit IDP:', err);
       alert('Failed to submit IDP. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDraft = async () => {
+    try {
+      setSaving(true);
+
+      const enforcedItems = enforceOneActivity(idpData.items || []);
+
+      // Validation for create mode: must select at least 1 competency
+      if (!editMode) {
+        const count = enforcedItems.length;
+        if (count < 1) {
+          alert('Please select at least one competency to save draft.');
+          setSaving(false);
+          return;
+        }
+        if (count > 2) {
+          alert('You may select a maximum of 2 competencies.');
+          setSaving(false);
+          return;
+        }
+      }
+
+      if (editMode && id) {
+        // Editing an existing draft
+        const payload = {
+          reviewPeriod: idpData.reviewPeriod,
+          nextReviewDate: normalizeDate(idpData.nextReviewDate),
+          items: (idpData.items || []).map((it) => ({
+            id: it.id,
+            competency_id: it.competency_id || it.competencyId,
+            development_activity: JSON.stringify(toBackendActivity((it.developmentActivities || [])[0] || {})),
+            extraTables: (it.extraTables || []).map(et => ({
+              id: et.id,
+              quarter: et.quarter,
+              targetCompletionDate: et.targetCompletionDate,
+              actualCompletionDate: et.actualCompletionDate,
+              developmentActivity: et.developmentActivity,
+              completionStatus: et.completionStatus,
+              score: et.score,
+              expectedResults: et.expectedResults,
+              sharingMethod: et.sharingMethod,
+              applicationMethod: et.applicationMethod,
+              pdfPath: et.pdfPath,
+              educationJustificationPdf: et.educationJustificationPdf,
+              exposureStartDate: et.exposureStartDate,
+              learning: et.learning,
+              areasOfExposure: (et.areasOfExposure || []).map(area => ({
+                id: area.id,
+                area: area.area,
+                status: area.status,
+                datetime: area.datetime,
+                durationHours: area.durationHours,
+                trainerName: area.trainerName,
+                comments: area.comments
+              }))
+            }))
+          })),
+        };
+
+        await apiRequest(`/api/idp/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        alert('IDP draft saved successfully!');
+        navigate('/supervisor');
+        return;
+      }
+
+      // Create mode - save as draft
+      const payload = {
+        employeeId: parseInt(employeeId),
+        supervisorId: employee?.supervisor_id,
+        reviewPeriod: idpData.reviewPeriod,
+        nextReviewDate: normalizeDate(idpData.nextReviewDate),
+        items: enforcedItems.map((it) => ({
+          ...it,
+          developmentActivities: (it.developmentActivities || []).map((a) => toBackendActivity(a)),
+          extraTables: (it.extraTables || []).map(et => ({
+            quarter: et.quarter,
+            targetCompletionDate: et.targetCompletionDate,
+            actualCompletionDate: et.actualCompletionDate,
+            developmentActivity: et.developmentActivity,
+            completionStatus: et.completionStatus,
+            score: et.score,
+            expectedResults: et.expectedResults,
+            sharingMethod: et.sharingMethod,
+            applicationMethod: et.applicationMethod,
+            pdfPath: et.pdfPath,
+            educationJustificationPdf: et.educationJustificationPdf,
+            exposureStartDate: et.exposureStartDate,
+            learning: et.learning,
+            areasOfExposure: (et.areasOfExposure || []).map(area => ({
+              area: area.area,
+              status: area.status,
+              datetime: area.datetime,
+              durationHours: area.durationHours,
+              trainerName: area.trainerName,
+              comments: area.comments
+            }))
+          }))
+        })),
+      };
+
+      const createRes = await apiRequest('/api/idp/create', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const idpId = createRes?.id;
+      if (!idpId) throw new Error('Failed to save draft. No ID returned.');
+
+      // Save as draft without submitting
+      alert('IDP saved as draft successfully! You can continue editing later.');
+      navigate('/supervisor');
+    } catch (err) {
+      console.error('Failed to save draft:', err);
+      alert('Failed to save draft. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -746,6 +981,16 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 <span className="hidden sm:inline">Scoring Guide</span>
                 <span className="sm:hidden">Guide</span>
               </button>
+
+              {!editMode && (
+                <button
+                  onClick={saveDraft}
+                  disabled={saving}
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gray-400 text-white hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed font-semibold focus:outline-none focus:ring-2 focus:ring-white/30"
+                >
+                  {saving ? 'Saving...' : 'Save Draft'}
+                </button>
+              )}
 
               <PrimaryActionButton onClick={submitIDP} disabled={saving} label={submitLabel} />
             </div>
@@ -1042,16 +1287,29 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                   const activityType = activity?.type?.toLowerCase();
                   
                   let totalActivities = 0;
+                  let completedActivities = 0;
+                  
                   if (activityType === 'education') {
                     // For Education: only count the main activity
                     totalActivities = mainActivities.length;
+                    completedActivities = mainActivities.filter(a => isCompletedStatus(a.completionStatus || a.status)).length;
                   } else if (activityType === 'experience' || activityType === 'exposure') {
-                    // For Experience/Exposure: only count extra table activities
+                    // For Experience/Exposure: count extra table activities
+                    // Each extra table's completion is based on its areas of exposure being 100% complete
                     totalActivities = extraTables.length;
+                    completedActivities = extraTables.filter(t => {
+                      const areas = t.areasOfExposure || [];
+                      if (areas.length === 0) return false;
+                      const completedAreas = areas.filter(a => a.status === 'Completed').length;
+                      return completedAreas === areas.length;
+                    }).length;
                   } else {
                     // For other types: count main activities
                     totalActivities = mainActivities.length;
+                    completedActivities = mainActivities.filter(a => isCompletedStatus(a.completionStatus || a.status)).length;
                   }
+                  
+                  const overallCompletion = totalActivities === 0 ? 0 : Math.round((completedActivities / totalActivities) * 100);
 
                   return (
                     <div
@@ -1104,22 +1362,11 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                     fill="none"
                                     stroke={
                                       totalActivities === 0 ? '#d1d5db' :
-                                      (activityType === 'experience' || activityType === 'exposure' 
-                                        ? (item.extraTables || []).filter(t => isCompletedStatus(t.completionStatus || t.status)).length === totalActivities && totalActivities > 0
-                                        : (item.developmentActivities || []).filter(a => isCompletedStatus(a.completionStatus || a.status)).length === totalActivities && totalActivities > 0)
-                                        ? '#10b981' 
-                                        : (activityType === 'experience' || activityType === 'exposure' 
-                                          ? (item.extraTables || []).filter(t => isCompletedStatus(t.completionStatus || t.status)).length > 0
-                                          : (item.developmentActivities || []).filter(a => isCompletedStatus(a.completionStatus || a.status)).length > 0)
-                                          ? '#3b82f6' 
-                                          : '#9ca3af'
+                                      overallCompletion === 100 ? '#10b981' :
+                                      overallCompletion > 0 ? '#3b82f6' : '#9ca3af'
                                     }
                                     strokeWidth="3"
-                                    strokeDasharray={`${totalActivities === 0 ? 0 : Math.round(((
-                                      activityType === 'experience' || activityType === 'exposure' 
-                                        ? (item.extraTables || []).filter(t => isCompletedStatus(t.completionStatus || t.status)).length
-                                        : (item.developmentActivities || []).filter(a => isCompletedStatus(a.completionStatus || a.status)).length
-                                    ) / totalActivities) * 100)}, 100`}
+                                    strokeDasharray={`${totalActivities === 0 ? 0 : overallCompletion}, 100`}
                                     className="transition-all duration-300 ease-out"
                                   />
                                 </svg>
@@ -1127,21 +1374,10 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 <div className="absolute inset-0 flex items-center justify-center">
                                   <span className={`text-xs font-bold ${
                                     totalActivities === 0 ? 'text-gray-400' :
-                                    (activityType === 'experience' || activityType === 'exposure' 
-                                      ? (item.extraTables || []).filter(t => isCompletedStatus(t.completionStatus || t.status)).length === totalActivities && totalActivities > 0
-                                      : (item.developmentActivities || []).filter(a => isCompletedStatus(a.completionStatus || a.status)).length === totalActivities && totalActivities > 0)
-                                      ? 'text-emerald-600' 
-                                      : (activityType === 'experience' || activityType === 'exposure' 
-                                        ? (item.extraTables || []).filter(t => isCompletedStatus(t.completionStatus || t.status)).length > 0
-                                        : (item.developmentActivities || []).filter(a => isCompletedStatus(a.completionStatus || a.status)).length > 0)
-                                        ? 'text-blue-600' 
-                                        : 'text-gray-500'
+                                    overallCompletion === 100 ? 'text-emerald-600' :
+                                    overallCompletion > 0 ? 'text-blue-600' : 'text-gray-500'
                                   }`}>
-                                    {totalActivities === 0 ? '0%' : Math.round(((
-                                      activityType === 'experience' || activityType === 'exposure' 
-                                        ? (item.extraTables || []).filter(t => isCompletedStatus(t.completionStatus || t.status)).length
-                                        : (item.developmentActivities || []).filter(a => isCompletedStatus(a.completionStatus || a.status)).length
-                                    ) / totalActivities) * 100)}%
+                                    {totalActivities === 0 ? '0%' : `${overallCompletion}%`}
                                   </span>
                                 </div>
                               </div>
@@ -1192,8 +1428,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                               </div>
                             ) : activity.type === 'Education' ? (
                               <div className="bg-white rounded-xl border border-gray-100 p-4">
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                  <div className="lg:col-span-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                                  <div>
                                     <Field label="Development Activity">
                                       <input
                                         type="text"
@@ -1229,29 +1465,46 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   />
                                 </Field>
 
-                                <div className="flex flex-col">
-                                  <Field label="Completion Status">
-                                    <select
-                                      value={activity.completionStatus}
-                                      onChange={(e) =>
-                                        updateIdpData(`items.${itemIndex}.developmentActivities.0.completionStatus`, e.target.value)
-                                      }
-                                      className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
-                                    >
-                                      {COMPLETION_STATUS_OPTIONS.map((status) => (
-                                        <option key={status} value={status}>
-                                          {status}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </Field>
+                                <Field label="Completion Status">
+                                  <select
+                                    value={activity.completionStatus}
+                                    onChange={(e) =>
+                                      updateIdpData(`items.${itemIndex}.developmentActivities.0.completionStatus`, e.target.value)
+                                    }
+                                    className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                  >
+                                    {COMPLETION_STATUS_OPTIONS.map((status) => (
+                                      <option key={status} value={status}>
+                                        {status}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </Field>
 
-                                  {((activity.pdfPath) || isCompletedStatus(activity.completionStatus)) && (
-                                    <div className="mt-2 flex items-center gap-2 w-full">
+                                <Field label="Score">
+                                  <select
+                                    value={activity.score}
+                                    onChange={(e) =>
+                                      updateIdpData(`items.${itemIndex}.developmentActivities.0.score`, parseInt(e.target.value))
+                                    }
+                                    className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                  >
+                                    {[1, 2, 3, 4, 5].map((score) => (
+                                      <option key={score} value={score}>
+                                        {score}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </Field>
+
+                                {((activity.pdfPath) || isCompletedStatus(activity.completionStatus)) && (
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-600 mb-1">Proof of Completion</label>
+                                    <div className="flex items-center gap-2 w-full">
                                       <select
                                         value={activity.pdfPath || ''}
                                         onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, e.target.value)}
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100 truncate"
+                                        className="flex-1 bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100 truncate"
                                       >
                                         <option value="">-- No file --</option>
                                         {activity.pdfPath && (
@@ -1260,7 +1513,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                       </select>
 
                                       <label
-                                        className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm ${
+                                        className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm shrink-0 ${
                                           !isCompletedStatus(activity.completionStatus) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                                         }`}
                                       >
@@ -1303,33 +1556,71 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                           href={`${apiBase}/${activity.pdfPath}`}
                                           target="_blank"
                                           rel="noopener noreferrer"
-                                          className="text-sm text-blue-600 hover:underline truncate"
+                                          className="text-sm text-blue-600 hover:underline truncate shrink-0"
                                         >
                                           View
                                         </a>
                                       )}
                                     </div>
-                                  )}
-                                </div>
+                                  </div>
+                                )}
 
-                                  <Field label="Score">
-                                    <select
-                                      value={activity.score}
-                                      onChange={(e) =>
-                                        updateIdpData(`items.${itemIndex}.developmentActivities.0.score`, parseInt(e.target.value))
-                                      }
-                                      className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
-                                    >
-                                      {[1, 2, 3, 4, 5].map((score) => (
-                                        <option key={score} value={score}>
-                                          {score}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </Field>
+                                <div className="lg:col-span-5 mt-6">
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full border-collapse text-sm">
+                                      <thead>
+                                        <tr className="bg-gray-100 border border-gray-200">
+                                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Expected Results</th>
+                                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Knowledge Sharing Method</th>
+                                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Application Method</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        <tr className="border border-gray-200">
+                                          <td className="border border-gray-200 px-3 py-2">
+                                            <textarea
+                                              value={activity.expectedResults}
+                                              onChange={(e) =>
+                                                updateIdpData(`items.${itemIndex}.developmentActivities.0.expectedResults`, e.target.value)
+                                              }
+                                              placeholder="What new or enhanced skill or knowledge will you learn from this IDP?"
+                                              rows={2}
+                                              className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                            />
+                                          </td>
+                                          <td className="border border-gray-200 px-3 py-2">
+                                            <textarea
+                                              value={activity.sharingMethod}
+                                              onChange={(e) =>
+                                                updateIdpData(`items.${itemIndex}.developmentActivities.0.sharingMethod`, e.target.value)
+                                              }
+                                              placeholder="How will you share these enhanced skills or knowledge with your TLs, peers, or direct reports?"
+                                              rows={2}
+                                              className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                            />
+                                          </td>
+                                          <td className="border border-gray-200 px-3 py-2">
+                                            <textarea
+                                              value={activity.applicationMethod}
+                                              onChange={(e) =>
+                                                updateIdpData(`items.${itemIndex}.developmentActivities.0.applicationMethod`, e.target.value)
+                                              }
+                                              placeholder="How will you apply the skills or knowledge that you learned to improve your work performance?"
+                                              rows={2}
+                                              className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                            />
+                                          </td>
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
                                 </div>
                               </div>
-                            ) : isExpOrExposure ? null : (
+                            ) : isExpOrExposure ? (
+                              <div>
+                              </div>
+                            ) : (
                               <div className="bg-white rounded-xl border border-gray-100 p-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                   <div className="lg:col-span-3">
@@ -1393,193 +1684,384 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
                         {/* Extra tables for Exposure/Experience */}
                         {Array.isArray(item.extraTables) && item.extraTables.length > 0 && (
-                          <div className="lg:col-span-3 mt-4 w-full">
-                            {item.extraTables.map((t, ti) => (
-                              <div key={ti} className="mb-4 border rounded-lg overflow-hidden">
-                                <div className="flex items-center justify-between bg-gray-100 px-3 py-2 border-b">
-                                  <div className="text-sm font-semibold">Q{ti + 1}</div>
-                                  <button
-                                    type="button"
-                                    onClick={() => removeExtraTable(itemIndex, ti)}
-                                    className="text-sm text-red-600 hover:underline"
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-
-                                <div className="p-3 bg-white">
-                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                    <Field label="Target Completion Date">
-                                      <input
-                                        type="date"
-                                        value={t.targetCompletionDate || ''}
-                                        onChange={(e) =>
-                                          updateIdpData(`items.${itemIndex}.extraTables.${ti}.targetCompletionDate`, e.target.value)
-                                        }
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100"
-                                      />
-                                    </Field>
-
-                                    <Field label="Actual Completion Date">
-                                      <input
-                                        type="date"
-                                        value={t.actualCompletionDate || ''}
-                                        onChange={(e) =>
-                                          updateIdpData(`items.${itemIndex}.extraTables.${ti}.actualCompletionDate`, e.target.value)
-                                        }
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100"
-                                      />
-                                    </Field>
-
-                                    <Field label="Development Activity">
-                                      <input
-                                        type="text"
-                                        value={t.developmentActivity || ''}
-                                        onChange={(e) =>
-                                          updateIdpData(`items.${itemIndex}.extraTables.${ti}.developmentActivity`, e.target.value)
-                                        }
-                                        placeholder="Describe the development activity..."
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100"
-                                      />
-                                    </Field>
-
-                                    <Field label="Completion Status">
-                                      <select
-                                        value={t.completionStatus || ''}
-                                        onChange={(e) =>
-                                          updateIdpData(`items.${itemIndex}.extraTables.${ti}.completionStatus`, e.target.value)
-                                        }
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100"
-                                      >
-                                        {COMPLETION_STATUS_OPTIONS.map((status) => (
-                                          <option key={status} value={status}>
-                                            {status}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </Field>
-
-                                    <Field label="Score">
-                                      <select
-                                        value={t.score || 1}
-                                        onChange={(e) => updateIdpData(`items.${itemIndex}.extraTables.${ti}.score`, parseInt(e.target.value))}
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100"
-                                      >
-                                        {[1, 2, 3, 4, 5].map((s) => (
-                                          <option key={s} value={s}>
-                                            {s}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </Field>
-
-                                    {((t.pdfPath) || isCompletedStatus(t.completionStatus)) && (
-                                      <div className="lg:col-span-3 flex items-center gap-2 w-full">
-                                        <select
-                                          value={t.pdfPath || ''}
-                                          onChange={(e) => updateIdpData(`items.${itemIndex}.extraTables.${ti}.pdfPath`, e.target.value)}
-                                          className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100 truncate"
-                                        >
-                                          <option value="">-- No file --</option>
-                                          {t.pdfPath && (
-                                            <option value={t.pdfPath}>{t.pdfPath.split('/').pop()}</option>
-                                          )}
-                                        </select>
-
-                                        <label
-                                          className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm ${
-                                            !isCompletedStatus(t.completionStatus) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-                                          }`}
-                                        >
+                          <div className="mt-6 w-full">
+                            <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto">
+                              <table className="w-full border-collapse">
+                                <thead>
+                                  <tr className="bg-gray-800 text-white">
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-xs font-semibold">Activity</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-xs font-semibold">Target Date</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-xs font-semibold">Completion Date</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-xs font-semibold">Status</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-xs font-semibold">Score</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-center text-xs font-semibold">Proof</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-center text-xs font-semibold">Action</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {item.extraTables.map((t, ti) => (
+                                    <>
+                                      <tr key={`${ti}-row0`} className="bg-gray-700 text-white">
+                                        <td colSpan="7" className="border border-gray-300 px-4 py-2">
+                                          <span className="text-sm font-bold">{t.quarter || `Q${ti + 1}`}</span>
+                                        </td>
+                                      </tr>
+                                      <tr key={`${ti}-row1`} className="hover:bg-gray-100 transition-colors">
+                                        <td className="border border-gray-300 px-4 py-2">
                                           <input
-                                            type="file"
-                                            accept="application/pdf"
-                                            style={{ display: 'none' }}
-                                            onChange={async (e) => {
-                                              if (!isCompletedStatus(t.completionStatus)) {
-                                                alert('Please mark activity as Completed to upload proof.');
-                                                return;
-                                              }
-                                              const f = e.target.files && e.target.files[0];
-                                              if (!f) return;
-
-                                              const form = new FormData();
-                                              form.append('pdf', f);
-
-                                              try {
-                                                const res = await fetch(`${apiBase}/api/idp/upload`, {
-                                                  method: 'POST',
-                                                  headers: { Authorization: `Bearer ${token}` },
-                                                  body: form,
-                                                });
-                                                const data = await res.json();
-                                                if (!res.ok) throw new Error(data.message || 'Upload failed');
-                                                updateIdpData(`items.${itemIndex}.extraTables.${ti}.pdfPath`, data.pdf_path);
-                                                alert('PDF uploaded');
-                                              } catch (err) {
-                                                console.error('Upload failed', err);
-                                                alert('Upload failed: ' + (err.message || ''));
-                                              }
-                                            }}
+                                            type="text"
+                                            value={t.developmentActivity || ''}
+                                            onChange={(e) =>
+                                              updateIdpData(`items.${itemIndex}.extraTables.${ti}.developmentActivity`, e.target.value)
+                                            }
+                                            placeholder="Activity..."
+                                            className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
                                           />
-                                          Upload
-                                        </label>
-
-                                        {t.pdfPath && (
-                                          <a
-                                            href={`${apiBase}/${t.pdfPath}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-sm text-blue-600 hover:underline truncate"
+                                        </td>
+                                        <td className="border border-gray-300 px-4 py-2">
+                                          <input
+                                            type="date"
+                                            value={t.targetCompletionDate || ''}
+                                            onChange={(e) =>
+                                              updateIdpData(`items.${itemIndex}.extraTables.${ti}.targetCompletionDate`, e.target.value)
+                                            }
+                                            className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
+                                          />
+                                        </td>
+                                        <td className="border border-gray-300 px-4 py-2">
+                                          <input
+                                            type="date"
+                                            value={t.actualCompletionDate || ''}
+                                            onChange={(e) =>
+                                              updateIdpData(`items.${itemIndex}.extraTables.${ti}.actualCompletionDate`, e.target.value)
+                                            }
+                                            className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
+                                          />
+                                        </td>
+                                        <td className="border border-gray-300 px-4 py-2">
+                                          {(() => {
+                                            const areas = t.areasOfExposure || [];
+                                            const totalAreas = areas.length;
+                                            const completedAreas = areas.filter(a => a.status === 'Completed').length;
+                                            const percentage = totalAreas > 0 ? Math.round((completedAreas / totalAreas) * 100) : 0;
+                                            
+                                            return (
+                                              <div className="flex flex-col gap-1">
+                                                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                                                  <div 
+                                                    className="bg-blue-500 h-full transition-all duration-300" 
+                                                    style={{ width: `${percentage}%` }}
+                                                  />
+                                                </div>
+                                                <div className="text-xs font-semibold text-gray-700 text-center">
+                                                  {percentage}% ({completedAreas}/{totalAreas})
+                                                </div>
+                                              </div>
+                                            );
+                                          })()}
+                                        </td>
+                                        <td className="border border-gray-300 px-4 py-2">
+                                          <select
+                                            value={t.score || 1}
+                                            onChange={(e) => updateIdpData(`items.${itemIndex}.extraTables.${ti}.score`, parseInt(e.target.value))}
+                                            className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
                                           >
-                                            View
-                                          </a>
-                                        )}
-                                      </div>
-                                    )}
-
-                                    <div className="md:col-span-2 lg:col-span-3">
-                                      <Field label="Expected Results">
-                                        <textarea
-                                          value={t.expectedResults || ''}
-                                          onChange={(e) =>
-                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.expectedResults`, e.target.value)
-                                          }
-                                          rows={3}
-                                          className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100"
-                                        />
-                                      </Field>
-                                    </div>
-
-                                    <div className="md:col-span-2 lg:col-span-3">
-                                      <Field label="Knowledge Sharing Method">
-                                        <textarea
-                                          value={t.sharingMethod || ''}
-                                          onChange={(e) =>
-                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.sharingMethod`, e.target.value)
-                                          }
-                                          rows={3}
-                                          className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100"
-                                        />
-                                      </Field>
-                                    </div>
-
-                                    <div className="md:col-span-2 lg:col-span-3">
-                                      <Field label="Application Method">
-                                        <textarea
-                                          value={t.applicationMethod || ''}
-                                          onChange={(e) =>
-                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.applicationMethod`, e.target.value)
-                                          }
-                                          rows={3}
-                                          className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100"
-                                        />
-                                      </Field>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
+                                            {[1, 2, 3, 4, 5].map((s) => (
+                                              <option key={s} value={s}>
+                                                {s}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </td>
+                                        <td className="border border-gray-300 px-4 py-2 text-center">
+                                          {((t.pdfPath) || isCompletedStatus(t.completionStatus)) && (
+                                            <div className="flex items-center justify-center gap-1">
+                                              <label className={`inline-flex items-center px-2 py-1 bg-white border border-gray-200 rounded text-xs ${!isCompletedStatus(t.completionStatus) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                                                <input
+                                                  type="file"
+                                                  accept="application/pdf"
+                                                  style={{ display: 'none' }}
+                                                  onChange={async (e) => {
+                                                    if (!isCompletedStatus(t.completionStatus)) {
+                                                      alert('Please mark activity as Completed to upload proof.');
+                                                      return;
+                                                    }
+                                                    const f = e.target.files && e.target.files[0];
+                                                    if (!f) return;
+                                                    const form = new FormData();
+                                                    form.append('pdf', f);
+                                                    try {
+                                                      const res = await fetch(`${apiBase}/api/idp/upload`, {
+                                                        method: 'POST',
+                                                        headers: { Authorization: `Bearer ${token}` },
+                                                        body: form,
+                                                      });
+                                                      const data = await res.json();
+                                                      if (!res.ok) throw new Error(data.message || 'Upload failed');
+                                                      updateIdpData(`items.${itemIndex}.extraTables.${ti}.pdfPath`, data.pdf_path);
+                                                      alert('PDF uploaded');
+                                                    } catch (err) {
+                                                      console.error('Upload failed', err);
+                                                      alert('Upload failed: ' + (err.message || ''));
+                                                    }
+                                                  }}
+                                                />
+                                                Upload
+                                              </label>
+                                              {t.pdfPath && (
+                                                <a
+                                                  href={`${apiBase}/${t.pdfPath}`}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="text-xs text-blue-600 hover:underline"
+                                                >
+                                                  View
+                                                </a>
+                                              )}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="border border-gray-300 px-4 py-2 text-center">
+                                          <button
+                                            type="button"
+                                            onClick={() => removeExtraTable(itemIndex, ti)}
+                                            className="text-xs text-red-600 hover:text-red-800 font-semibold"
+                                          >
+                                            Remove
+                                          </button>
+                                        </td>
+                                      </tr>
+                                      <tr key={`${ti}-duration`} className="hover:bg-gray-50 transition-colors bg-gray-50">
+                                        <td colSpan="7" className="border border-gray-300 px-4 py-2">
+                                          <div className="text-xs font-semibold text-gray-700 mb-2">Duration of Exposure</div>
+                                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div>
+                                              <label className="block text-xs font-semibold text-gray-600 mb-1">From: [Start Date]</label>
+                                              <input
+                                                type="date"
+                                                value={t.exposureStartDate || ''}
+                                                onChange={(e) =>
+                                                  updateIdpData(`items.${itemIndex}.extraTables.${ti}.exposureStartDate`, e.target.value)
+                                                }
+                                                className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
+                                              />
+                                            </div>
+                                            <div>
+                                              <label className="block text-xs font-semibold text-gray-600 mb-1">To: [End Date]</label>
+                                              {(() => {
+                                                const areas = t.areasOfExposure || [];
+                                                const completedAreas = areas.filter(a => a.status === 'Completed' && a.dateTime);
+                                                let latestDate = '';
+                                                
+                                                if (completedAreas.length > 0) {
+                                                  const dates = completedAreas.map(a => {
+                                                    const dateTime = a.dateTime ? new Date(a.dateTime) : null;
+                                                    return dateTime;
+                                                  }).filter(d => d);
+                                                  
+                                                  if (dates.length > 0) {
+                                                    const maxDate = new Date(Math.max(...dates));
+                                                    latestDate = maxDate.toISOString().split('T')[0];
+                                                  }
+                                                }
+                                                
+                                                return (
+                                                  <div className="w-full bg-gray-100 rounded px-2 py-1 text-xs text-black border border-gray-200 font-semibold">
+                                                    {latestDate ? latestDate : 'Auto-generated when areas are completed'}
+                                                  </div>
+                                                );
+                                              })()}
+                                            </div>
+                                            <div>
+                                              <label className="block text-xs font-semibold text-gray-600 mb-1">Total Hours of Exposure</label>
+                                              {(() => {
+                                                const startDate = t.exposureStartDate ? new Date(t.exposureStartDate) : null;
+                                                
+                                                // Calculate end date from completed areas
+                                                const areas = t.areasOfExposure || [];
+                                                const completedAreas = areas.filter(a => a.status === 'Completed' && a.dateTime);
+                                                let endDate = null;
+                                                
+                                                if (completedAreas.length > 0) {
+                                                  const dates = completedAreas.map(a => {
+                                                    const dateTime = a.dateTime ? new Date(a.dateTime) : null;
+                                                    return dateTime;
+                                                  }).filter(d => d);
+                                                  
+                                                  if (dates.length > 0) {
+                                                    endDate = new Date(Math.max(...dates));
+                                                  }
+                                                }
+                                                
+                                                let totalHours = '';
+                                                
+                                                if (startDate && endDate) {
+                                                  const diffInMs = endDate - startDate;
+                                                  const diffInHours = Math.round(diffInMs / (1000 * 60 * 60));
+                                                  totalHours = diffInHours >= 0 ? diffInHours : 0;
+                                                }
+                                                
+                                                return (
+                                                  <div className="w-full bg-gray-100 rounded px-2 py-1 text-xs text-black border border-gray-200 font-semibold">
+                                                    {totalHours ? `${totalHours} hours` : 'Select dates to calculate'}
+                                                  </div>
+                                                );
+                                              })()}
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                      <tr key={`${ti}-row2`} className="hover:bg-blue-50 transition-colors">
+                                        <td colSpan="7" className="border border-gray-300 px-4 py-2">
+                                          <div className="flex items-center justify-between mb-3">
+                                            <label className="block text-xs font-semibold text-gray-600">Areas of Exposure</label>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                if (!t.areasOfExposure) t.areasOfExposure = [];
+                                                t.areasOfExposure.push({
+                                                  area: '',
+                                                  status: '',
+                                                  dateTime: '',
+                                                  duration: '',
+                                                  trainerName: '',
+                                                  comments: '',
+                                                });
+                                                updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...(t.areasOfExposure || [])]);
+                                              }}
+                                              className="text-xs bg-black text-white px-2 py-1 rounded hover:bg-black/90"
+                                            >
+                                              + Add Area
+                                            </button>
+                                          </div>
+                                          {Array.isArray(t.areasOfExposure) && t.areasOfExposure.length > 0 && (
+                                            <div className="overflow-x-auto">
+                                              <table className="w-full border-collapse text-xs">
+                                                <thead>
+                                                  <tr className="bg-gray-200">
+                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Area</th>
+                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Status</th>
+                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Date & Time</th>
+                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Duration</th>
+                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Trainer Name</th>
+                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Comments</th>
+                                                    <th className="border border-gray-300 px-2 py-1 text-center font-semibold">Action</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {t.areasOfExposure.map((area, ai) => (
+                                                    <tr key={ai} className="hover:bg-gray-100">
+                                                      <td className="border border-gray-300 px-2 py-1">
+                                                        <input
+                                                          type="text"
+                                                          value={area.area || ''}
+                                                          onChange={(e) => {
+                                                            t.areasOfExposure[ai].area = e.target.value;
+                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                          }}
+                                                          placeholder="Area..."
+                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                        />
+                                                      </td>
+                                                      <td className="border border-gray-300 px-2 py-1">
+                                                        <select
+                                                          value={area.status || ''}
+                                                          onChange={(e) => {
+                                                            t.areasOfExposure[ai].status = e.target.value;
+                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                          }}
+                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                        >
+                                                          <option value="">-- Select Status --</option>
+                                                          <option value="Not Started">Not Started</option>
+                                                          <option value="On Going">On Going</option>
+                                                          <option value="Completed">Completed</option>
+                                                        </select>
+                                                      </td>
+                                                      <td className="border border-gray-300 px-2 py-1">
+                                                        <input
+                                                          type="datetime-local"
+                                                          value={area.dateTime || ''}
+                                                          onChange={(e) => {
+                                                            t.areasOfExposure[ai].dateTime = e.target.value;
+                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                          }}
+                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                        />
+                                                      </td>
+                                                      <td className="border border-gray-300 px-2 py-1">
+                                                        <input
+                                                          type="text"
+                                                          value={area.duration || ''}
+                                                          onChange={(e) => {
+                                                            t.areasOfExposure[ai].duration = e.target.value;
+                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                          }}
+                                                          placeholder="Duration..."
+                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                        />
+                                                      </td>
+                                                      <td className="border border-gray-300 px-2 py-1">
+                                                        <input
+                                                          type="text"
+                                                          value={area.trainerName || ''}
+                                                          onChange={(e) => {
+                                                            t.areasOfExposure[ai].trainerName = e.target.value;
+                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                          }}
+                                                          placeholder="Trainer name..."
+                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                        />
+                                                      </td>
+                                                      <td className="border border-gray-300 px-2 py-1">
+                                                        <textarea
+                                                          value={area.comments || ''}
+                                                          onChange={(e) => {
+                                                            t.areasOfExposure[ai].comments = e.target.value;
+                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                          }}
+                                                          placeholder="Comments..."
+                                                          rows={1}
+                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                        />
+                                                      </td>
+                                                      <td className="border border-gray-300 px-2 py-1 text-center">
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => {
+                                                            t.areasOfExposure.splice(ai, 1);
+                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                          }}
+                                                          className="text-xs text-red-600 hover:text-red-800 font-semibold"
+                                                        >
+                                                          Remove
+                                                        </button>
+                                                      </td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          )}
+                                          <div className="mt-4">
+                                            <label className="block text-xs font-semibold text-gray-600 mb-2">Learning</label>
+                                            <textarea
+                                              value={t.learning || ''}
+                                              onChange={(e) =>
+                                                updateIdpData(`items.${itemIndex}.extraTables.${ti}.learning`, e.target.value)
+                                              }
+                                              placeholder="What did you learn from this activity?"
+                                              rows={2}
+                                              className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
+                                            />
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    </>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1608,6 +2090,16 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 >
                   Cancel
                 </button>
+
+                {!editMode && (
+                  <button
+                    onClick={saveDraft}
+                    disabled={saving}
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gray-500 text-white hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed font-semibold focus:outline-none focus:ring-2 focus:ring-black/10"
+                  >
+                    {saving ? 'Saving...' : 'Save Draft'}
+                  </button>
+                )}
 
                 <BlackButton onClick={submitIDP} disabled={saving} label={submitLabel} />
               </div>

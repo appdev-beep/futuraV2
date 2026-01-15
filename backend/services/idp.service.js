@@ -173,8 +173,23 @@ async function getById(id) {
     [id]
   );
 
+  const normalizeDate = (v) => {
+    if (!v) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    const m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+    const d = new Date(v);
+    if (!isNaN(d.getTime())) {
+      const yy = d.getFullYear();
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const dd = String(d.getDate()).padStart(2,'0');
+      return `${yy}-${mm}-${dd}`;
+    }
+    return '';
+  };
+
   // Normalize DB column differences and parse JSON so frontend always receives an object
-  const normalizedItems = (items || []).map(it => {
+  const normalizedItems = await Promise.all((items || []).map(async (it) => {
     const raw = it.development_activity || it.development_action || null;
     let parsed = null;
     if (raw) {
@@ -187,21 +202,6 @@ async function getById(id) {
 
     // Ensure common keys exist with friendly aliases
     const activity = parsed || {};
-    const normalizeDate = (v) => {
-      if (!v) return '';
-      if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-      const m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
-      const d = new Date(v);
-      if (!isNaN(d.getTime())) {
-        const yy = d.getFullYear();
-        const mm = String(d.getMonth()+1).padStart(2,'0');
-        const dd = String(d.getDate()).padStart(2,'0');
-        return `${yy}-${mm}-${dd}`;
-      }
-      return '';
-    };
-
     const normalized = {
       type: activity.type || activity.activityType || 'Education',
       activity: activity.activity || activity.developmentActivity || '',
@@ -217,11 +217,51 @@ async function getById(id) {
       __raw: parsed || raw
     };
 
+    // Load extra tables and areas of exposure
+    const [extraTables] = await db.query(
+      `SELECT * FROM idp_extra_tables WHERE idp_item_id = ? ORDER BY id`,
+      [it.id]
+    );
+
+    const extraTablesWithAreas = await Promise.all((extraTables || []).map(async (et) => {
+      const [areas] = await db.query(
+        `SELECT * FROM idp_areas_of_exposure WHERE extra_table_id = ? ORDER BY id`,
+        [et.id]
+      );
+
+      return {
+        id: et.id,
+        quarter: et.quarter,
+        targetCompletionDate: normalizeDate(et.target_completion_date),
+        actualCompletionDate: normalizeDate(et.actual_completion_date),
+        developmentActivity: et.development_activity,
+        completionStatus: et.completion_status,
+        score: et.score || 1,
+        expectedResults: et.expected_results,
+        sharingMethod: et.sharing_method,
+        applicationMethod: et.application_method,
+        pdfPath: et.pdf_path,
+        educationJustificationPdf: et.education_justification_pdf,
+        exposureStartDate: normalizeDate(et.exposure_start_date),
+        learning: et.learning,
+        areasOfExposure: (areas || []).map(a => ({
+          id: a.id,
+          area: a.area,
+          status: a.status,
+          datetime: a.datetime,
+          durationHours: a.duration_hours,
+          trainerName: a.trainer_name,
+          comments: a.comments
+        }))
+      };
+    }));
+
     return {
       ...it,
-      development_activity: normalized
+      development_activity: normalized,
+      extra_tables: extraTablesWithAreas
     };
-  });
+  }));
 
   return { header, items: normalizedItems };
 }
@@ -1190,10 +1230,10 @@ async function createWithItems(payload) {
     // 2. Create IDP items for each competency with development activities
     if (Array.isArray(payload.items)) {
       for (const item of payload.items) {
-        // Create one entry per development activity (since we can have multiple activities per competency)
+        // Create one entry per development activity
         if (Array.isArray(item.developmentActivities)) {
           for (const activity of item.developmentActivities) {
-            await conn.query(
+            const [itemResult] = await conn.query(
               `INSERT INTO idp_items
                   (idp_header_id, competency_id, target_level, development_action, timeline_months, status, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, 'PLANNED', NOW(), NOW())`,
@@ -1219,6 +1259,59 @@ async function createWithItems(payload) {
                   12 // Default 12 months timeline
                 ]
             );
+            
+            const itemId = itemResult.insertId;
+
+            // 3. Create extra tables (for Experience/Exposure activities)
+            if (Array.isArray(item.extraTables)) {
+              for (const extraTable of item.extraTables) {
+                const [extraResult] = await conn.query(
+                  `INSERT INTO idp_extra_tables
+                    (idp_item_id, quarter, development_activity, target_completion_date, actual_completion_date, 
+                     completion_status, score, expected_results, sharing_method, application_method, 
+                     pdf_path, education_justification_pdf, exposure_start_date, learning, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                  [
+                    itemId,
+                    extraTable.quarter || null,
+                    extraTable.developmentActivity || null,
+                    extraTable.targetCompletionDate || null,
+                    extraTable.actualCompletionDate || null,
+                    extraTable.completionStatus || null,
+                    extraTable.score || 1,
+                    extraTable.expectedResults || null,
+                    extraTable.sharingMethod || null,
+                    extraTable.applicationMethod || null,
+                    extraTable.pdfPath || null,
+                    extraTable.educationJustificationPdf || null,
+                    extraTable.exposureStartDate || null,
+                    extraTable.learning || null
+                  ]
+                );
+                
+                const extraTableId = extraResult.insertId;
+
+                // 4. Create areas of exposure
+                if (Array.isArray(extraTable.areasOfExposure)) {
+                  for (const area of extraTable.areasOfExposure) {
+                    await conn.query(
+                      `INSERT INTO idp_areas_of_exposure
+                        (extra_table_id, area, status, datetime, duration_hours, trainer_name, comments, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                      [
+                        extraTableId,
+                        area.area || null,
+                        area.status || 'Not Started',
+                        area.datetime || null,
+                        area.durationHours || null,
+                        area.trainerName || null,
+                        area.comments || null
+                      ]
+                    );
+                  }
+                }
+              }
+            }
           }
         }
       }
