@@ -1,7 +1,7 @@
-// src/pages/ManagerDashboard.jsx
+// src/pages/Manager/ManagerDashboard.jsx
 import { useEffect, useMemo, useState } from 'react';
-import { apiRequest } from '../api/client';
-import { displayStatus } from '../utils/statusHelper';
+import { apiRequest } from '../../api/client';
+import { displayStatus } from '../../utils/statusHelper';
 import {
   ClipboardDocumentCheckIcon,
   CheckCircleIcon,
@@ -23,7 +23,7 @@ import {
   DEVELOPMENT_TYPES,
   CRAYON_COLORS,
   SCORING_GUIDE,
-} from './Supervisor/idpConstants';
+} from '../Shared/idpConstants';
 
 // Only these roles can access Manager dashboard
 const MANAGER_ROLES = ['Manager', 'HR', 'Admin'];

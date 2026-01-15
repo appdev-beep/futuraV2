@@ -1,66 +1,87 @@
 // src/App.jsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import LoginPageSeparate from './pages/LoginPage';
-import AdminCreateUserPage from './pages/AdminPage';
+import { AuthProvider } from './contexts/AuthContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+// Shared pages
+import LoginPage from './pages/Shared/LoginPage';
+
+// Admin pages
+import AdminPage from './pages/Admin/AdminPage';
+
+// Supervisor pages
 import SupervisorDashboard from './pages/Supervisor/SupervisorDashboard';
 import SupervisorReviewCLPage from './pages/Supervisor/SupervisorReviewCLPage';
 import StartCLPage from './pages/Supervisor/StartCLPage';
-import ManagerDashboard from './pages/ManagerDashboard';
-import ManagerReviewCLPage from './pages/ManagerReviewCLPage';
-import EmployeeDashboard from './pages/EmployeeDashboard';
-import EmployeeReviewCLPage from './pages/EmployeeReviewCLPage';
-import AMDashboard from './pages/AMDashboard';
-import AMReviewCLPage from './pages/AMReviewCLPage';
-import HRDashboard from './pages/HRDashboard';
-import HRReviewCLPage from './pages/HRReviewCLPage';
 import CreateIDPPage from './pages/Supervisor/CreateIDPPage';
 import SupervisorViewIDPPage from './pages/Supervisor/SupervisorViewIDPPage';
+
+// Manager pages
+import ManagerDashboard from './pages/Manager/ManagerDashboard';
+import ManagerReviewCLPage from './pages/Manager/ManagerReviewCLPage';
+
+// Assistant Manager pages
+import AMDashboard from './pages/AssistantManager/AMDashboard';
+import AMReviewCLPage from './pages/AssistantManager/AMReviewCLPage';
+
+// HR pages
+import HRDashboard from './pages/HR/HRDashboard';
+import HRReviewCLPage from './pages/HR/HRReviewCLPage';
+
+// Employee pages
+import EmployeeDashboard from './pages/Employee/EmployeeDashboard';
+import EmployeeReviewCLPage from './pages/Employee/EmployeeReviewCLPage';
+
 import './index.css';
 import './App.css';
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* default → login */}
-        <Route path="/" element={<Navigate to="/login" />} />
+    <ErrorBoundary>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* default → login */}
+            <Route path="/" element={<Navigate to="/login" />} />
 
-        {/* Auth */}
-        <Route path="/login" element={<LoginPageSeparate />} />
+            {/* Auth */}
+            <Route path="/login" element={<LoginPage />} />
 
-        {/* Admin pages */}
-        <Route path="/admin/users/create" element={<AdminCreateUserPage />} />
+            {/* Admin pages */}
+            <Route path="/admin/users/create" element={<AdminPage />} />
 
-        {/* Supervisor pages */}
-        <Route path="/supervisor" element={<SupervisorDashboard />} />
-        <Route path="/cl/supervisor/review/:id" element={<SupervisorReviewCLPage />} />
-        <Route path="/cl/start" element={<StartCLPage />} />
-        <Route path="/supervisor/idp/create/:employeeId" element={<CreateIDPPage />} />
-        <Route path="/supervisor/idp/view/:id" element={<SupervisorViewIDPPage />} />
+            {/* Supervisor pages */}
+            <Route path="/supervisor" element={<SupervisorDashboard />} />
+            <Route path="/cl/supervisor/review/:id" element={<SupervisorReviewCLPage />} />
+            <Route path="/cl/start" element={<StartCLPage />} />
+            <Route path="/supervisor/idp/create/:employeeId" element={<CreateIDPPage />} />
+            <Route path="/supervisor/idp/view/:id" element={<SupervisorViewIDPPage />} />
 
-        {/* Manager pages */}
-        <Route path="/manager" element={<ManagerDashboard />} />
-        <Route path="/manager/idp/view/:id" element={<SupervisorViewIDPPage />} />
-        <Route path="/cl/submissions/:id" element={<ManagerReviewCLPage />} />
+            {/* Manager pages */}
+            <Route path="/manager" element={<ManagerDashboard />} />
+            <Route path="/manager/idp/view/:id" element={<SupervisorViewIDPPage />} />
+            <Route path="/cl/submissions/:id" element={<ManagerReviewCLPage />} />
 
-        {/* Employee pages */}
-        <Route path="/employee" element={<EmployeeDashboard />} />
-        <Route path="/cl/employee/review/:id" element={<EmployeeReviewCLPage />} />
-        <Route path="/employee/idp/view/:id" element={<SupervisorViewIDPPage />} />
+            {/* Employee pages */}
+            <Route path="/employee" element={<EmployeeDashboard />} />
+            <Route path="/cl/employee/review/:id" element={<EmployeeReviewCLPage />} />
+            <Route path="/employee/idp/view/:id" element={<SupervisorViewIDPPage />} />
 
-        {/* Assistant Manager pages */}
-        <Route path="/am" element={<AMDashboard />} />
-        <Route path="/cl/am/review/:id" element={<AMReviewCLPage />} />
+            {/* Assistant Manager pages */}
+            <Route path="/am" element={<AMDashboard />} />
+            <Route path="/cl/am/review/:id" element={<AMReviewCLPage />} />
 
-        {/* HR pages */}
-        <Route path="/hr" element={<HRDashboard />} />
-        <Route path="/hr/idp/view/:id" element={<SupervisorViewIDPPage />} />
-        <Route path="/cl/hr/review/:id" element={<HRReviewCLPage />} />
+            {/* HR pages */}
+            <Route path="/hr" element={<HRDashboard />} />
+            <Route path="/hr/idp/view/:id" element={<SupervisorViewIDPPage />} />
+            <Route path="/cl/hr/review/:id" element={<HRReviewCLPage />} />
 
-        {/* catch-all → login */}
-        <Route path="*" element={<Navigate to="/login" />} />
-      </Routes>
-    </BrowserRouter>
+            {/* catch-all → login */}
+            <Route path="*" element={<Navigate to="/login" />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

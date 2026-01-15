@@ -1,7 +1,7 @@
-// src/pages/HRDashboard.jsx
+// src/pages/HR/HRDashboard.jsx
 import { useEffect, useState, useMemo } from 'react';
 import React from 'react';
-import { apiRequest } from '../api/client';
+import { apiRequest } from '../../api/client';
 import {
   BellIcon,
   ArrowRightOnRectangleIcon,
@@ -16,11 +16,11 @@ import {
   UsersIcon,
   BookOpenIcon,
 } from '@heroicons/react/24/outline';
-import '../index.css';
-import '../App.css'; 
-import ProficiencyTable from '../components/ProficiencyGuide';
-import { displayStatus } from '../utils/statusHelper';
-import { COMPLETION_STATUS_OPTIONS } from './Supervisor/idpConstants';
+import '../../index.css';
+import '../../App.css'; 
+import ProficiencyTable from '../../components/ProficiencyGuide';
+import { displayStatus } from '../../utils/statusHelper';
+import { COMPLETION_STATUS_OPTIONS } from '../Shared/idpConstants';
 
 function HRDashboard() {
   // Initialize user from localStorage

@@ -1,11 +1,11 @@
-// src/pages/ManagerReviewCLPage.jsx
+// src/pages/Manager/ManagerReviewCLPage.jsx
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { apiRequest } from '../api/client';
+import { apiRequest } from '../../api/client';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
-import Modal from '../components/Modal';
-import { displayStatus } from '../utils/statusHelper';
+import Modal from '../../components/Modal';
+import { displayStatus } from '../../utils/statusHelper';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 function ManagerReviewCLPage() {
   const { id } = useParams();

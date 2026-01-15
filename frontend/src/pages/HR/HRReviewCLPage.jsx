@@ -1,9 +1,9 @@
-// src/pages/HRReviewCLPage.jsx
+// src/pages/HR/HRReviewCLPage.jsx
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { apiRequest } from '../api/client';
-import Modal from '../components/Modal';
-import { displayStatus } from '../utils/statusHelper';
+import { apiRequest } from '../../api/client';
+import Modal from '../../components/Modal';
+import { displayStatus } from '../../utils/statusHelper';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 

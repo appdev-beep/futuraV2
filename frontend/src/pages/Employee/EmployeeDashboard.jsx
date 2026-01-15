@@ -1,6 +1,6 @@
-// src/pages/EmployeeDashboard.jsx
+// src/pages/Employee/EmployeeDashboard.jsx
 import { useEffect, useState, useMemo } from 'react';
-import { apiRequest } from '../api/client';
+import { apiRequest } from '../../api/client';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
@@ -16,10 +16,10 @@ import {
   ClockIcon,
   AcademicCapIcon,
 } from '@heroicons/react/24/outline';
-import '../index.css';
-import '../App.css'; 
-import Modal from '../components/Modal';
-import { displayStatus } from '../utils/statusHelper';
+import '../../index.css';
+import '../../App.css'; 
+import Modal from '../../components/Modal';
+import { displayStatus } from '../../utils/statusHelper';
 
 function EmployeeDashboard() {
   const [user, setUser] = useState(null);

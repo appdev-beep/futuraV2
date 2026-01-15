@@ -1,4 +1,4 @@
-// src/pages/LoginPage.jsx
+// src/pages/Shared/LoginPage.jsx
 import { useState } from 'react';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 // Map roles to where they should land after login

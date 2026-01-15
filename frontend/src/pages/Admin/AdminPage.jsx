@@ -1,7 +1,7 @@
-// src/pages/AdminCreateUserPage.jsx
+// src/pages/Admin/AdminPage.jsx
 import { useEffect, useState } from 'react';
-import { apiRequest } from '../api/client';
-import Modal from '../components/Modal';
+import { apiRequest } from '../../api/client';
+import Modal from '../../components/Modal';
 
 function AdminPage() {
   const [employeeId, setEmployeeId] = useState('');

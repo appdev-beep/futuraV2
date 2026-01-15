@@ -1,11 +1,11 @@
-// src/pages/AMReviewCLPage.jsx
+// src/pages/AssistantManager/AMReviewCLPage.jsx
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { apiRequest } from '../api/client';
+import { apiRequest } from '../../api/client';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
-import Modal from '../components/Modal';
-import { displayStatus } from '../utils/statusHelper';
+import Modal from '../../components/Modal';
+import { displayStatus } from '../../utils/statusHelper';
 
 function AMReviewCLPage() {
   const { id } = useParams();

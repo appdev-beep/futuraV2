@@ -1,7 +1,7 @@
-// src/pages/EmployeeReviewCLPage.jsx
+// src/pages/Employee/EmployeeReviewCLPage.jsx
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { apiRequest } from '../api/client';
+import { apiRequest } from '../../api/client';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
