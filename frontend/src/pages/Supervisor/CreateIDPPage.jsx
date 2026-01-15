@@ -170,8 +170,10 @@ function PdfUpload({
 
 function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
   const params = useParams();
+  const searchParams = new URLSearchParams(window.location.search);
   const employeeId = routeEmployeeId ?? params.employeeId;
   const id = routeId ?? params.id; // edit mode
+  const viewOnly = searchParams.get('viewOnly') === 'true'; // view-only mode for reviewers
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -505,23 +507,44 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     if (editMode) return;
     if (!availableCompetencies?.length) return;
 
-    const selected = selectedCompetencyIds.map((cid) => {
-      const comp = availableCompetencies.find((c) => String(c.competency_id || c.competencyId) === String(cid));
-      const assigned = (comp && (comp.assigned_level ?? comp.assignedLevel ?? comp.assigned)) ?? 1;
+    setIdpData((prev) => {
+      const currentItems = prev.items || [];
+      
+      // Create a map of existing items by competency ID for quick lookup
+      const existingMap = new Map(
+        currentItems.map((item) => [
+          String(item.competencyId || item.competency_id),
+          item,
+        ])
+      );
 
-      return {
-        competencyId: comp?.competencyId || comp?.competency_id,
-        competency_id: comp?.competencyId || comp?.competency_id,
-        competencyName: comp?.competencyName || comp?.name || '',
-        developmentArea: comp?.competency_area || 'Technical',
-        currentLevel: assigned,
-        targetLevel: Math.min(Number(assigned) + 1, 5),
-        developmentActivities: [defaultActivity()],
-        extraTables: [],
-      };
+      // Build new items list from selected competencies
+      const selected = selectedCompetencyIds.map((cid) => {
+        const cidStr = String(cid);
+        
+        // If this item already exists, preserve it with all its data
+        if (existingMap.has(cidStr)) {
+          return existingMap.get(cidStr);
+        }
+
+        // Otherwise, create a new item
+        const comp = availableCompetencies.find((c) => String(c.competency_id || c.competencyId) === cidStr);
+        const assigned = (comp && (comp.assigned_level ?? comp.assignedLevel ?? comp.assigned)) ?? 1;
+
+        return {
+          competencyId: comp?.competencyId || comp?.competency_id,
+          competency_id: comp?.competencyId || comp?.competency_id,
+          competencyName: comp?.competencyName || comp?.name || '',
+          developmentArea: comp?.competency_area || 'Technical',
+          currentLevel: assigned,
+          targetLevel: Math.min(Number(assigned) + 1, 5),
+          developmentActivities: [defaultActivity()],
+          extraTables: [],
+        };
+      });
+
+      return { ...prev, items: selected };
     });
-
-    setIdpData((prev) => ({ ...prev, items: selected }));
   }, [selectedCompetencyIds, availableCompetencies, editMode, defaultActivity]);
 
   const updateIdpData = (path, value) => {
@@ -967,7 +990,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                   <StatusBadge status={idpHeader?.status} />
                 </div>
                 <p className="text-xs text-white/70 mt-0.5 truncate">
-                  {editMode ? `Edit IDP for ${employee?.name || ''}` : `Create IDP for ${employee?.name || ''}`}
+                  {viewOnly ? `View IDP for ${employee?.name || ''}` : editMode ? `Edit IDP for ${employee?.name || ''}` : `Create IDP for ${employee?.name || ''}`}
                 </p>
               </div>
             </div>
@@ -982,7 +1005,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 <span className="sm:hidden">Guide</span>
               </button>
 
-              {!editMode && (
+              {!viewOnly && !editMode && (
                 <button
                   onClick={saveDraft}
                   disabled={saving}
@@ -992,7 +1015,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 </button>
               )}
 
-              <PrimaryActionButton onClick={submitIDP} disabled={saving} label={submitLabel} />
+              {!viewOnly && <PrimaryActionButton onClick={submitIDP} disabled={saving} label={submitLabel} />}
             </div>
           </div>
         </div>
@@ -1150,7 +1173,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                     type="text"
                     value={idpData.reviewPeriod}
                     onChange={(e) => updateIdpData('reviewPeriod', e.target.value)}
-                    className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                    disabled={viewOnly}
+                    className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </Field>
               </div>
@@ -1160,7 +1184,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                   type="date"
                   value={idpData.nextReviewDate}
                   onChange={(e) => updateIdpData('nextReviewDate', e.target.value)}
-                  className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                  disabled={viewOnly}
+                  className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
                 />
               </Field>
 
@@ -1197,7 +1222,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         </div>
 
         {/* Competency selector */}
-        {!editMode && availableCompetencies?.length > 0 && (
+        {!editMode && !viewOnly && availableCompetencies?.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
             <h3 className="text-sm font-semibold text-black">Select Competencies (min 1, max 2)</h3>
             <p className="text-xs text-gray-500 mt-1">
@@ -1259,7 +1284,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
                 <h2 className="text-lg font-semibold text-black">Development Plan</h2>
-                <p className="text-sm text-gray-600 mt-1">Update the fields inside each competency card.</p>
+                <p className="text-sm text-gray-600 mt-1">{viewOnly ? 'Review the submitted development activities.' : 'Update the fields inside each competency card.'}</p>
               </div>
               <div className="text-xs text-gray-500">
                 {idpData.items.length} competency{(idpData.items.length === 1) ? '' : 'ies'}
@@ -1267,7 +1292,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             </div>
           </div>
 
-          <div className="p-5">
+          <div className={`p-5 ${viewOnly ? 'pointer-events-none opacity-75' : ''}`}>
             {idpData.items.length === 0 ? (
               <div className="text-center py-10 bg-gray-50 rounded-xl border border-gray-100">
                 <p className="text-gray-800 font-semibold">No approved competencies found for this employee.</p>
@@ -2091,7 +2116,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                   Cancel
                 </button>
 
-                {!editMode && (
+                {!editMode && !viewOnly && (
                   <button
                     onClick={saveDraft}
                     disabled={saving}
@@ -2101,7 +2126,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                   </button>
                 )}
 
-                <BlackButton onClick={submitIDP} disabled={saving} label={submitLabel} />
+                {!viewOnly && <BlackButton onClick={submitIDP} disabled={saving} label={submitLabel} />}
               </div>
             </div>
           </div>

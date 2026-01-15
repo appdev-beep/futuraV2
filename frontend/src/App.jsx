@@ -68,6 +68,7 @@ function App() {
 
             {/* Assistant Manager pages */}
             <Route path="/am" element={<AMDashboard />} />
+            <Route path="/am/idp/:id" element={<CreateIDPPage />} />
             <Route path="/cl/am/review/:id" element={<AMReviewCLPage />} />
 
             {/* HR pages */}

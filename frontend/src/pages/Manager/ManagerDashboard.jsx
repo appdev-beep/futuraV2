@@ -143,17 +143,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [showFullNotifications, setShowFullNotifications] = useState(false);
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
 
-  // IDP Viewing State - Full Page View
-  const [idpView, setIdpView] = useState({
-    open: false,
-    idp: null,
-    employee: null,
-    supervisor: null,
-    loading: true,
-    items: [],
-    header: null,
-  });
-
   // Department info for dynamic AM section
   const [department, setDepartment] = useState(null);
   // Fetch department info for the user
@@ -200,71 +189,14 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     setUser(parsed);
   }, [isAMDashboard]);
 
-  // Helper: open IDP view modal with full details
-  async function openIdpView(idp) {
-    const empFromList = employees.find(e => e.id === idp.employee_id);
-    const supFromList = supervisors.find(s => s.id === idp.supervisor_id);
-    const emp = idp.employee_name
-      ? { 
-          id: idp.employee_id, 
-          name: idp.employee_name, 
-          position_title: idp.position_title || idp.employee_position,
-          department_name: idp.department_name || idp.employee_department || empFromList?.department_name
-        }
-      : (empFromList ? { 
-          id: empFromList.id, 
-          name: empFromList.name || empFromList.full_name, 
-          position_title: empFromList.position_title,
-          department_name: empFromList.department_name
-        } : { id: idp.employee_id });
-    const sup = idp.supervisor_name
-      ? { id: idp.supervisor_id, name: idp.supervisor_name }
-      : (supFromList ? { id: supFromList.id, name: supFromList.name || supFromList.full_name || `${supFromList.first_name || ''} ${supFromList.last_name || ''}`.trim() } : { id: idp.supervisor_id });
-    
-    // Open full page and start loading
-    setIdpView({
-      open: true,
-      idp,
-      employee: emp,
-      supervisor: sup,
-      loading: true,
-      items: [],
-      header: null,
-    });
-
-    try {
-      // Fetch full IDP details
-      const fullIdp = await apiRequest(`/api/idp/${idp.id}`);
-      
-      // Fetch CL score from competency levelling history
-      let latestCLScore = null;
-      try {
-        const history = await apiRequest(`/api/cl/employee/${idp.employee_id}/history`);
-        const approved = (history || []).find((h) => String(h.status).toUpperCase() === 'APPROVED');
-        if (approved?.total_score) {
-          latestCLScore = approved.total_score;
-        } else if (approved?.id) {
-          const clFull = await apiRequest(`/api/cl/${approved.id}`);
-          latestCLScore = clFull?.total_score || null;
-        }
-      } catch (e) {
-        console.warn('Could not fetch CL score:', e);
-      }
-      
-      setIdpView(prev => ({
-        ...prev,
-        loading: false,
-        items: fullIdp.items || [],
-        header: { ...fullIdp.header, latest_cl_score: latestCLScore },
-      }));
-    } catch (error) {
-      console.error('Failed to load IDP details:', error);
-      setIdpView(prev => ({ ...prev, loading: false }));
-    }
+  // Helper: open IDP view in full page (using CreateIDPPage with viewOnly mode)
+  function openIdpView(idp) {
+    const path = isAMDashboard ? `/am/idp/${idp.id}` : `/manager/idp/${idp.id}`;
+    window.location.href = `${path}?viewOnly=true`;
   }
 
   function closeIdpView() {
-    setIdpView({ open: false, idp: null, employee: null, supervisor: null, loading: true, items: [], header: null });
+    // No longer needed - navigation handles closing
   }
 
   // Helper components for IDP modal
@@ -734,11 +666,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }, [supervisors, selectedSupervisorId]);
 
   if (!user) return null;
-
-  // If IDP view is open, show full page IDP view
-  if (idpView.open) {
-    return <IDPFullPageView {...idpView} onClose={closeIdpView} areaColor={areaColor} getCompetencyCompletionStatus={getCompetencyCompletionStatus} />;
-  }
 
   return (
     <div className="flex h-screen bg-white">
