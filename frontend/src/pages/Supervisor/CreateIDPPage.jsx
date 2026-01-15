@@ -305,7 +305,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
   const defaultActivity = useCallback(
     () => ({
-      type: 'Education',
+      type: '',
       activity: '',
       targetCompletionDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0],
       actualCompletionDate: '',
@@ -1178,6 +1178,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.type`, e.target.value)}
                                   className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                 >
+                                  <option value="">-- Select activity type --</option>
                                   {DEVELOPMENT_TYPES.map((type) => (
                                     <option key={type} value={type}>{type}</option>
                                   ))}
@@ -1185,9 +1186,25 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                               </Field>
                             </div>
 
-                            {activity.type === 'Education' ? (
+                            {!activity.type ? (
+                              <div className="px-3 py-3 bg-white rounded-lg text-sm text-gray-600 border border-gray-100">
+                                Select an activity type to view available fields.
+                              </div>
+                            ) : activity.type === 'Education' ? (
                               <div className="bg-white rounded-xl border border-gray-100 p-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                  <div className="lg:col-span-3">
+                                    <Field label="Development Activity">
+                                      <input
+                                        type="text"
+                                        value={activity.activity}
+                                        onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.activity`, e.target.value)}
+                                        placeholder="Describe the development activity..."
+                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                      />
+                                    </Field>
+                                  </div>
+
                                   <Field label="Target Completion Date">
                                   <input
                                     type="date"
@@ -1211,19 +1228,6 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                     className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
                                   />
                                 </Field>
-
-                                {activity.type === 'Education' && (
-                                  <PdfUpload
-                                    label="Education Justification (PDF)"
-                                    currentPath={activity.educationJustificationPdf}
-                                    uploadUrl={`${apiBase}/api/idp/upload`}
-                                    token={token}
-                                    onUploaded={(path) =>
-                                      updateIdpData(`items.${itemIndex}.developmentActivities.0.educationJustificationPdf`, path)
-                                    }
-                                    viewHref={activity.educationJustificationPdf ? `${apiBase}/${activity.educationJustificationPdf}` : ''}
-                                  />
-                                )}
 
                                 <div className="flex flex-col">
                                   <Field label="Completion Status">
