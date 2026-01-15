@@ -774,7 +774,7 @@ function EmployeeDashboard() {
                             <Td>
                               <button
                                 type="button"
-                                onClick={() => goTo(`/employee/idp/view/${h.id}`)}
+                                onClick={() => goTo(`/employee/idp/${h.id}`)}
                                 className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-700 shadow-sm hover:shadow transition"
                               >
                                 <DocumentTextIcon className="w-4 h-4" />
@@ -1094,7 +1094,7 @@ function EmployeeDashboard() {
                               </Td>
                               <Td>
                                 <button
-                                  onClick={() => goTo(`/employee/idp/view/${h.id}`)}
+                                  onClick={() => goTo(`/employee/idp/${h.id}`)}
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-700 shadow-sm hover:shadow transition"
                                 >
                                   <DocumentTextIcon className="w-4 h-4" />

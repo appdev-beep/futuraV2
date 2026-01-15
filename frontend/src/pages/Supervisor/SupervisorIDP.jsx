@@ -120,7 +120,7 @@ export default function SupervisorIDP({ idpSummary, idpEmployees, idpByStatus, a
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idp.status || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
-                        onClick={() => navigate(`/supervisor/idp/view/${idp.id}`)}
+                        onClick={() => navigate(`/supervisor/idp/${idp.id}`)}
                         className="text-blue-600 hover:text-blue-900 font-medium mr-2"
                       >
                         View

@@ -1255,7 +1255,7 @@ function IDPTable({ data, goTo }) {
               <Td>
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={(e) => { e.stopPropagation(); goTo(`/hr/idp/view/${item.id}?viewOnly=true`); }}
+                    onClick={(e) => { e.stopPropagation(); goTo(`/hr/idp/${item.id}?viewOnly=true`); }}
                     className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
                   >
                     View

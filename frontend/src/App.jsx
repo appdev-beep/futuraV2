@@ -14,7 +14,6 @@ import SupervisorDashboard from './pages/Supervisor/SupervisorDashboard';
 import SupervisorReviewCLPage from './pages/Supervisor/SupervisorReviewCLPage';
 import StartCLPage from './pages/Supervisor/StartCLPage';
 import CreateIDPPage from './pages/Supervisor/CreateIDPPage';
-import SupervisorViewIDPPage from './pages/Supervisor/SupervisorViewIDPPage';
 
 // Manager pages
 import ManagerDashboard from './pages/Manager/ManagerDashboard';
@@ -55,17 +54,17 @@ function App() {
             <Route path="/cl/supervisor/review/:id" element={<SupervisorReviewCLPage />} />
             <Route path="/cl/start" element={<StartCLPage />} />
             <Route path="/supervisor/idp/create/:employeeId" element={<CreateIDPPage />} />
-            <Route path="/supervisor/idp/view/:id" element={<SupervisorViewIDPPage />} />
+            <Route path="/supervisor/idp/:id" element={<CreateIDPPage />} />
 
             {/* Manager pages */}
             <Route path="/manager" element={<ManagerDashboard />} />
-            <Route path="/manager/idp/view/:id" element={<SupervisorViewIDPPage />} />
+            <Route path="/manager/idp/:id" element={<CreateIDPPage />} />
             <Route path="/cl/submissions/:id" element={<ManagerReviewCLPage />} />
 
             {/* Employee pages */}
             <Route path="/employee" element={<EmployeeDashboard />} />
             <Route path="/cl/employee/review/:id" element={<EmployeeReviewCLPage />} />
-            <Route path="/employee/idp/view/:id" element={<SupervisorViewIDPPage />} />
+            <Route path="/employee/idp/:id" element={<CreateIDPPage />} />
 
             {/* Assistant Manager pages */}
             <Route path="/am" element={<AMDashboard />} />
@@ -73,7 +72,7 @@ function App() {
 
             {/* HR pages */}
             <Route path="/hr" element={<HRDashboard />} />
-            <Route path="/hr/idp/view/:id" element={<SupervisorViewIDPPage />} />
+            <Route path="/hr/idp/:id" element={<CreateIDPPage />} />
             <Route path="/cl/hr/review/:id" element={<HRReviewCLPage />} />
 
             {/* catch-all → login */}
