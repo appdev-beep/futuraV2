@@ -1419,7 +1419,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                           </div>
                         ) : (
                           <div>
-                            {isExpOrExposure && (
+                            {isExpOrExposure && !viewOnly && (
                               <div className="p-4 mb-4 bg-white rounded-xl border border-gray-100">
                                 <div className="flex items-center justify-between">
                                   <div className="text-sm text-gray-700">This activity type uses additional table entries.</div>
@@ -1847,13 +1847,15 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                           )}
                                         </td>
                                         <td className="border border-gray-300 px-4 py-2 text-center">
-                                          <button
-                                            type="button"
-                                            onClick={() => removeExtraTable(itemIndex, ti)}
-                                            className="text-xs text-red-600 hover:text-red-800 font-semibold"
-                                          >
-                                            Remove
-                                          </button>
+                                          {!viewOnly && (
+                                            <button
+                                              type="button"
+                                              onClick={() => removeExtraTable(itemIndex, ti)}
+                                              className="text-xs text-red-600 hover:text-red-800 font-semibold"
+                                            >
+                                              Remove
+                                            </button>
+                                          )}
                                         </td>
                                       </tr>
                                       <tr key={`${ti}-duration`} className="hover:bg-gray-50 transition-colors bg-gray-50">
@@ -1940,24 +1942,26 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         <td colSpan="7" className="border border-gray-300 px-4 py-2">
                                           <div className="flex items-center justify-between mb-3">
                                             <label className="block text-xs font-semibold text-gray-600">Areas of Exposure</label>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                if (!t.areasOfExposure) t.areasOfExposure = [];
-                                                t.areasOfExposure.push({
-                                                  area: '',
-                                                  status: '',
-                                                  dateTime: '',
-                                                  duration: '',
-                                                  trainerName: '',
-                                                  comments: '',
-                                                });
-                                                updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...(t.areasOfExposure || [])]);
-                                              }}
-                                              className="text-xs bg-black text-white px-2 py-1 rounded hover:bg-black/90"
-                                            >
-                                              + Add Area
-                                            </button>
+                                            {!viewOnly && (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  if (!t.areasOfExposure) t.areasOfExposure = [];
+                                                  t.areasOfExposure.push({
+                                                    area: '',
+                                                    status: '',
+                                                    dateTime: '',
+                                                    duration: '',
+                                                    trainerName: '',
+                                                    comments: '',
+                                                  });
+                                                  updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...(t.areasOfExposure || [])]);
+                                                }}
+                                                className="text-xs bg-black text-white px-2 py-1 rounded hover:bg-black/90"
+                                              >
+                                                + Add Area
+                                              </button>
+                                            )}
                                           </div>
                                           {Array.isArray(t.areasOfExposure) && t.areasOfExposure.length > 0 && (
                                             <div className="overflow-x-auto">
@@ -2051,16 +2055,18 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                         />
                                                       </td>
                                                       <td className="border border-gray-300 px-2 py-1 text-center">
-                                                        <button
-                                                          type="button"
-                                                          onClick={() => {
-                                                            t.areasOfExposure.splice(ai, 1);
-                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
-                                                          }}
-                                                          className="text-xs text-red-600 hover:text-red-800 font-semibold"
-                                                        >
-                                                          Remove
-                                                        </button>
+                                                        {!viewOnly && (
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                              t.areasOfExposure.splice(ai, 1);
+                                                              updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                            }}
+                                                            className="text-xs text-red-600 hover:text-red-800 font-semibold"
+                                                          >
+                                                            Remove
+                                                          </button>
+                                                        )}
                                                       </td>
                                                     </tr>
                                                   ))}
