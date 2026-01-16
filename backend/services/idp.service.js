@@ -1154,8 +1154,8 @@ async function hrApproveForCompletion(idpId, hrId) {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
-    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ?', [idpId, 'PENDING_HR']);
-    if (rows.length === 0) throw new Error('IDP not found or not pending HR review.');
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status IN (?, ?)', [idpId, 'PENDING_HR', 'FOR_COMPLETION']);
+    if (rows.length === 0) throw new Error('IDP not found or not available for HR completion approval.');
 
     await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['FOR_COMPLETION', idpId]);
 

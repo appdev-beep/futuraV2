@@ -278,6 +278,63 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     return completedSet.has(v);
   }, []);
 
+  // Calculate if all activities across all competencies are 100% complete
+  const areAllActivitiesComplete = useMemo(() => {
+    if (!idpData.items || idpData.items.length === 0) return false;
+    
+    return idpData.items.every(item => {
+      const activity = (item.developmentActivities || [])[0];
+      const mainActivities = (item.developmentActivities || []);
+      const extraTables = (item.extraTables || []);
+      const activityType = activity?.type?.toLowerCase();
+      
+      let totalActivities = 0;
+      let completedActivities = 0;
+      
+      if (activityType === 'education') {
+        totalActivities = mainActivities.length;
+        completedActivities = mainActivities.filter(a => isCompletedStatus(a.completionStatus || a.status)).length;
+      } else if (activityType === 'experience' || activityType === 'exposure') {
+        totalActivities = extraTables.length;
+        completedActivities = extraTables.filter(t => {
+          const areas = t.areasOfExposure || [];
+          if (areas.length === 0) return false;
+          const completedAreas = areas.filter(a => a.status === 'Completed').length;
+          return completedAreas === areas.length;
+        }).length;
+      } else {
+        totalActivities = mainActivities.length;
+        completedActivities = mainActivities.filter(a => isCompletedStatus(a.completionStatus || a.status)).length;
+      }
+      
+      // This competency is complete if all its activities are complete
+      return totalActivities > 0 && completedActivities === totalActivities;
+    });
+  }, [idpData.items, isCompletedStatus]);
+
+  // Handle cycle completion approval for HR
+  const handleApproveCycleCompletion = async () => {
+    if (!window.confirm('Are you sure you want to approve this IDP for cycle completion?')) {
+      return;
+    }
+    
+    setActionLoading(true);
+    try {
+      await apiRequest(`/api/idp/${id}/hr/approve-cycle`, {
+        method: 'PUT',
+        body: JSON.stringify({ remarks: remarks || '' }),
+      });
+      alert('IDP cycle completion approved successfully!');
+      // Refresh the page or navigate back
+      window.location.reload();
+    } catch (err) {
+      console.error('Cycle completion approval failed:', err);
+      alert(`Failed to approve cycle completion: ${err.message || 'Unknown error'}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Calculate competency completion status based on activity type
   const getCompetencyCompletionStatus = useCallback((competencyItem) => {
     const mainActivities = competencyItem.developmentActivities || [];
@@ -1484,12 +1541,56 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                   return 'IDP Review';
                 })()}
               </h3>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <p className="text-blue-800 text-sm">
-                  <strong>Status:</strong> The supervisor is currently updating this IDP for completion. 
-                  You can review the progress, but approval actions are not available at this time.
-                </p>
-              </div>
+              
+              {getUserRole() === 'HR' ? (
+                <div className="space-y-4">
+                  <div className="mb-4">
+                    <p className="text-gray-700 text-sm mb-4">
+                      <strong>Status:</strong> Review the IDP activities completion before approving cycle completion.
+                    </p>
+                    
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        HR Remarks (Optional)
+                      </label>
+                      <textarea
+                        value={remarks}
+                        onChange={(e) => setRemarks(e.target.value)}
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Add any remarks about the cycle completion..."
+                      />
+                    </div>
+                    
+                    <button
+                      onClick={handleApproveCycleCompletion}
+                      disabled={!areAllActivitiesComplete || actionLoading}
+                      className={`w-full px-4 py-2 rounded-lg font-semibold text-sm transition ${
+                        areAllActivitiesComplete 
+                          ? 'bg-green-600 text-white hover:bg-green-700 focus:ring-2 focus:ring-green-500' 
+                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      }`}
+                    >
+                      {actionLoading ? 'Processing...' : 
+                       areAllActivitiesComplete ? 'Approve Cycle Completion' : 
+                       'Cannot Approve - Incomplete Activities'}
+                    </button>
+                    
+                    {!areAllActivitiesComplete && (
+                      <p className="text-red-600 text-xs mt-2">
+                        All activities must be 100% complete before cycle completion can be approved.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <p className="text-blue-800 text-sm">
+                    <strong>Status:</strong> The supervisor is currently updating this IDP for completion. 
+                    You can review the progress, but approval actions are not available at this time.
+                  </p>
+                </div>
+              )}
               
               <button
                 onClick={() => setShowScoringGuide(true)}

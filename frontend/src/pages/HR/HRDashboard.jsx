@@ -426,30 +426,6 @@ function HRDashboard() {
     }
   }
 
-  async function _handleApproveForCompletion(id) {
-    if (!window.confirm('Mark this IDP as "For Completion" and notify supervisor?')) return;
-    try {
-      await apiRequest(`/api/idp/${id}/hr/approve-for-completion`, { method: 'PUT' });
-      alert('IDP marked For Completion.');
-      await reloadIDPs();
-    } catch (err) {
-      console.error('Approve for completion failed', err);
-      alert(err?.message || 'Failed to mark For Completion');
-    }
-  }
-
-  async function _handleApproveCycle(id) {
-    if (!window.confirm('Mark this IDP as Cycle Completed?')) return;
-    try {
-      await apiRequest(`/api/idp/${id}/hr/approve-cycle`, { method: 'PUT' });
-      alert('IDP marked Cycle Completed.');
-      await reloadIDPs();
-    } catch (err) {
-      console.error('Approve cycle failed', err);
-      alert(err?.message || 'Failed to mark Cycle Completed');
-    }
-  }
-
   const sectionCounts = useMemo(() => {
     const counts = { ALL: 0 };
     const dataToCount = (selectedDepartment && selectedDepartment !== 'ALL')
@@ -752,7 +728,10 @@ function HRDashboard() {
                     {items.length === 0 ? (
                       <p className="text-gray-400 text-sm italic">No employees in this status.</p>
                     ) : (
-                      <IDPTable data={items} goTo={goTo} />
+                      <IDPTable 
+                        data={items} 
+                        goTo={goTo}
+                      />
                     )}
                   </div>
                 );
@@ -763,7 +742,10 @@ function HRDashboard() {
                 if (items.length === 0) {
                   return <p className="text-gray-400 text-sm italic">No employees in this status.</p>;
                 }
-                return <IDPTable data={items} goTo={goTo} />;
+                return <IDPTable 
+                  data={items} 
+                  goTo={goTo}
+                />;
               })()
             )
           )}
@@ -1223,6 +1205,7 @@ function CLTable({ data, onCLClick }) {
 }
 
 function IDPTable({ data, goTo }) {
+  
   return (
     <div className="bg-white shadow rounded overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -1241,29 +1224,31 @@ function IDPTable({ data, goTo }) {
         </thead>
 
         <tbody className="divide-y divide-gray-200">
-          {data.map((item, idx) => (
-            <tr key={`${item.id}-${idx}`} className="hover:bg-gray-50">
-              <Td>{item.id}</Td>
-              <Td>{item.employee_name}</Td>
-              <Td>{item.employee_code || item.employee_id}</Td>
-              <Td>{item.department_name}</Td>
-              <Td>{item.position_title || '-'}</Td>
-              <Td>{item.supervisor_name || '-'}</Td>
-              <Td>{displayStatus(item.status)}</Td>
-              <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
+          {data.map((item, idx) => {
+            return (
+              <tr key={`${item.id}-${idx}`} className="hover:bg-gray-50">
+                <Td>{item.id}</Td>
+                <Td>{item.employee_name}</Td>
+                <Td>{item.employee_code || item.employee_id}</Td>
+                <Td>{item.department_name}</Td>
+                <Td>{item.position_title || '-'}</Td>
+                <Td>{item.supervisor_name || '-'}</Td>
+                <Td>{displayStatus(item.status)}</Td>
+                <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
 
-              <Td>
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); goTo(`/hr/idp/${item.id}?viewOnly=true`); }}
-                    className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
-                  >
-                    View
-                  </button>
-                </div>
-              </Td>
-            </tr>
-          ))}
+                <Td>
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); goTo(`/hr/idp/${item.id}?viewOnly=true`); }}
+                      className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
+                    >
+                      View
+                    </button>
+                  </div>
+                </Td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
