@@ -23,7 +23,8 @@ async function managerApproveIDP(req, res, next) {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: 'Invalid IDP id' });
     const managerId = req.user.id;
-    const result = await idpService.managerApprove(id, managerId);
+    const { remarks } = req.body || {};
+    const result = await idpService.managerApprove(id, managerId, remarks || '');
     res.json(result);
   } catch (err) {
     next(err);

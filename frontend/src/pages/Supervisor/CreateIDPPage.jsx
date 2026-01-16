@@ -173,8 +173,49 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
   const searchParams = new URLSearchParams(window.location.search);
   const employeeId = routeEmployeeId ?? params.employeeId;
   const id = routeId ?? params.id; // edit mode
-  const viewOnly = searchParams.get('viewOnly') === 'true'; // view-only mode for reviewers
+  
+  // Force viewOnly for employees - they can only acknowledge, not edit
+  const userRole = (() => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        return user.role;
+      }
+    } catch (e) {}
+    return null;
+  })();
+  
+  // Initialize viewOnly state - will be updated when IDP data is loaded
+  const [viewOnly, setViewOnly] = useState(searchParams.get('viewOnly') === 'true' || userRole === 'Employee');
+
   const navigate = useNavigate();
+
+  // Determine user role and back navigation
+  const getUserRole = () => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        return user.role;
+      }
+    } catch (e) {
+      // ignore
+    }
+    return null;
+  };
+
+  const getBackRoute = () => {
+    const role = getUserRole();
+    if (viewOnly) {
+      if (role === 'Employee') return '/employee';
+      if (role === 'Manager') return '/manager';
+      if (role === 'AM') return '/am';
+      if (role === 'HR') return '/hr';
+      return '/supervisor';
+    }
+    return '/supervisor';
+  };
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -195,6 +236,10 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
   const [missingActualDates, setMissingActualDates] = useState([]);
   const [showMissingDateModal, setShowMissingDateModal] = useState(false);
+
+  // Manager review state
+  const [remarks, setRemarks] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
 
   const [idpData, setIdpData] = useState({
     reviewPeriod: '1st Cycle Performance Review',
@@ -333,9 +378,28 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         setLoading(true);
 
         if (id) {
-          setEditMode(true);
+          // Load IDP for viewing or editing
           const idpRes = await apiRequest(`/api/idp/${id}`);
           setIdpHeader(idpRes.header);
+
+          // Check if supervisor should be in view-only mode based on IDP status
+          const status = idpRes.header?.status;
+          const readOnlyStatuses = [
+            'PENDING_EMPLOYEE', 'PENDING_MANAGER', 'PENDING_AM', 'PENDING_HR', 
+            'CYCLE_COMPLETED', 'ACKNOWLEDGED'
+          ];
+          
+          // Determine final viewOnly state
+          let finalViewOnly = viewOnly;
+          if (!viewOnly && status && readOnlyStatuses.includes(status) && userRole === 'Supervisor') {
+            finalViewOnly = true;
+            setViewOnly(true);
+          }
+          
+          // Set edit mode only if not in view-only mode
+          if (!finalViewOnly) {
+            setEditMode(true);
+          }
 
           // Employee
           if (idpRes.header.employee) setEmployee(idpRes.header.employee);
@@ -358,6 +422,20 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               setSupervisor({});
             }
           } else setSupervisor({});
+
+          // Load CL score for the employee
+          if (idpRes.header?.employee_id) {
+            try {
+              const history = await apiRequest(`/api/cl/employee/${idpRes.header.employee_id}/history`);
+              const approved = (history || []).find((h) => String(h.status).toUpperCase() === 'APPROVED');
+              if (approved?.id) {
+                const clFull = await apiRequest(`/api/cl/${approved.id}`);
+                setLatestCLScore(clFull?.total_score || approved?.total_score || null);
+              }
+            } catch (e) {
+              console.error('Failed to load CL score in edit mode', e);
+            }
+          }
 
           const mappedItems = (idpRes.items || []).map((item) => {
             let rawActivity = item.development_activity;
@@ -389,10 +467,13 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 id: area.id,
                 area: area.area || '',
                 status: area.status || 'Not Started',
-                datetime: area.datetime || '',
-                durationHours: area.durationHours || '',
+                dateTime: area.datetime ? new Date(area.datetime).toISOString().slice(0, 16) : '', // Convert to datetime-local format
+                duration: area.durationHours || '', // Map backend 'durationHours' to frontend 'duration'  
                 trainerName: area.trainerName || '',
-                comments: area.comments || ''
+                comments: area.comments || '',
+                // Keep backend fields for compatibility
+                datetime: area.datetime || '',
+                durationHours: area.durationHours || ''
               }))
             }));
 
@@ -686,6 +767,17 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       }
 
       if (editMode && id) {
+        // Transform areas of exposure data to use correct backend field names
+        const transformAreasOfExposure = (areas) => areas.map(area => ({
+          id: area.id,
+          area: area.area,
+          status: area.status,
+          datetime: area.dateTime || area.datetime, // Use frontend dateTime, fallback to backend datetime
+          durationHours: area.duration || area.durationHours, // Use frontend duration, fallback to backend durationHours  
+          trainerName: area.trainerName,
+          comments: area.comments
+        }));
+
         const payload = {
           reviewPeriod: idpData.reviewPeriod,
           nextReviewDate: normalizeDate(idpData.nextReviewDate),
@@ -708,15 +800,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               educationJustificationPdf: et.educationJustificationPdf,
               exposureStartDate: et.exposureStartDate,
               learning: et.learning,
-              areasOfExposure: (et.areasOfExposure || []).map(area => ({
-                id: area.id,
-                area: area.area,
-                status: area.status,
-                datetime: area.datetime,
-                durationHours: area.durationHours,
-                trainerName: area.trainerName,
-                comments: area.comments
-              }))
+              areasOfExposure: transformAreasOfExposure(et.areasOfExposure || [])
             }))
           })),
         };
@@ -733,6 +817,16 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         navigate('/supervisor');
         return;
       }
+
+        // Create mode transform function (no id field needed)
+        const transformAreasForCreate = (areas) => areas.map(area => ({
+          area: area.area,
+          status: area.status,
+          datetime: area.dateTime || area.datetime, // Use frontend dateTime, fallback to backend datetime
+          durationHours: area.duration || area.durationHours, // Use frontend duration, fallback to backend durationHours  
+          trainerName: area.trainerName,
+          comments: area.comments
+        }));
 
       // Create mode
       const payload = {
@@ -757,14 +851,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             educationJustificationPdf: et.educationJustificationPdf,
             exposureStartDate: et.exposureStartDate,
             learning: et.learning,
-            areasOfExposure: (et.areasOfExposure || []).map(area => ({
-              area: area.area,
-              status: area.status,
-              datetime: area.datetime,
-              durationHours: area.durationHours,
-              trainerName: area.trainerName,
-              comments: area.comments
-            }))
+            areasOfExposure: transformAreasForCreate(et.areasOfExposure || [])
           }))
         })),
       };
@@ -912,10 +999,123 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     }
   };
 
+  // Manager/Employee/HR approval/return handlers
+  const handleApproveIDP = async () => {
+    try {
+      setActionLoading(true);
+      const role = getUserRole();
+      let endpoint = '';
+      
+      if (role === 'Employee') {
+        endpoint = 'employee/approve';
+      } else if (role === 'HR') {
+        // HR has two different approval endpoints based on completion status
+        endpoint = allActivitiesCompleted ? 'hr/approve-cycle' : 'hr/approve-for-completion';
+      } else if (role === 'AM' || role === 'Manager') {
+        // For Manager/AM: use cycle completion endpoint if all activities are completed
+        endpoint = allActivitiesCompleted ? 'hr/approve-cycle' : 'manager/approve';
+      } else {
+        // For other roles (like Supervisor): use cycle completion endpoint if all activities are completed  
+        endpoint = allActivitiesCompleted ? 'hr/approve-cycle' : 'manager/approve';
+      }
+      
+      await apiRequest(`/api/idp/${id}/${endpoint}`, {
+        method: 'PUT',
+        body: JSON.stringify({ remarks }),
+      });
+      alert(`IDP ${allActivitiesCompleted ? 'cycle completed' : 'approved'} successfully`);
+      navigate(getBackRoute());
+    } catch (err) {
+      console.error('Error approving IDP:', err);
+      alert('Failed to approve IDP: ' + (err.message || 'Unknown error'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReturnIDP = async () => {
+    if (!remarks.trim()) {
+      alert('Please provide remarks before returning the IDP');
+      return;
+    }
+    
+    try {
+      setActionLoading(true);
+      const role = getUserRole();
+      let endpoint = '';
+      
+      if (role === 'Employee') {
+        endpoint = 'employee/return';
+      } else if (role === 'HR') {
+        endpoint = 'hr/return';
+      } else if (role === 'AM' || role === 'Manager') {
+        endpoint = 'manager/return';
+      } else {
+        endpoint = 'manager/return'; // default
+      }
+      
+      await apiRequest(`/api/idp/${id}/${endpoint}`, {
+        method: 'PUT',
+        body: JSON.stringify({ remarks }),
+      });
+      alert(`IDP returned to supervisor`);
+      navigate(getBackRoute());
+    } catch (err) {
+      console.error('Error returning IDP:', err);
+      alert('Failed to return IDP: ' + (err.message || 'Unknown error'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const creationDate = useMemo(() => new Date().toISOString().split('T')[0], []);
 
+  // Check if all activities are completed
+  const allActivitiesCompleted = useMemo(() => {
+    return (idpData.items || []).every(item => {
+      const activity = (item.developmentActivities || [])[0];
+      if (!activity) return false;
+      
+      const activityType = activity.type?.toLowerCase();
+      
+      // For Education activities, check the main activity completion status
+      if (activityType === 'education') {
+        const status = String(activity.completionStatus || '').trim().toLowerCase();
+        return status === 'completed' || status.startsWith('completed');
+      }
+      
+      // For Experience/Exposure activities, check if all extra table activities are completed
+      if (activityType === 'experience' || activityType === 'exposure') {
+        const extraTables = item.extraTables || [];
+        if (extraTables.length === 0) return false;
+        
+        return extraTables.every(table => {
+          // For Exposure, check if all areas of exposure are completed
+          if (activityType === 'exposure') {
+            const areas = table.areasOfExposure || [];
+            if (areas.length === 0) return false;
+            return areas.every(area => area.status === 'Completed');
+          } else {
+            // For Experience, check the table completion status
+            const status = String(table.completionStatus || '').trim().toLowerCase();
+            return status === 'completed' || status.startsWith('completed');
+          }
+        });
+      }
+      
+      // For other activity types, check the main activity completion status
+      const status = String(activity.completionStatus || '').trim().toLowerCase();
+      return status === 'completed' || status.startsWith('completed');
+    });
+  }, [idpData.items]);
+
   const canResubmit = editMode && (idpHeader?.status === 'RETURNED' || idpHeader?.status === 'FOR_COMPLETION');
-  const submitLabel = saving ? (canResubmit ? 'Resubmitting...' : 'Submitting...') : canResubmit ? 'Save & Resubmit' : 'Submit IDP';
+  const submitLabel = (() => {
+    if (saving) return canResubmit ? 'Resubmitting...' : 'Submitting...';
+    if (allActivitiesCompleted && (userRole === 'Supervisor' || !userRole)) return 'Mark Cycle Completed';
+    if (canResubmit) return 'Save & Resubmit';
+    return 'Submit IDP';
+  })();
 
   const areaColor = (area) => {
     const safe = CRAYON_COLORS && typeof CRAYON_COLORS === 'object' ? CRAYON_COLORS : {};
@@ -977,7 +1177,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-start sm:items-center gap-3 min-w-0">
               <button
-                onClick={() => navigate('/supervisor')}
+                onClick={() => navigate(getBackRoute())}
                 className="shrink-0 p-2 bg-white/10 hover:bg-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-white/30"
                 aria-label="Back"
               >
@@ -1198,10 +1398,111 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             </div>
           </div>
 
-          {/* Helpful Notes */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-            <h3 className="text-sm font-semibold text-black">Helpful Notes</h3>
-            <div className="mt-3 space-y-3 text-sm text-gray-700">
+          {/* Manager Remarks Display OR Helpful Notes */}
+          {idpHeader?.manager_remarks && !editMode ? (
+            <div className="bg-blue-50 rounded-xl shadow-sm border border-blue-200 p-5">
+              <h3 className="text-lg font-semibold text-blue-900 mb-3">Manager Remarks & Feedback</h3>
+              <div className="bg-white rounded-lg p-4 border border-blue-100 mb-4">
+                <p className="text-gray-800 text-sm whitespace-pre-wrap">{idpHeader.manager_remarks}</p>
+              </div>
+              {idpHeader?.updated_at && (
+                <div className="text-xs text-blue-600">
+                  <span className="font-semibold">Added on:</span> {new Date(idpHeader.updated_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              )}
+            </div>
+          ) : viewOnly && userRole !== 'Supervisor' && idpHeader?.status !== 'FOR_COMPLETION' ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                {(() => {
+                  const role = getUserRole();
+                  if (role === 'Employee') return 'Employee Acknowledgement';
+                  if (role === 'HR') return 'HR Review & Approval';
+                  if (role === 'Manager' || role === 'AM') return 'Manager Review & Approval';
+                  return 'Remarks & Feedback';
+                })()}
+              </h3>
+              <textarea
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black resize-none mb-4"
+                rows="4"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder={(() => {
+                  const role = getUserRole();
+                  if (role === 'Employee') return 'Add your acknowledgement or comments...';
+                  if (role === 'HR') return 'Enter your HR review comments and approval decision...';
+                  if (role === 'Manager' || role === 'AM') return 'Enter your remarks for approval or return to supervisor...';
+                  return 'Enter your remarks...';
+                })()}
+              />
+              
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 mb-4">
+                <button
+                  onClick={handleReturnIDP}
+                  className="px-6 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap"
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Processing...' : 'Return to Supervisor'}
+                </button>
+                
+                <button
+                  onClick={handleApproveIDP}
+                  className="px-6 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500/50 disabled:opacity-50 whitespace-nowrap"
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Processing...' : (() => {
+                    const role = getUserRole();
+                    if (allActivitiesCompleted) {
+                      return 'Cycle Completed';
+                    }
+                    if (role === 'HR') {
+                      return 'For Completion';
+                    }
+                    if (role === 'Employee') return 'Acknowledge IDP';
+                    return 'Approve IDP';
+                  })()}
+                </button>
+              </div>
+              
+              <button
+                onClick={() => setShowScoringGuide(true)}
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-black/10"
+              >
+                <InformationCircleIcon className="h-5 w-5" />
+                View Scoring Guide
+              </button>
+            </div>
+          ) : viewOnly && userRole !== 'Supervisor' && idpHeader?.status === 'FOR_COMPLETION' ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                {(() => {
+                  const role = getUserRole();
+                  if (role === 'Employee') return 'IDP Updates in Progress';
+                  if (role === 'HR') return 'IDP Completion Review';
+                  if (role === 'Manager' || role === 'AM') return 'IDP Completion Review';
+                  return 'IDP Review';
+                })()}
+              </h3>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <p className="text-blue-800 text-sm">
+                  <strong>Status:</strong> The supervisor is currently updating this IDP for completion. 
+                  You can review the progress, but approval actions are not available at this time.
+                </p>
+              </div>
+              
+              <button
+                onClick={() => setShowScoringGuide(true)}
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-black/10"
+              >
+                <InformationCircleIcon className="h-5 w-5" />
+                View Scoring Guide
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+              <h3 className="text-sm font-semibold text-black">Helpful Notes</h3>
+              <div className="mt-3 space-y-3 text-sm text-gray-700">
               <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
                 <div className="text-xs font-semibold text-gray-600">Activities</div>
                 <div className="mt-1">One activity per competency is enforced.</div>
@@ -1218,7 +1519,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 View Scoring Guide
               </button>
             </div>
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Competency selector */}
@@ -1413,13 +1715,30 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                       </div>
 
                       <div className="p-4">
+                        {viewOnly && (
+                          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                            📖 You are viewing this IDP in read-only mode. You cannot make changes.
+                          </div>
+                        )}
                         {!activity ? (
                           <div className="px-3 py-3 bg-white rounded-lg text-sm text-gray-600 border border-gray-100">
                             No activity initialized.
                           </div>
+                        ) : viewOnly ? (
+                          <div className="space-y-3 opacity-60 pointer-events-none">
+                            {/* Display activity in read-only format */}
+                            <div className="bg-white rounded-lg p-4 border border-gray-100">
+                              <p className="text-sm text-gray-700"><strong>Type:</strong> {activity.type}</p>
+                              <p className="text-sm text-gray-700 mt-2"><strong>Activity:</strong> {activity.activity}</p>
+                              <p className="text-sm text-gray-700 mt-2"><strong>Target Date:</strong> {activity.targetCompletionDate || 'N/A'}</p>
+                              <p className="text-sm text-gray-700 mt-2"><strong>Actual Date:</strong> {activity.actualCompletionDate || 'N/A'}</p>
+                              <p className="text-sm text-gray-700 mt-2"><strong>Status:</strong> {activity.completionStatus}</p>
+                              <p className="text-sm text-gray-700 mt-2"><strong>Score:</strong> {activity.score}</p>
+                            </div>
+                          </div>
                         ) : (
                           <div>
-                            {isExpOrExposure && !viewOnly && (
+                            {isExpOrExposure && !viewOnly && idpHeader?.status !== 'FOR_COMPLETION' && (
                               <div className="p-4 mb-4 bg-white rounded-xl border border-gray-100">
                                 <div className="flex items-center justify-between">
                                   <div className="text-sm text-gray-700">This activity type uses additional table entries.</div>
@@ -1847,7 +2166,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                           )}
                                         </td>
                                         <td className="border border-gray-300 px-4 py-2 text-center">
-                                          {!viewOnly && (
+                                          {!viewOnly && idpHeader?.status !== 'FOR_COMPLETION' && (
                                             <button
                                               type="button"
                                               onClick={() => removeExtraTable(itemIndex, ti)}
@@ -1942,7 +2261,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         <td colSpan="7" className="border border-gray-300 px-4 py-2">
                                           <div className="flex items-center justify-between mb-3">
                                             <label className="block text-xs font-semibold text-gray-600">Areas of Exposure</label>
-                                            {!viewOnly && (
+                                            {!viewOnly && idpHeader?.status !== 'FOR_COMPLETION' && (
                                               <button
                                                 type="button"
                                                 onClick={() => {
@@ -1979,15 +2298,29 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                 </thead>
                                                 <tbody>
                                                   {t.areasOfExposure.map((area, ai) => (
-                                                    <tr key={ai} className="hover:bg-gray-100">
+                                                    <tr key={`${itemIndex}-${ti}-${ai}-${area.dateTime || 'new'}`} className="hover:bg-gray-100">
                                                       <td className="border border-gray-300 px-2 py-1">
                                                         <input
                                                           type="text"
                                                           value={area.area || ''}
                                                           onChange={(e) => {
-                                                            t.areasOfExposure[ai].area = e.target.value;
-                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                            if (viewOnly) return;
+                                                            const newValue = e.target.value;
+                                                            
+                                                            setIdpData((prev) => {
+                                                              const newData = { ...prev };
+                                                              const newItems = [...(newData.items || [])];
+                                                              const newExtraTables = [...(newItems[itemIndex]?.extraTables || [])];
+                                                              const newAreas = [...(newExtraTables[ti]?.areasOfExposure || [])];
+                                                              
+                                                              newAreas[ai] = { ...newAreas[ai], area: newValue };
+                                                              newExtraTables[ti] = { ...newExtraTables[ti], areasOfExposure: newAreas };
+                                                              newItems[itemIndex] = { ...newItems[itemIndex], extraTables: newExtraTables };
+                                                              newData.items = newItems;
+                                                              return newData;
+                                                            });
                                                           }}
+                                                          disabled={viewOnly}
                                                           placeholder="Area..."
                                                           className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
                                                         />
@@ -1996,9 +2329,23 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                         <select
                                                           value={area.status || ''}
                                                           onChange={(e) => {
-                                                            t.areasOfExposure[ai].status = e.target.value;
-                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                            if (viewOnly) return;
+                                                            const newValue = e.target.value;
+                                                            
+                                                            setIdpData((prev) => {
+                                                              const newData = { ...prev };
+                                                              const newItems = [...(newData.items || [])];
+                                                              const newExtraTables = [...(newItems[itemIndex]?.extraTables || [])];
+                                                              const newAreas = [...(newExtraTables[ti]?.areasOfExposure || [])];
+                                                              
+                                                              newAreas[ai] = { ...newAreas[ai], status: newValue };
+                                                              newExtraTables[ti] = { ...newExtraTables[ti], areasOfExposure: newAreas };
+                                                              newItems[itemIndex] = { ...newItems[itemIndex], extraTables: newExtraTables };
+                                                              newData.items = newItems;
+                                                              return newData;
+                                                            });
                                                           }}
+                                                          disabled={viewOnly}
                                                           className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
                                                         >
                                                           <option value="">-- Select Status --</option>
@@ -2009,13 +2356,34 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                       </td>
                                                       <td className="border border-gray-300 px-2 py-1">
                                                         <input
+                                                          key={`datetime-${itemIndex}-${ti}-${ai}-${area.dateTime || 'empty'}`}
                                                           type="datetime-local"
                                                           value={area.dateTime || ''}
                                                           onChange={(e) => {
-                                                            t.areasOfExposure[ai].dateTime = e.target.value;
-                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                            if (viewOnly) return;
+                                                            const newValue = e.target.value;
+                                                            
+                                                            // Force immediate update
+                                                            setIdpData((prevData) => {
+                                                              const newData = JSON.parse(JSON.stringify(prevData)); // Deep clone
+                                                              
+                                                              if (!newData.items) newData.items = [];
+                                                              if (!newData.items[itemIndex]) newData.items[itemIndex] = { extraTables: [] };
+                                                              if (!newData.items[itemIndex].extraTables) newData.items[itemIndex].extraTables = [];
+                                                              if (!newData.items[itemIndex].extraTables[ti]) newData.items[itemIndex].extraTables[ti] = { areasOfExposure: [] };
+                                                              if (!newData.items[itemIndex].extraTables[ti].areasOfExposure) newData.items[itemIndex].extraTables[ti].areasOfExposure = [];
+                                                              
+                                                              newData.items[itemIndex].extraTables[ti].areasOfExposure[ai] = {
+                                                                ...newData.items[itemIndex].extraTables[ti].areasOfExposure[ai],
+                                                                dateTime: newValue
+                                                              };
+                                                              
+                                                              return newData;
+                                                            });
                                                           }}
+                                                          disabled={viewOnly}
                                                           className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                          placeholder="Select date and time"
                                                         />
                                                       </td>
                                                       <td className="border border-gray-300 px-2 py-1">
@@ -2023,9 +2391,23 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                           type="text"
                                                           value={area.duration || ''}
                                                           onChange={(e) => {
-                                                            t.areasOfExposure[ai].duration = e.target.value;
-                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                            if (viewOnly) return;
+                                                            const newValue = e.target.value;
+                                                            
+                                                            setIdpData((prev) => {
+                                                              const newData = { ...prev };
+                                                              const newItems = [...(newData.items || [])];
+                                                              const newExtraTables = [...(newItems[itemIndex]?.extraTables || [])];
+                                                              const newAreas = [...(newExtraTables[ti]?.areasOfExposure || [])];
+                                                              
+                                                              newAreas[ai] = { ...newAreas[ai], duration: newValue };
+                                                              newExtraTables[ti] = { ...newExtraTables[ti], areasOfExposure: newAreas };
+                                                              newItems[itemIndex] = { ...newItems[itemIndex], extraTables: newExtraTables };
+                                                              newData.items = newItems;
+                                                              return newData;
+                                                            });
                                                           }}
+                                                          disabled={viewOnly}
                                                           placeholder="Duration..."
                                                           className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
                                                         />
@@ -2035,9 +2417,23 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                           type="text"
                                                           value={area.trainerName || ''}
                                                           onChange={(e) => {
-                                                            t.areasOfExposure[ai].trainerName = e.target.value;
-                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                            if (viewOnly) return;
+                                                            const newValue = e.target.value;
+                                                            
+                                                            setIdpData((prev) => {
+                                                              const newData = { ...prev };
+                                                              const newItems = [...(newData.items || [])];
+                                                              const newExtraTables = [...(newItems[itemIndex]?.extraTables || [])];
+                                                              const newAreas = [...(newExtraTables[ti]?.areasOfExposure || [])];
+                                                              
+                                                              newAreas[ai] = { ...newAreas[ai], trainerName: newValue };
+                                                              newExtraTables[ti] = { ...newExtraTables[ti], areasOfExposure: newAreas };
+                                                              newItems[itemIndex] = { ...newItems[itemIndex], extraTables: newExtraTables };
+                                                              newData.items = newItems;
+                                                              return newData;
+                                                            });
                                                           }}
+                                                          disabled={viewOnly}
                                                           placeholder="Trainer name..."
                                                           className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
                                                         />
@@ -2046,21 +2442,36 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                         <textarea
                                                           value={area.comments || ''}
                                                           onChange={(e) => {
-                                                            t.areasOfExposure[ai].comments = e.target.value;
-                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                            if (viewOnly) return;
+                                                            const newValue = e.target.value;
+                                                            
+                                                            setIdpData((prev) => {
+                                                              const newData = { ...prev };
+                                                              const newItems = [...(newData.items || [])];
+                                                              const newExtraTables = [...(newItems[itemIndex]?.extraTables || [])];
+                                                              const newAreas = [...(newExtraTables[ti]?.areasOfExposure || [])];
+                                                              
+                                                              newAreas[ai] = { ...newAreas[ai], comments: newValue };
+                                                              newExtraTables[ti] = { ...newExtraTables[ti], areasOfExposure: newAreas };
+                                                              newItems[itemIndex] = { ...newItems[itemIndex], extraTables: newExtraTables };
+                                                              newData.items = newItems;
+                                                              return newData;
+                                                            });
                                                           }}
+                                                          disabled={viewOnly}
                                                           placeholder="Comments..."
                                                           rows={1}
                                                           className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
                                                         />
                                                       </td>
                                                       <td className="border border-gray-300 px-2 py-1 text-center">
-                                                        {!viewOnly && (
+                                                        {!viewOnly && idpHeader?.status !== 'FOR_COMPLETION' && (
                                                           <button
                                                             type="button"
                                                             onClick={() => {
-                                                              t.areasOfExposure.splice(ai, 1);
-                                                              updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...t.areasOfExposure]);
+                                                              const newAreas = [...t.areasOfExposure];
+                                                              newAreas.splice(ai, 1);
+                                                              updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, newAreas);
                                                             }}
                                                             className="text-xs text-red-600 hover:text-red-800 font-semibold"
                                                           >

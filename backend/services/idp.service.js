@@ -62,7 +62,7 @@ async function managerReturnIDP(idpId, managerId, remarks) {
   }
 }
 // Manager approves IDP and routes it to the employee for acknowledgement
-async function managerApprove(idpId, managerId) {
+async function managerApprove(idpId, managerId, remarks = '') {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -72,8 +72,8 @@ async function managerApprove(idpId, managerId) {
       throw new Error('IDP not found or not pending manager approval.');
     }
 
-    // Update status to PENDING_EMPLOYEE so the employee can view/acknowledge
-    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['PENDING_EMPLOYEE', idpId]);
+    // Update status to PENDING_EMPLOYEE so the employee can view/acknowledge, and save remarks
+    await conn.query('UPDATE idp_headers SET status = ?, manager_remarks = ?, updated_at = NOW() WHERE id = ?', ['PENDING_EMPLOYEE', remarks, idpId]);
 
     // Fetch header for notifications
     const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
@@ -319,7 +319,7 @@ async function update(id, payload, actorId = null, actorRole = null) {
       for (const item of payload.items) {
         try { console.log('[idp.service.update] item:', { id: item.id, competency_id: item.competency_id, hasDevActivity: !!(item.development_activity || item.development_action) }); } catch(e) {}
         if (item.id) {
-          // Update existing item: only update development_action to avoid schema mismatches
+          // Update existing item with development_action (which contains the main activity as JSON)
           await conn.query(
             `UPDATE idp_items
              SET development_action = ?, updated_at = NOW()
@@ -331,6 +331,62 @@ async function update(id, payload, actorId = null, actorRole = null) {
             ]
           );
           try { console.log('[idp.service.update] updated item id:', item.id); } catch(e) {}
+
+          // Handle extraTables data - delete existing and re-insert
+          if (Array.isArray(item.extraTables)) {
+            // First delete existing extra tables for this item
+            await conn.query('DELETE FROM idp_extra_tables WHERE idp_item_id = ?', [item.id]);
+            
+            // Then insert the updated ones
+            for (const extraTable of item.extraTables) {
+              const extraId = extraTable.id || null;
+              const [extraTableInsertResult] = await conn.query(
+                `INSERT INTO idp_extra_tables 
+                 (idp_item_id, quarter, development_activity, target_completion_date, actual_completion_date, 
+                  completion_status, score, expected_results, sharing_method, application_method, 
+                  pdf_path, education_justification_pdf, exposure_start_date, learning, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [
+                  item.id,
+                  extraTable.quarter || null,
+                  extraTable.developmentActivity || null,
+                  extraTable.targetCompletionDate || null,
+                  extraTable.actualCompletionDate || null,
+                  extraTable.completionStatus || null,
+                  extraTable.score || 1,
+                  extraTable.expectedResults || null,
+                  extraTable.sharingMethod || null,
+                  extraTable.applicationMethod || null,
+                  extraTable.pdfPath || null,
+                  extraTable.educationJustificationPdf || null,
+                  extraTable.exposureStartDate || null,
+                  extraTable.learning || null
+                ]
+              );
+
+              // Handle areas of exposure if they exist
+              if (Array.isArray(extraTable.areasOfExposure) && extraTableInsertResult.insertId) {
+                const newExtraTableId = extraTableInsertResult.insertId;
+                
+                for (const area of extraTable.areasOfExposure) {
+                  await conn.query(
+                    `INSERT INTO idp_areas_of_exposure 
+                     (extra_table_id, area, status, datetime, duration_hours, trainer_name, comments, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                    [
+                      newExtraTableId,
+                      area.area || null,
+                      area.status || null,
+                      area.datetime || null,
+                      area.durationHours || null,
+                      area.trainerName || null,
+                      area.comments || null
+                    ]
+                  );
+                }
+              }
+            }
+          }
         } else {
           // Insert new item with known columns (no current_level column in schema)
           await conn.query(
@@ -453,6 +509,8 @@ async function update(id, payload, actorId = null, actorRole = null) {
 
 // Submit IDP: route to AM if department has AM, else to Manager
 async function submit(id) {
+  console.log(`[IDP SUBMIT DEBUG] Starting submit for IDP ${id}`);
+  
   // 1. Get the IDP header and department info
   const [headerRows] = await db.query(
     `SELECT ih.*, u.department_id, d.has_am
@@ -464,6 +522,9 @@ async function submit(id) {
   );
   if (!headerRows.length) throw new Error('IDP not found');
   const header = headerRows[0];
+  
+  console.log(`[IDP SUBMIT DEBUG] Current status: ${header.status}`);
+  
   const hasAM = !!header.has_am;
   let amId = null, managerId = null;
   if (hasAM) {
@@ -479,15 +540,14 @@ async function submit(id) {
   );
   managerId = managerRows[0]?.id || null;
 
-  // Determine next status. If the IDP was RETURNED and the last return was made by the employee,
-  // route back to the employee for acknowledgement. Otherwise route to AM/Manager as usual.
+  // Determine next status
   let nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
-  // If HR previously marked this IDP as FOR_COMPLETION, supervisor updates should keep it in FOR_COMPLETION
-  // until all competencies are completed. Do NOT change it back to PENDING_HR.
+  
+  // If status is FOR_COMPLETION, supervisor is just updating activities, keep the same status
   if (String(header.status).toUpperCase() === 'FOR_COMPLETION') {
     nextStatus = 'FOR_COMPLETION';
-  }
-  if (header.status === 'RETURNED') {
+    console.log(`[IDP SUBMIT DEBUG] FOR_COMPLETION detected, keeping status as FOR_COMPLETION`);
+  } else if (header.status === 'RETURNED') {
     try {
         const [raRows] = await db.query(
           `SELECT actor_id, action_type, url, title, description
@@ -526,15 +586,20 @@ async function submit(id) {
   }
 
   // Update status and set am_id/manager_id as appropriate
+  console.log(`[IDP SUBMIT DEBUG] Updating status from ${header.status} to ${nextStatus}`);
+  
   await db.query(
     `UPDATE idp_headers
      SET status = ?, updated_at = NOW(), am_id = ?, manager_id = ?
      WHERE id = ?`,
     [nextStatus, amId, managerId, id]
   );
+  
+  console.log(`[IDP SUBMIT DEBUG] Status updated successfully, nextStatus: ${nextStatus}`);
+  
   // Log recent action and create notifications similar to CL flow
   try {
-    const isResubmission = header.status === 'RETURNED';
+    const isResubmission = header.status === 'RETURNED' || header.status === 'FOR_COMPLETION';
     const [empRows] = await db.query('SELECT name, employee_id FROM users WHERE id = ?', [header.employee_id]);
     const employeeName = empRows[0]?.name || 'Employee';
 
@@ -560,44 +625,55 @@ async function submit(id) {
     }).catch(() => {});
 
     // Notify next approver (AM/Manager or HR depending on routing)
+    // Do NOT notify if it's FOR_COMPLETION - supervisor is just updating activities
     let approverId = null;
-    if (String(nextStatus).toUpperCase() === 'PENDING_HR') {
-      try {
-        const [hrRows] = await db.query("SELECT id FROM users WHERE role = 'HR' LIMIT 1");
-        approverId = hrRows[0]?.id || null;
-      } catch (e) {
-        approverId = null;
+    const shouldNotify = String(nextStatus).toUpperCase() !== 'FOR_COMPLETION';
+    
+    if (shouldNotify) {
+      if (String(nextStatus).toUpperCase() === 'PENDING_HR') {
+        try {
+          const [hrRows] = await db.query("SELECT id FROM users WHERE role = 'HR' LIMIT 1");
+          approverId = hrRows[0]?.id || null;
+        } catch (e) {
+          approverId = null;
+        }
+      } else {
+        approverId = hasAM ? amId : managerId;
+      }
+
+      if (approverId) {
+        await createNotification({
+          recipient_id: approverId,
+          message: `IDP #${id} for ${employeeName} ${isResubmission ? 'resubmitted' : 'submitted'} by ${supervisorName} is awaiting your approval`,
+          module: 'IDP'
+        }).catch(() => {});
       }
     } else {
-      approverId = hasAM ? amId : managerId;
+      console.log(`[IDP SUBMIT DEBUG] FOR_COMPLETION update - no notifications sent to approvers`);
     }
-
-    if (approverId) {
-      await createNotification({
-        recipient_id: approverId,
-        message: `IDP #${id} for ${employeeName} ${isResubmission ? 'resubmitted' : 'submitted'} by ${supervisorName} is awaiting your approval`,
-        module: 'IDP'
-      }).catch(() => {});
-    }
-    // Also notify manager, AM and HR so all stakeholders see the new submission
-    try {
-      if (managerId) {
-        await createNotification({ recipient_id: managerId, message: `IDP #${id} for ${employeeName} has been submitted by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
-      }
-      if (amId) {
-        await createNotification({ recipient_id: amId, message: `IDP #${id} for ${employeeName} has been submitted by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
-      }
+    
+    // Also notify manager, AM and HR so all stakeholders see new submissions
+    // Skip for FOR_COMPLETION updates to avoid spam
+    if (shouldNotify) {
       try {
-        const [hrRowsAll] = await db.query("SELECT id FROM users WHERE role = 'HR' LIMIT 1");
-        const hrIdAll = hrRowsAll[0]?.id || null;
-        if (hrIdAll) {
-          await createNotification({ recipient_id: hrIdAll, message: `IDP #${id} for ${employeeName} has been submitted by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
+        if (managerId) {
+          await createNotification({ recipient_id: managerId, message: `IDP #${id} for ${employeeName} has been submitted by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
+        }
+        if (amId) {
+          await createNotification({ recipient_id: amId, message: `IDP #${id} for ${employeeName} has been submitted by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
+        }
+        try {
+          const [hrRowsAll] = await db.query("SELECT id FROM users WHERE role = 'HR' LIMIT 1");
+          const hrIdAll = hrRowsAll[0]?.id || null;
+          if (hrIdAll) {
+            await createNotification({ recipient_id: hrIdAll, message: `IDP #${id} for ${employeeName} has been submitted by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
+          }
+        } catch (e) {
+          // ignore HR lookup failures
         }
       } catch (e) {
-        // ignore HR lookup failures
+        // swallow any additional notification failures
       }
-    } catch (e) {
-      // swallow any additional notification failures
     }
   } catch (e) {
     // don't block submit on notification/log failures

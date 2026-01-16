@@ -2112,6 +2112,7 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
       setActionLoading(true);
       await apiRequest(`/api/idp/${idp.id}/manager/approve`, {
         method: 'PUT',
+        body: JSON.stringify({ remarks }),
       });
       alert('IDP approved successfully');
       onClose(); // Close the view and refresh
@@ -2285,6 +2286,61 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
                 <InformationCircleIcon className="h-5 w-5" />
                 View Scoring Guide
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Manager Remarks and Action Buttons - Visible at top */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 className="text-lg font-semibold text-gray-800 mb-3">Manager Remarks</h3>
+            <textarea
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black resize-none"
+              rows="4"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Enter your remarks for approval or return to supervisor..."
+            />
+            
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                onClick={onClose}
+                className="px-6 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-gray-300/50"
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              
+              <button
+                onClick={handleReturnIDP}
+                className="px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
+                disabled={actionLoading}
+              >
+                {actionLoading ? 'Processing...' : 'Return to Supervisor'}
+              </button>
+              
+              <button
+                onClick={handleApproveIDP}
+                className="px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500/50 disabled:opacity-50"
+                disabled={actionLoading}
+              >
+                {actionLoading ? 'Processing...' : 'Approve IDP'}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 className="text-lg font-semibold text-gray-800 mb-3">Action Guide</h3>
+            <div className="space-y-3 text-sm text-gray-700">
+              <div>
+                <p className="font-semibold text-gray-800 mb-1">Approve</p>
+                <p>Accept the IDP as is and move to next step</p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-800 mb-1">Return</p>
+                <p>Send back with remarks for supervisor revision</p>
+              </div>
             </div>
           </div>
         </div>
@@ -2525,44 +2581,7 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
           )}
         </div>
 
-        {/* Manager Remarks Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <h3 className="text-lg font-semibold text-gray-800 mb-3">Manager Remarks</h3>
-          <textarea
-            className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black resize-none"
-            rows="4"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Enter your remarks for approval or return to supervisor..."
-          />
-        </div>
 
-        {/* Action Buttons */}
-        <div className="flex justify-end gap-3 pt-4">
-          <button
-            onClick={onClose}
-            className="px-6 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-gray-300/50"
-            disabled={actionLoading}
-          >
-            Cancel
-          </button>
-          
-          <button
-            onClick={handleReturnIDP}
-            className="px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
-            disabled={actionLoading}
-          >
-            {actionLoading ? 'Processing...' : 'Return to Supervisor'}
-          </button>
-          
-          <button
-            onClick={handleApproveIDP}
-            className="px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500/50 disabled:opacity-50"
-            disabled={actionLoading}
-          >
-            {actionLoading ? 'Processing...' : 'Approve IDP'}
-          </button>
-        </div>
       </div>
     </div>
   );
