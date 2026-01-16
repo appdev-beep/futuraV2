@@ -2098,39 +2098,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           </div>
         </div>
 
-        {/* Bottom action bar */}
-        <div className="sticky bottom-0 z-30 pb-4">
-          <div className="max-w-7xl mx-auto">
-            <div className="bg-white/90 backdrop-blur border border-gray-200 shadow-sm rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="text-sm text-gray-700">
-                <span className="font-semibold text-gray-900">{editMode ? 'Editing IDP' : 'Creating IDP'}</span>
-                <span className="text-gray-500"> • </span>
-                <span className="text-gray-600">{employee?.name || ''}</span>
-              </div>
 
-              <div className="flex items-center gap-2 justify-end">
-                <button
-                  onClick={() => navigate('/supervisor')}
-                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800 font-semibold focus:outline-none focus:ring-2 focus:ring-black/10"
-                >
-                  Cancel
-                </button>
-
-                {!editMode && !viewOnly && (
-                  <button
-                    onClick={saveDraft}
-                    disabled={saving}
-                    className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gray-500 text-white hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed font-semibold focus:outline-none focus:ring-2 focus:ring-black/10"
-                  >
-                    {saving ? 'Saving...' : 'Save Draft'}
-                  </button>
-                )}
-
-                {!viewOnly && <BlackButton onClick={submitIDP} disabled={saving} label={submitLabel} />}
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
