@@ -11,7 +11,7 @@ function SummaryCard({ label, value, gradientClass }) {
   );
 }
 
-export default function SupervisorIDP({ idpSummary, idpEmployees, idpByStatus, activeIDPSection, IDP_STATUS_SECTIONS, refreshIDPs }) {
+export default function SupervisorIDP({ idpSummary, idpByStatus, activeIDPSection, IDP_STATUS_SECTIONS, refreshIDPs }) {
   const navigate = useNavigate();
 
   // Delete handler (supervisor owner may delete even if in approval)
@@ -44,48 +44,6 @@ export default function SupervisorIDP({ idpSummary, idpEmployees, idpByStatus, a
         <SummaryCard label="IDP For Approval" value={idpSummary.idpPending} gradientClass="from-yellow-400 to-orange-500" />
         <SummaryCard label="IDP Returns" value={idpSummary.idpReturned} gradientClass="from-red-400 to-red-600" />
         <SummaryCard label="Cycle Completed" value={idpSummary.idpCycleCompleted} gradientClass="from-emerald-400 to-emerald-700" />
-      </section>
-
-      {/* IDP Creation Table */}
-      <section className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">Employees Requiring IDP Creation</h2>
-        {idpEmployees.length === 0 ? (
-          <p className="text-gray-400 text-sm italic">No employees require IDP creation at this time.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CL Approved Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {idpEmployees.map((emp) => (
-                  <tr key={emp.employee_id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{emp.employee_id}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{emp.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{emp.position || 'N/A'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {emp.cl_approved_date ? new Date(emp.cl_approved_date).toLocaleDateString() : 'N/A'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button
-                        onClick={() => navigate(`/supervisor/idp/create/${emp.employee_id}`)}
-                        className="text-blue-600 hover:text-blue-900 font-medium"
-                      >
-                        Create IDP
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </section>
 
       {/* IDP By Status Table (filtered) */}

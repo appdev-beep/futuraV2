@@ -14,6 +14,9 @@ import {
   CheckCircleIcon,
   PencilSquareIcon,
   ArrowsPointingOutIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 
 import '../../index.css';
@@ -62,6 +65,13 @@ function SupervisorDashboard() {
   const [activeIDPSection, setActiveIDPSection] = useState('ALL');
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
   const [showFullNotifications, setShowFullNotifications] = useState(false);
+  const [showClAction, setShowClAction] = useState(false);
+  const [showClInReview, setShowClInReview] = useState(false);
+  const [showIdpAction, setShowIdpAction] = useState(false);
+  const [showIdpInReview, setShowIdpInReview] = useState(false);
+  // Pagination for Recent Actions (right sidebar)
+  const [recentPage, setRecentPage] = useState(1);
+  const RECENT_PAGE_SIZE = 10;
 
   const [modalState, setModalState] = useState({
     open: false,
@@ -190,6 +200,13 @@ function SupervisorDashboard() {
     loadDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Clamp recent actions page when list or filter changes
+  useEffect(() => {
+    const total = Math.max(1, Math.ceil((recentActions || []).length / RECENT_PAGE_SIZE));
+    if (recentPage > total) setRecentPage(total);
+    if (recentPage < 1) setRecentPage(1);
+  }, [recentActions, recentFilter]);
 
   // Notifications (polling)
   useEffect(() => {
@@ -405,6 +422,20 @@ function SupervisorDashboard() {
     return counts;
   }, [clByStatus, CL_STATUS_SECTIONS]);
 
+  // Grouped counts for CL
+  const clActionRequiredCount = useMemo(() => {
+    const draft = (clByStatus?.DRAFT || []).length;
+    const returned = (clByStatus?.RETURNED || []).length;
+    return draft + returned;
+  }, [clByStatus]);
+  const clInReviewCount = useMemo(() => {
+    return (clByStatus?.PENDING_EMPLOYEE?.length || 0)
+      + (clByStatus?.PENDING_HR?.length || 0)
+      + (clByStatus?.PENDING_MANAGER?.length || 0)
+      + (clByStatus?.PENDING_AM?.length || 0);
+  }, [clByStatus]);
+  const clApprovedCount = useMemo(() => (clByStatus?.APPROVED?.length || 0), [clByStatus]);
+
   const idpSectionCounts = useMemo(() => {
     const counts = { ALL: 0 };
     for (const s of IDP_STATUS_SECTIONS) {
@@ -413,6 +444,20 @@ function SupervisorDashboard() {
     }
     return counts;
   }, [idpByStatus, IDP_STATUS_SECTIONS]);
+
+  // Grouped counts for IDP
+  const idpActionRequiredCount = useMemo(() => {
+    return (idpByStatus?.RETURNED?.length || 0)
+      + (idpByStatus?.DRAFT?.length || 0)
+      + (idpByStatus?.FOR_COMPLETION?.length || 0);
+  }, [idpByStatus]);
+  const idpInReviewCount = useMemo(() => {
+    return (idpByStatus?.PENDING_EMPLOYEE?.length || 0)
+      + (idpByStatus?.PENDING_HR?.length || 0)
+      + (idpByStatus?.PENDING_MANAGER?.length || 0)
+      + (idpByStatus?.PENDING_AM?.length || 0);
+  }, [idpByStatus]);
+  const idpApprovedCount = useMemo(() => (idpByStatus?.CYCLE_COMPLETED?.length || 0), [idpByStatus]);
 
   const activeLabel = useMemo(() => {
     if (activeSection === 'ALL') return 'All Competency Levelings';
@@ -461,27 +506,107 @@ function SupervisorDashboard() {
                   {sectionCounts.ALL || 0}
                 </span>
               </button>
+              {/* Grouped: Action Required */}
               <div className="mt-1 space-y-1">
-                {CL_STATUS_SECTIONS.map(({ key, label, icon }) => {
-                  const Icon = icon;
-                  return (
+                <button
+                  type="button"
+                  onClick={() => setShowClAction((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showClAction ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {(showClAction ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
+                    <ExclamationTriangleIcon className="w-4 h-4" />
+                    Action Required
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{clActionRequiredCount}</span>
+                </button>
+                {showClAction && (
+                  <div className="ml-6 space-y-1">
                     <button
-                      key={key}
                       type="button"
-                      onClick={() => { setActivePage('CL'); setActiveSection(key); }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                        ${activeSection === key ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                      onClick={() => { setActivePage('CL'); setActiveSection('DRAFT'); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'DRAFT' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
                     >
                       <span className="flex items-center gap-2">
-                        <Icon className="w-4 h-4" />
-                        {label}
+                        <PencilSquareIcon className="w-4 h-4" />
+                        Returned for Review
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
-                        {sectionCounts[key] || 0}
-                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.DRAFT || 0}</span>
                     </button>
-                  );
-                })}
+                    {clByStatus?.RETURNED && (
+                      <button
+                        type="button"
+                        onClick={() => { setActivePage('CL'); setActiveSection('RETURNED'); }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'RETURNED' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                      >
+                        <span className="flex items-center gap-2"><PencilSquareIcon className="w-4 h-4" />Returned</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{(clByStatus.RETURNED || []).length}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Grouped: In Review */}
+                <button
+                  type="button"
+                  onClick={() => setShowClInReview((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showClInReview ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {(showClInReview ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
+                    <ClockIcon className="w-4 h-4" />
+                    In Review
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{clInReviewCount}</span>
+                </button>
+                {showClInReview && (
+                  <div className="ml-6 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => { setActivePage('CL'); setActiveSection('PENDING_EMPLOYEE'); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'PENDING_EMPLOYEE' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><UserIcon className="w-4 h-4" />For Approval by Employee</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.PENDING_EMPLOYEE || 0}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setActivePage('CL'); setActiveSection('PENDING_HR'); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'PENDING_HR' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><BriefcaseIcon className="w-4 h-4" />For Approval by HR</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.PENDING_HR || 0}</span>
+                    </button>
+                    {department?.has_am ? (
+                      <button
+                        type="button"
+                        onClick={() => { setActivePage('CL'); setActiveSection('PENDING_AM'); }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'PENDING_AM' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                      >
+                        <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />For Approval by Assistant Manager</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.PENDING_AM || 0}</span>
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => { setActivePage('CL'); setActiveSection('PENDING_MANAGER'); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'PENDING_MANAGER' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />For Approval by Manager</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.PENDING_MANAGER || 0}</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Approved */}
+                <button
+                  type="button"
+                  onClick={() => { setActivePage('CL'); setActiveSection('APPROVED'); }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'APPROVED' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2"><CheckCircleIcon className="w-4 h-4" />Approved</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{clApprovedCount}</span>
+                </button>
               </div>
               <button
                 onClick={() => goTo('/cl/start')}
@@ -522,27 +647,117 @@ function SupervisorDashboard() {
                 </span>
               </button>
               <div className="mt-1 space-y-1">
-                {IDP_STATUS_SECTIONS.map(({ key, label, icon }) => {
-                  const Icon = icon;
-                  return (
+                {/* Action Required */}
+                <button
+                  type="button"
+                  onClick={() => setShowIdpAction((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showIdpAction ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {(showIdpAction ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
+                    <ExclamationTriangleIcon className="w-4 h-4" />
+                    Action Required
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpActionRequiredCount}</span>
+                </button>
+                {showIdpAction && (
+                  <div className="ml-6 space-y-1">
                     <button
-                      key={key}
                       type="button"
-                      onClick={() => { setActivePage('IDP'); setActiveIDPSection(key); }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                        ${activeIDPSection === key ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                      onClick={() => { setActivePage('IDP'); setActiveIDPSection('DRAFT'); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeIDPSection === 'DRAFT' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
                     >
-                      <span className="flex items-center gap-2">
-                        <Icon className="w-4 h-4" />
-                        {label}
-                      </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
-                        {idpSectionCounts[key] || 0}
-                      </span>
+                      <span className="flex items-center gap-2"><PencilSquareIcon className="w-4 h-4" />Drafts</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.DRAFT || 0}</span>
                     </button>
-                  );
-                })}
+                    <button
+                      type="button"
+                      onClick={() => { setActivePage('IDP'); setActiveIDPSection('RETURNED'); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeIDPSection === 'RETURNED' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><PencilSquareIcon className="w-4 h-4" />Returned for Review</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.RETURNED || 0}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setActivePage('IDP'); setActiveIDPSection('FOR_COMPLETION'); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeIDPSection === 'FOR_COMPLETION' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />For Completion</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.FOR_COMPLETION || 0}</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* In Review */}
+                <button
+                  type="button"
+                  onClick={() => setShowIdpInReview((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showIdpInReview ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {(showIdpInReview ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
+                    <ClockIcon className="w-4 h-4" />
+                    In Review
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpInReviewCount}</span>
+                </button>
+                {showIdpInReview && (
+                  <div className="ml-6 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => { setActivePage('IDP'); setActiveIDPSection('PENDING_EMPLOYEE'); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeIDPSection === 'PENDING_EMPLOYEE' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><UserIcon className="w-4 h-4" />For Approval by Employee</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.PENDING_EMPLOYEE || 0}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setActivePage('IDP'); setActiveIDPSection('PENDING_HR'); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeIDPSection === 'PENDING_HR' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><BriefcaseIcon className="w-4 h-4" />For Approval by HR</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.PENDING_HR || 0}</span>
+                    </button>
+                    {department?.has_am ? (
+                      <button
+                        type="button"
+                        onClick={() => { setActivePage('IDP'); setActiveIDPSection('PENDING_AM'); }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeIDPSection === 'PENDING_AM' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                      >
+                        <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />For Approval by Assistant Manager</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.PENDING_AM || 0}</span>
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => { setActivePage('IDP'); setActiveIDPSection('PENDING_MANAGER'); }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeIDPSection === 'PENDING_MANAGER' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />For Approval by Manager</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.PENDING_MANAGER || 0}</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Approved / Cycle Completed */}
+                <button
+                  type="button"
+                  onClick={() => { setActivePage('IDP'); setActiveIDPSection('CYCLE_COMPLETED'); }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeIDPSection === 'CYCLE_COMPLETED' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2"><CheckCircleIcon className="w-4 h-4" />Cycle Completed</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpApprovedCount}</span>
+                </button>
               </div>
+              <button
+                onClick={() => goTo('/idp/start')}
+                className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded
+                           text-xs text-blue-900 bg-blue-100 hover:bg-blue-200 transition"
+              >
+                <span>➤ Start IDP</span>
+              </button>
             </div>
           </div>
         </nav>
@@ -607,7 +822,7 @@ function SupervisorDashboard() {
       </main>
 
       {/* RIGHT SIDEBAR */}
-      <aside className="w-56 bg-white border-l border-gray-200 flex flex-col">
+      <aside className="w-72 bg-white border-l border-gray-200 flex flex-col">
         <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
           <button
             onClick={() => setShowFullNotifications(true)}
@@ -991,10 +1206,10 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
 function FullRecentActionsModal({ open, recentActions, onActionClick, onClose }) {
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
-  if (!open) return null;
-
-  // Filter actions by date range and search term
+  // Filter actions by date range and search term (before any conditional logic)
   const filteredActions = recentActions.filter(a => {
     // Date filtering
     if (a.created_at) {
@@ -1020,6 +1235,17 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
     
     return true;
   });
+
+  // Clamp page when filters change (before any conditional logic)
+  useEffect(() => {
+    const total = Math.max(1, Math.ceil(filteredActions.length / PAGE_SIZE));
+    if (page > total) setPage(total);
+    if (page < 1) setPage(1);
+  }, [filteredActions]);
+
+  if (!open) return null;
+
+  const visibleActions = filteredActions.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -1097,7 +1323,7 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {filteredActions.map((a, idx) => (
+                  {visibleActions.map((a, idx) => (
                     <tr
                       key={`${a.id}-${idx}`}
                       onClick={() => {
@@ -1117,6 +1343,32 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                   ))}
                 </tbody>
               </table>
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+                <span className="text-xs text-gray-600">
+                  Page {page} of {Math.max(1, Math.ceil(filteredActions.length / PAGE_SIZE))}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    className={`px-3 py-1.5 rounded text-xs border transition ${page <= 1 ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => {
+                      const total = Math.max(1, Math.ceil(filteredActions.length / PAGE_SIZE));
+                      return Math.min(total, p + 1);
+                    })}
+                    disabled={page >= Math.max(1, Math.ceil(filteredActions.length / PAGE_SIZE))}
+                    className={`px-3 py-1.5 rounded text-xs border transition ${page >= Math.max(1, Math.ceil(filteredActions.length / PAGE_SIZE)) ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -1187,337 +1439,6 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
                 );
               })}
             </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// IDP Creation Modal Component
-function IDPCreationModal({ 
-  isOpen, 
-  employee, 
-  // ...existing code...
-  idpData, 
-  loading, 
-  saving, 
-  error,
-  onClose, 
-  onSave,
-  onUpdateIdpData
-}) {
-  const [showScoringGuide, setShowScoringGuide] = useState(false);
-
-  const addDevelopmentActivity = (itemIndex) => {
-    const newItems = [...idpData.items];
-    newItems[itemIndex].developmentActivities.push({
-      type: 'Education',
-      activity: '',
-      targetCompletionDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0],
-      actualCompletionDate: '',
-      completionStatus: 'Not Started/In Progress (<50%)',
-      expectedResults: '',
-      sharingMethod: '',
-      applicationMethod: '',
-      score: 1
-    });
-    onUpdateIdpData('items', newItems);
-  };
-
-  const removeDevelopmentActivity = (itemIndex, activityIndex) => {
-    const newItems = [...idpData.items];
-    newItems[itemIndex].developmentActivities.splice(activityIndex, 1);
-    onUpdateIdpData('items', newItems);
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 bg-white text-black">
-      <div className="w-full h-full overflow-y-auto">
-        <div className="p-4 max-w-5xl mx-auto">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-4 p-4 rounded-md bg-black">
-            <h2 className="text-lg font-semibold text-white">Create Individual Development Plan (IDP)</h2>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowScoringGuide(!showScoringGuide)}
-                className="bg-gray-800 text-white text-xs font-bold px-3 py-2 rounded-full hover:bg-gray-700"
-              >
-                {showScoringGuide ? 'Hide' : 'Show'} Scoring Guide
-              </button>
-              <button
-                onClick={onClose}
-                className="bg-gray-300 text-black text-xl font-bold px-3 py-2 rounded-full hover:bg-gray-400"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <div className="mb-3 p-3 rounded-md bg-gray-100">
-              <p className="text-black font-bold text-sm">⚠️ {error} ⚠️</p>
-            </div>
-          )}
-
-          {loading ? (
-            <div className="text-center py-4 p-6 rounded-3xl bg-gray-100">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-4 mx-auto border-gray-400"></div>
-              <p className="mt-1 text-black text-sm font-bold">Loading competencies...</p>
-            </div>
-          ) : (
-            <>
-              {/* Scoring Guide */}
-              {showScoringGuide && (
-                <div className="mb-4 bg-white p-3 rounded-md">
-                  <h3 className="font-medium mb-2 text-sm text-black">Scoring Guide for IDP Completion and Competency Mastery</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs border">
-                      <thead className="bg-white border-b">
-                        <tr>
-                          <th className="px-2 py-1 border text-left">Score</th>
-                          <th className="px-2 py-1 border text-left">Description</th>
-                          <th className="px-2 py-1 border text-left">Completion Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {SCORING_GUIDE.map((guide) => (
-                          <tr key={guide.score}>
-                            <td className="px-2 py-1 border font-semibold">{guide.score}</td>
-                            <td className="px-2 py-1 border">{guide.description}</td>
-                            <td className="px-2 py-1 border">{guide.status}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Employee Information */}
-              <div className="mb-4 p-3 rounded-md bg-white">
-                <h3 className="font-medium mb-2 text-sm text-black">Employee Information</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                  <div>
-                    <label className="block font-medium text-black">Name</label>
-                    <p className="font-bold text-black">{employee?.name || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <label className="block font-medium text-black">Position</label>
-                    <p className="font-bold text-black">{employee?.position || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <label className="block font-medium text-black">Department</label>
-                    <p className="font-bold text-black">{employee?.department || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <label className="block font-medium text-black">Date Created</label>
-                    <p className="font-bold text-black">{new Date().toLocaleDateString()}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <div>
-                    <label className="block text-xs font-medium text-black mb-1">Review Period</label>
-                    <input
-                      type="text"
-                      value={idpData.reviewPeriod}
-                      onChange={(e) => onUpdateIdpData('reviewPeriod', e.target.value)}
-                      className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black border bg-gray-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-black mb-1">Next Review Date</label>
-                    <input
-                      type="date"
-                      value={idpData.nextReviewDate}
-                      onChange={(e) => onUpdateIdpData('nextReviewDate', e.target.value)}
-                      className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black border bg-gray-100"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Development Plan */}
-              <div className="mb-4">
-                <h3 className="font-medium mb-2 text-sm text-black p-3 rounded-md text-center bg-gray-100">Development Plan</h3>
-                {idpData.items.length === 0 ? (
-                  <div className="text-center py-4 text-black p-6 rounded-3xl bg-gray-100">
-                    <p className="text-sm font-bold">No approved competencies found for this employee.</p>
-                    <p className="text-xs font-bold">Employee must have approved CL competencies before creating IDP.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {idpData.items.map((item, itemIndex) => {
-                      return (
-                        <div key={item.competencyId} className="p-3 rounded-md mb-3 bg-white">
-                          <div className="grid grid-cols-4 gap-3 mb-3">
-                            <div>
-                              <label className="block text-xs font-medium text-black mb-1">Development Area</label>
-                              <input
-                                type="text"
-                                value={item.competencyArea || '[No competency_area]'}
-                                readOnly
-                                className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-black mb-1">Competency</label>
-                              <input
-                                type="text"
-                                value={item.competencyName}
-                                readOnly
-                                className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-black mb-1">Current Level</label>
-                              <input
-                                type="number"
-                                value={item.currentLevel}
-                                readOnly
-                                className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-black mb-1">Target Level</label>
-                              <input
-                                type="number"
-                                value={item.targetLevel}
-                                readOnly
-                                className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                              />
-                            </div>
-                          </div>
-                          {/* Development Activities */}
-                          <div className="space-y-3 mt-3">
-                            <div className="flex justify-between items-center">
-                              <h4 className="font-medium text-black">Development Activities</h4>
-                              <button
-                                onClick={() => addDevelopmentActivity(itemIndex)}
-                                className="bg-gray-800 text-white text-xs font-bold px-2 py-1 rounded-full hover:bg-gray-700"
-                              >
-                                Add Activity
-                              </button>
-                            </div>
-                            {item.developmentActivities && item.developmentActivities.map((activity, activityIndex) => (
-                              <div key={activityIndex} className="p-3 rounded-md bg-gray-50">
-                                <div className="flex justify-end mb-2">
-                                  {item.developmentActivities.length > 1 && (
-                                    <button
-                                      onClick={() => removeDevelopmentActivity(itemIndex, activityIndex)}
-                                      className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full hover:bg-red-800"
-                                    >
-                                      Remove
-                                    </button>
-                                  )}
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                  <div>
-                                    <label className="block text-xs font-medium text-black mb-1">Type</label>
-                                    <select
-                                      value={activity.type}
-                                      onChange={(e) => onUpdateIdpData(`items.${itemIndex}.developmentActivities.${activityIndex}.type`, e.target.value)}
-                                      className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                                    >
-                                      {DEVELOPMENT_TYPES.map(type => (
-                                        <option key={type} value={type}>{type}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-black mb-1">Target Date</label>
-                                    <input
-                                      type="date"
-                                      value={activity.targetCompletionDate}
-                                      onChange={(e) => onUpdateIdpData(`items.${itemIndex}.developmentActivities.${activityIndex}.targetCompletionDate`, e.target.value)}
-                                      className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-black mb-1">Score</label>
-                                    <select
-                                      value={activity.score}
-                                      onChange={(e) => onUpdateIdpData(`items.${itemIndex}.developmentActivities.${activityIndex}.score`, parseInt(e.target.value))}
-                                      className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                                    >
-                                      {[1,2,3,4,5].map(score => (
-                                        <option key={score} value={score}>{score}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-                                <div className="mt-3 space-y-2">
-                                  <div>
-                                    <label className="block text-xs font-medium text-black mb-1">Development Activity</label>
-                                    <textarea
-                                      value={activity.activity}
-                                      onChange={(e) => onUpdateIdpData(`items.${itemIndex}.developmentActivities.${activityIndex}.activity`, e.target.value)}
-                                      rows={2}
-                                      className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                                      placeholder="Describe the development activity..."
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-black mb-1">Expected Results</label>
-                                    <textarea
-                                      value={activity.expectedResults}
-                                      onChange={(e) => onUpdateIdpData(`items.${itemIndex}.developmentActivities.${activityIndex}.expectedResults`, e.target.value)}
-                                      rows={2}
-                                      className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                                      placeholder="What new skills or knowledge will you gain?"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-black mb-1">Knowledge Sharing</label>
-                                    <textarea
-                                      value={activity.sharingMethod}
-                                      onChange={(e) => onUpdateIdpData(`items.${itemIndex}.developmentActivities.${activityIndex}.sharingMethod`, e.target.value)}
-                                      rows={2}
-                                      className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                                      placeholder="How will you share knowledge with team members?"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-black mb-1">Application Method</label>
-                                    <textarea
-                                      value={activity.applicationMethod}
-                                      onChange={(e) => onUpdateIdpData(`items.${itemIndex}.developmentActivities.${activityIndex}.applicationMethod`, e.target.value)}
-                                      rows={2}
-                                      className="w-full px-2 py-1 rounded-xl text-xs font-bold text-black bg-gray-100"
-                                      placeholder="How will you apply the learning to improve work performance?"
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-4 mt-6">
-                <button
-                  onClick={onClose}
-                  disabled={saving}
-                  className="px-4 py-2 rounded-2xl font-bold bg-gray-300 text-black hover:bg-gray-400"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => onSave(idpData)}
-                  disabled={saving || idpData.items.length === 0}
-                  className="px-4 py-2 rounded-2xl font-bold bg-black text-white hover:bg-gray-800 disabled:opacity-50"
-                >
-                  {saving ? 'Creating...' : 'Create IDP'}
-                </button>
-              </div>
-            </>
           )}
         </div>
       </div>

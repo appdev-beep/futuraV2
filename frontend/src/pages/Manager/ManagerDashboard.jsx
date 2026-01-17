@@ -12,11 +12,17 @@ import {
   Squares2X2Icon,
   ClockIcon,
   PencilSquareIcon,
+  BookOpenIcon,
   UsersIcon,
   MagnifyingGlassIcon,
   ListBulletIcon,
   InformationCircleIcon,
   ArrowLeftIcon,
+  UserIcon,
+  BriefcaseIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import {
   COMPLETION_STATUS_OPTIONS,
@@ -31,29 +37,29 @@ const MANAGER_ROLES = ['Manager', 'HR', 'Admin'];
 // IDPTable Component for rendering IDP lists
 function IDPTable({ data, openIdpView }) {
   return (
-    <div className="bg-white shadow rounded overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
+    <div className="bg-white shadow-sm rounded overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-50 text-sm">
+        <thead className="bg-white">
           <tr>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">IDP No.</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Employee</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Supervisor</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Status</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Created At</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Actions</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">IDP No.</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Employee</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Supervisor</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Created At</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody className="bg-white divide-y divide-gray-50">
           {data.map((idp) => (
             <tr key={idp.id} className="hover:bg-gray-50">
               <td className="px-4 py-3 whitespace-nowrap">
-                <span className="font-semibold text-purple-700">#{idp.id}</span>
+                <span className="font-semibold text-purple-600">#{idp.id}</span>
               </td>
               <td className="px-4 py-3 whitespace-nowrap">
-                <div className="font-medium text-gray-900">{idp.employee_name}</div>
-                <div className="text-xs text-gray-500">{idp.employee_position}</div>
+                <div className="font-medium text-gray-700">{idp.employee_name}</div>
+                <div className="text-xs text-gray-400">{idp.employee_position}</div>
               </td>
-              <td className="px-4 py-3 whitespace-nowrap text-gray-700">{idp.supervisor_name}</td>
+              <td className="px-4 py-3 whitespace-nowrap text-gray-600">{idp.supervisor_name}</td>
               <td className="px-4 py-3 whitespace-nowrap">
                 <span className={`px-2 py-1 text-xs font-medium rounded ${
                   idp.status === 'CYCLE_COMPLETED'
@@ -69,7 +75,7 @@ function IDPTable({ data, openIdpView }) {
                   {displayStatus(idp.status)}
                 </span>
               </td>
-              <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+              <td className="px-4 py-3 whitespace-nowrap text-gray-500">
                 {new Date(idp.created_at).toLocaleDateString()}
               </td>
               <td className="px-4 py-3 whitespace-nowrap">
@@ -143,6 +149,12 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [showFullNotifications, setShowFullNotifications] = useState(false);
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
 
+  // Supervisor sidebar state
+  const [showClAction, setShowClAction] = useState(false);
+  const [showClInReview, setShowClInReview] = useState(false);
+  const [showIdpAction, setShowIdpAction] = useState(false);
+  const [showIdpInReview, setShowIdpInReview] = useState(false);
+
   // Department info for dynamic AM section
   const [department, setDepartment] = useState(null);
   // Fetch department info for the user
@@ -202,7 +214,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   // Helper components for IDP modal
   function TextBox({ value }) {
     return (
-      <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+      <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 shadow-sm">
         {value || 'N/A'}
       </div>
     );
@@ -211,7 +223,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   function Field({ label, children }) {
     return (
       <div>
-        <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+        <label className="block text-xs font-bold text-gray-600 mb-2">{label}</label>
         {children}
       </div>
     );
@@ -223,11 +235,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
     const key = String(area || 'Other');
     const palette = [
-      { bg: 'bg-indigo-50', text: 'text-indigo-800', border: 'border-indigo-200', dot: 'bg-indigo-500' },
-      { bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200', dot: 'bg-rose-500' },
-      { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-500' },
-      { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', dot: 'bg-emerald-500' },
-      { bg: 'bg-sky-50', text: 'text-sky-800', border: 'border-sky-200', dot: 'bg-sky-500' },
+      { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100', dot: 'bg-indigo-400' },
+      { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-100', dot: 'bg-rose-400' },
+      { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-400' },
+      { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-400' },
+      { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-100', dot: 'bg-sky-400' },
     ];
     let hash = 0;
     for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 100000;
@@ -670,254 +682,223 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   return (
     <div className="flex h-screen bg-white">
       {/* SIDEBAR */}
-      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
-        {/* HEADER */}
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-800">FUTURA</h2>
-          <p className="text-sm text-gray-500">{user.role}</p>
+      <aside className="w-72 bg-blue-900 border-r border-gray-300 flex flex-col">
+        <div className="p-4 border-b border-blue-800">
+          <h2 className="text-xl font-semibold text-white">FUTURA</h2>
+          <p className="text-sm text-blue-100">{user.role}</p>
         </div>
 
-        {/* NAVIGATION */}
-        <nav className="flex-1 p-4 space-y-4 overflow-y-auto overflow-x-hidden">
+        <nav className="p-4 space-y-4 overflow-y-auto">
           {/* Competency Leveling */}
           <div className="space-y-1">
             <button
               onClick={() => setActiveSection('all')}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded
-                         text-gray-700 hover:bg-gray-100 transition"
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded transition
+                ${activeSection.startsWith('all') || activeSection.startsWith('pending') ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
             >
-              <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-600" />
-              <span>All Competencies</span>
+              <ClipboardDocumentCheckIcon className="w-5 h-5 text-white" />
+              <span>Competency Leveling</span>
             </button>
 
-            {/* View Employees Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setExpandedSupervisors(prev => ({ ...prev, main: !prev.main }))}
-                className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded
-                           text-gray-700 hover:bg-gray-100 transition"
-              >
-                <div className="flex items-center gap-3">
-                  <UsersIcon className="w-5 h-5 text-green-600" />
-                  <span>View Employees</span>
-                </div>
-                <svg
-                  className={`w-4 h-4 transition-transform duration-200 ${expandedSupervisors.main ? 'rotate-180' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              
-              {expandedSupervisors.main && (
-                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
-                  <div className="py-1">
-                    {supervisors.length === 0 ? (
-                      <p className="text-xs text-gray-500 px-3 py-2">No supervisors found</p>
-                    ) : (
-                      supervisors.map(sup => {
-                        const supervisedEmployees = employees.filter(e => e.supervisor_id === sup.id);
-                        return (
-                          <button
-                            key={sup.id}
-                            onClick={() => {
-                              setSelectedSupervisorId(sup.id);
-                              setActiveSection('employees');
-                              setExpandedSupervisors({ main: false });
-                            }}
-                            className={`w-full text-left px-3 py-2 text-sm transition ${
-                              selectedSupervisorId === sup.id && activeSection === 'employees'
-                                ? 'bg-blue-50 text-blue-700'
-                                : 'text-gray-700 hover:bg-gray-100'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="truncate">{sup.name}</span>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                                {supervisedEmployees.length}
-                              </span>
-                            </div>
-                            <div className="text-xs text-gray-500 mt-0.5">{sup.employee_id}</div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Clear Filter Button */}
-            {selectedSupervisorId && selectedSupervisor && (
-              <div className="mt-2 px-3 py-2 bg-blue-50 rounded border border-blue-200">
-                <p className="text-xs text-blue-700 font-medium mb-2">Filtered by: <span className="font-semibold">{selectedSupervisor.name}</span></p>
-                <button
-                  onClick={() => setSelectedSupervisorId(null)}
-                  className="w-full px-2 py-1.5 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition font-medium"
-                >
-                  Clear Filter
-                </button>
-              </div>
-            )}
-
-            {/* CL Sections */}
             <div className="pr-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-200 mb-2 px-3">
                 CL Sections
               </p>
-
               <button
                 type="button"
                 onClick={() => setActiveSection('all')}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                  ${activeSection === 'all' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  ${activeSection === 'all' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
               >
                 <span className="flex items-center gap-2">
                   <Squares2X2Icon className="w-4 h-4" />
                   All
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
                   {sectionCounts.all || 0}
                 </span>
               </button>
-
+              {/* Grouped: Action Required */}
               <div className="mt-1 space-y-1">
-                {CL_STATUS_SECTIONS.map(({ key, label, icon }) => {
-                  const Icon = icon;
-                  return (
+                <button
+                  type="button"
+                  onClick={() => setShowClAction((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showClAction ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {(showClAction ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
+                    <ExclamationTriangleIcon className="w-4 h-4" />
+                    Action Required
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.pending || 0}</span>
+                </button>
+                {showClAction && (
+                  <div className="ml-6 space-y-1">
                     <button
-                      key={key}
                       type="button"
-                      onClick={() => setActiveSection(key)}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                        ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                      onClick={() => setActiveSection('pending')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'pending' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
                     >
                       <span className="flex items-center gap-2">
-                        <Icon className="w-4 h-4" />
-                        {label}
+                        <ClockIcon className="w-4 h-4" />
+                        For Approval by Manager
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                        {sectionCounts[key] || 0}
-                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.pending || 0}</span>
                     </button>
-                  );
-                })}
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection('returned')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'returned' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><PencilSquareIcon className="w-4 h-4" />Returned for Review</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.returned || 0}</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Grouped: Approved */}
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('approved')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'approved' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2"><CheckCircleIcon className="w-4 h-4" />Approved</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.approved || 0}</span>
+                </button>
+
+                {/* Department Tracking */}
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('department')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'department' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2"><Squares2X2Icon className="w-4 h-4" />Department CL Tracking</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.department || 0}</span>
+                </button>
               </div>
             </div>
+          </div>
 
-            {/* NEW: IDP Status Tracking Sections */}
-            <div className="mt-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
+          {/* IDP */}
+          <div className="space-y-1 mt-6">
+            <button
+              onClick={() => setActiveSection('idp_all')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded transition
+                ${activeSection.startsWith('idp') ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+            >
+              <BookOpenIcon className="w-5 h-5 text-white" />
+              <span>IDP Leveling</span>
+            </button>
+            <div className="pr-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-200 mb-2 px-3">
                 IDP Sections
               </p>
-
               <button
                 type="button"
                 onClick={() => setActiveSection('idp_all')}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                  ${activeSection === 'idp_all' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  ${activeSection === 'idp_all' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
               >
                 <span className="flex items-center gap-2">
                   <Squares2X2Icon className="w-4 h-4" />
                   All IDPs
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
                   {idpSectionCounts.all || 0}
                 </span>
               </button>
-
               <div className="mt-1 space-y-1">
+                {/* Action Required */}
                 <button
                   type="button"
-                  onClick={() => setActiveSection('idp_pending_manager')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                    ${activeSection === 'idp_pending_manager' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  onClick={() => setShowIdpAction((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showIdpAction ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
                 >
                   <span className="flex items-center gap-2">
+                    {(showIdpAction ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
+                    <ExclamationTriangleIcon className="w-4 h-4" />
+                    Action Required
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_manager || 0}</span>
+                </button>
+                {showIdpAction && (
+                  <div className="ml-6 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection('idp_pending_manager')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_pending_manager' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />{isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_manager || 0}</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* In Review */}
+                <button
+                  type="button"
+                  onClick={() => setShowIdpInReview((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showIdpInReview ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {(showIdpInReview ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
                     <ClockIcon className="w-4 h-4" />
-                    {isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}
+                    In Review
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                    {idpSectionCounts.pending_manager || 0}
-                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_hr || 0}</span>
                 </button>
+                {showIdpInReview && (
+                  <div className="ml-6 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection('idp_pending_employee')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_pending_employee' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><UserIcon className="w-4 h-4" />For Approval by Employee</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_employee || 0}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection('idp_pending_hr')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_pending_hr' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><BriefcaseIcon className="w-4 h-4" />For Approval by HR</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_hr || 0}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection('idp_for_completion')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_for_completion' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                    >
+                      <span className="flex items-center gap-2"><PencilSquareIcon className="w-4 h-4" />For Completion</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.for_completion || 0}</span>
+                    </button>
+                  </div>
+                )}
 
-                <button
-                  type="button"
-                  onClick={() => setActiveSection('idp_pending_hr')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                    ${activeSection === 'idp_pending_hr' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
-                >
-                  <span className="flex items-center gap-2">
-                    <ClockIcon className="w-4 h-4" />
-                    For Approval by HR
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                    {idpSectionCounts.pending_hr || 0}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveSection('idp_for_completion')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                    ${activeSection === 'idp_for_completion' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
-                >
-                  <span className="flex items-center gap-2">
-                    <PencilSquareIcon className="w-4 h-4" />
-                    For Completion
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                    {idpSectionCounts.for_completion || 0}
-                  </span>
-                </button>
-
+                {/* Approved */}
                 <button
                   type="button"
                   onClick={() => setActiveSection('idp_approved')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                    ${activeSection === 'idp_approved' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_approved' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
                 >
-                  <span className="flex items-center gap-2">
-                    <CheckCircleIcon className="w-4 h-4" />
-                    Approved
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                    {idpSectionCounts.approved || 0}
-                  </span>
+                  <span className="flex items-center gap-2"><CheckCircleIcon className="w-4 h-4" />Approved</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.approved || 0}</span>
                 </button>
+
+                {/* Cycle Completed */}
                 <button
                   type="button"
                   onClick={() => setActiveSection('idp_cycle_completed')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                    ${activeSection === 'idp_cycle_completed' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_cycle_completed' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
                 >
-                  <span className="flex items-center gap-2">
-                    <CheckCircleIcon className="w-4 h-4" />
-                    Cycle Completed
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                    {idpSectionCounts.cycle_completed || 0}
-                  </span>
+                  <span className="flex items-center gap-2"><CheckCircleIcon className="w-4 h-4" />Cycle Completed</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.cycle_completed || 0}</span>
                 </button>
               </div>
             </div>
           </div>
         </nav>
-
-        {/* LOGOUT */}
-        <div className="p-4 border-t border-gray-200">
-          <button
-            onClick={logout}
-            className="w-full flex items-center justify-center gap-2
-                       py-2 rounded bg-red-600 text-white hover:bg-red-700 transition"
-          >
-            <ArrowRightOnRectangleIcon className="w-5 h-5" />
-            Logout
-          </button>
-        </div>
       </aside>
 
       {/* MAIN CONTENT */}
@@ -929,6 +910,14 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               Welcome, {user.name} ({user.employee_id})
             </p>
           </div>
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition"
+            title="Logout"
+          >
+            <ArrowRightOnRectangleIcon className="w-5 h-5" />
+            Logout
+          </button>
         </header>
 
         {error && (
@@ -1055,9 +1044,9 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               {filteredPendingIDPs.length === 0 ? (
                 <p className="text-gray-400 text-sm italic">No IDPs pending your approval.</p>
               ) : (
-                <div className="bg-white shadow rounded overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
+                <div className="bg-white shadow-sm rounded overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-50 text-sm">
+                    <thead className="bg-white">
                       <tr>
                         <th className="px-4 py-2 text-left font-semibold text-gray-600">IDP ID</th>
                         <th className="px-4 py-2 text-left font-semibold text-gray-600">Employee</th>
@@ -1067,7 +1056,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                         <th className="px-4 py-2 text-left font-semibold text-gray-600">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white divide-y divide-gray-50">
                       {filteredPendingIDPs.map(idp => (
                         <tr key={idp.id} className="hover:bg-gray-50">
                           <td className="px-4 py-2">{idp.id}</td>
@@ -1238,17 +1227,17 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         </div>
 
         {/* Divider */}
-        <div className="border-t border-gray-200" />
+        <div className="border-t border-gray-100" />
 
         {/* BOTTOM: RECENT ACTIONS */}
         <div className="flex flex-col min-h-0" style={{ height: '50%' }}>
-          <div className="p-4 border-b border-gray-200">
+          <div className="p-4 border-b border-gray-100">
             <button
               onClick={() => setShowFullRecentActions(true)}
               className="w-full flex items-center justify-between hover:bg-gray-50 transition text-left rounded px-2 py-1 -mx-2"
             >
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-gray-700">Recent Actions</span>
+                <span className="text-sm font-bold text-gray-800">Recent Actions</span>
                 <ArrowsPointingOutIcon className="w-4 h-4 text-gray-400" />
               </div>
               {recentActions.length > 0 && (
@@ -1283,8 +1272,8 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                 <table className="w-full text-xs">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
-                      <th className="px-2 py-1 text-left font-semibold text-gray-600">Action</th>
-                      <th className="px-2 py-1 text-left font-semibold text-gray-600">Date</th>
+                      <th className="px-2 py-1 text-left font-bold text-gray-700">Action</th>
+                      <th className="px-2 py-1 text-left font-bold text-gray-700">Date</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1292,11 +1281,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                       <tr
                         key={`${a.id}-${idx}`}
                         onClick={() => handleRecentActionClick(a)}
-                        className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
+                        className="border-t border-gray-75 hover:bg-gray-50 cursor-pointer"
                       >
                         <td className="px-2 py-2">
                           <div className="flex items-center gap-1">
-                            <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
+                            <p className="font-bold text-gray-900 truncate">{a.title || 'Action'}</p>
                             {a.module && (
                               <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap ${
                                 a.module === 'CL' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
@@ -1360,9 +1349,9 @@ function SummaryCard({ label, value, gradientClass }) {
 
 function PendingTable({ data, goTo, isAMDashboard }) {
   return (
-    <div className="bg-white shadow rounded overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
+    <div className="bg-white shadow-sm rounded overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-50 text-sm">
+        <thead className="bg-white">
           <tr>
             <Th>CL ID</Th>
             <Th>Employee</Th>
@@ -1375,7 +1364,7 @@ function PendingTable({ data, goTo, isAMDashboard }) {
           </tr>
         </thead>
 
-        <tbody className="divide-y divide-gray-200">
+        <tbody className="divide-y divide-gray-50">
           {data.map((item) => (
             <tr key={item.id} className="hover:bg-gray-50">
               <Td>{item.id}</Td>
@@ -1407,9 +1396,9 @@ function PendingTable({ data, goTo, isAMDashboard }) {
 // History table – MANAGER ACTIVITY LOG (APPROVED / RETURNED)
 function HistoryTable({ data, goTo, isAMDashboard }) {
   return (
-    <div className="bg-white shadow rounded overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
+    <div className="bg-white shadow-sm rounded overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-50 text-sm">
+        <thead className="bg-white">
           <tr>
             <Th>CL ID</Th>
             <Th>Employee</Th>
@@ -1422,7 +1411,7 @@ function HistoryTable({ data, goTo, isAMDashboard }) {
           </tr>
         </thead>
 
-        <tbody className="divide-y divide-gray-200">
+        <tbody className="divide-y divide-gray-50">
           {data.map((item) => (
             <tr key={item.id} className="hover:bg-gray-50">
               <Td>{item.id}</Td>
@@ -1457,31 +1446,31 @@ function HistoryTable({ data, goTo, isAMDashboard }) {
 // Department Tracking table - ALL CLs in manager's department
 function DepartmentTrackingTable({ data, goTo }) {
   return (
-    <div className="bg-white shadow rounded overflow-hidden">
+    <div className="bg-white shadow-sm rounded overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+        <table className="w-full divide-y divide-gray-50 text-sm">
+          <thead className="bg-white">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">ID</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Employee</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Supervisor</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Position</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Status</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Updated</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Action</th>
+              <th className="px-3 py-2 text-left text-xs font-bold uppercase text-gray-600">ID</th>
+              <th className="px-3 py-2 text-left text-xs font-bold uppercase text-gray-600">Employee</th>
+              <th className="px-3 py-2 text-left text-xs font-bold uppercase text-gray-600">Supervisor</th>
+              <th className="px-3 py-2 text-left text-xs font-bold uppercase text-gray-600">Position</th>
+              <th className="px-3 py-2 text-left text-xs font-bold uppercase text-gray-600">Status</th>
+              <th className="px-3 py-2 text-left text-xs font-bold uppercase text-gray-600">Updated</th>
+              <th className="px-3 py-2 text-left text-xs font-bold uppercase text-gray-600">Action</th>
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-gray-50">
             {data.map((item) => (
               <tr key={item.id} className="hover:bg-gray-50">
-                <td className="px-3 py-2 text-gray-700">{item.id}</td>
-                <td className="px-3 py-2 text-gray-700">
+                <td className="px-3 py-2 text-gray-600">{item.id}</td>
+                <td className="px-3 py-2 text-gray-600">
                   <div className="text-sm font-medium">{item.employee_name}</div>
-                  <div className="text-xs text-gray-500">{item.employee_code || item.employee_id}</div>
+                  <div className="text-xs text-gray-400">{item.employee_code || item.employee_id}</div>
                 </td>
-                <td className="px-3 py-2 text-gray-700 text-sm">{item.supervisor_name || '-'}</td>
-                <td className="px-3 py-2 text-gray-700 text-sm">{item.position_title}</td>
+                <td className="px-3 py-2 text-gray-600 text-sm">{item.supervisor_name || '-'}</td>
+                <td className="px-3 py-2 text-gray-600 text-sm">{item.position_title}</td>
                 <td className="px-3 py-2">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
                     item.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
@@ -1495,7 +1484,7 @@ function DepartmentTrackingTable({ data, goTo }) {
                     {displayStatus(item.status)}
                   </span>
                 </td>
-                <td className="px-3 py-2 text-gray-700 text-xs whitespace-nowrap">
+                <td className="px-3 py-2 text-gray-600 text-xs whitespace-nowrap">
                   {item.updated_at
                     ? new Date(item.updated_at).toLocaleDateString()
                     : '-'}
@@ -1521,14 +1510,14 @@ function DepartmentTrackingTable({ data, goTo }) {
 
 function Th({ children }) {
   return (
-    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">
+    <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-600">
       {children}
     </th>
   );
 }
 
 function Td({ children }) {
-  return <td className="px-4 py-2 text-gray-700">{children}</td>;
+  return <td className="px-4 py-2 text-gray-700 font-medium">{children}</td>;
 }
 
 function NotificationModal({ open, notification, onProceed, onClose }) {
@@ -1538,25 +1527,25 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-800">Notification Details</h3>
+          <h3 className="text-lg font-bold text-gray-800">Notification Details</h3>
         </div>
         <div className="px-6 py-4 space-y-3">
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase">Message</p>
-            <p className="text-sm text-gray-800 mt-1">
+            <p className="text-sm text-gray-700 mt-1">
               {notification.message || notification.title || 'No message'}
             </p>
           </div>
           {notification.module && (
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase">Module</p>
-              <p className="text-sm text-gray-800 mt-1">{notification.module}</p>
+              <p className="text-sm text-gray-700 mt-1">{notification.module}</p>
             </div>
           )}
           {notification.created_at && (
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase">Time</p>
-              <p className="text-sm text-gray-800 mt-1">
+              <p className="text-sm text-gray-700 mt-1">
                 {new Date(notification.created_at).toLocaleString()}
               </p>
             </div>
@@ -1596,8 +1585,14 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
 function FullRecentActionsModal({ open, recentActions, onActionClick, onClose }) {
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
 
-  if (!open) return null;
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [dateFilter, searchTerm]);
 
   // Filter actions by date range and search term
   const filteredActions = recentActions.filter(a => {
@@ -1615,23 +1610,28 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
       }
     }
     
-    // Search term filtering (search in title, description)
+    // Search term filtering (by employee name)
     if (searchTerm.trim()) {
       const search = searchTerm.toLowerCase();
-      const matchTitle = (a.title || '').toLowerCase().includes(search);
-      const matchDescription = (a.description || '').toLowerCase().includes(search);
-      if (!matchTitle && !matchDescription) return false;
+      const employeeName = (a.employee_name || a.employee || '').toLowerCase();
+      if (!employeeName.includes(search)) return false;
     }
     
     return true;
   });
 
+  const totalPages = Math.ceil(filteredActions.length / PAGE_SIZE) || 1;
+  const startIdx = (currentPage - 1) * PAGE_SIZE;
+  const paginatedActions = filteredActions.slice(startIdx, startIdx + PAGE_SIZE);
+
+  if (!open) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-semibold text-gray-800">Recent Actions</h3>
+            <h3 className="text-xl font-bold text-gray-900">Recent Actions</h3>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 transition"
@@ -1693,16 +1693,16 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
             <p className="text-center text-gray-400 py-8">No recent actions found.</p>
           ) : (
             <div className="bg-white shadow rounded overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <table className="min-w-full divide-y divide-gray-100 text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Action</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Description</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Date</th>
+                    <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">Action</th>
+                    <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">Description</th>
+                    <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">Date</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredActions.map((a, idx) => (
+                <tbody className="divide-y divide-gray-100">
+                  {paginatedActions.map((a, idx) => (
                     <tr
                       key={`${a.id}-${idx}`}
                       onClick={() => {
@@ -1713,15 +1713,45 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                       }}
                       className="hover:bg-gray-50 cursor-pointer"
                     >
-                      <td className="px-4 py-3 text-gray-800 font-medium">{a.title || 'Action'}</td>
-                      <td className="px-4 py-3 text-gray-600">{a.description || '-'}</td>
-                      <td className="px-4 py-3 text-gray-500">
+                      <td className="px-4 py-3 text-gray-900 font-bold">{a.title || 'Action'}</td>
+                      <td className="px-4 py-3 text-gray-700 font-medium">{a.description || '-'}</td>
+                      <td className="px-4 py-3 text-gray-600 font-medium">
                         {a.created_at ? new Date(a.created_at).toLocaleString() : '-'}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+                <p className="text-xs font-bold text-gray-700">
+                  Showing {(startIdx + 1)}–{Math.min(startIdx + PAGE_SIZE, filteredActions.length)} of {filteredActions.length}
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    Prev
+                  </button>
+                  {Array.from({ length: totalPages }).map((_, i) => (
+                    <button
+                      key={i}
+                      className={`px-2 py-1 text-xs rounded border ${currentPage === i + 1 ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-100'}`}
+                      onClick={() => setCurrentPage(i + 1)}
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
+                  <button
+                    className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -1738,9 +1768,9 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h3 className="text-xl font-semibold text-gray-800">All Notifications</h3>
+            <h3 className="text-xl font-bold text-gray-900">All Notifications</h3>
             {unreadCount > 0 && (
               <button
                 onClick={() => {
@@ -1777,7 +1807,7 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
                       onNotificationClick(n);
                       onClose();
                     }}
-                    className={`w-full text-left p-4 rounded-lg border border-gray-200
+                    className={`w-full text-left p-4 rounded-lg border border-gray-100
                                transition shadow-sm hover:shadow ${
                                  isUnread ? 'bg-orange-50 hover:bg-orange-100' : 'bg-white hover:bg-gray-50'
                                }`}
@@ -1788,7 +1818,7 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
                           {n.message || n.title || 'Notification'}
                         </p>
                         {n.module && (
-                          <p className="text-sm text-gray-600 mb-2">Module: {n.module}</p>
+                          <p className="text-sm text-gray-700 mb-2 font-medium">Module: {n.module}</p>
                         )}
                         {n.created_at && (
                           <p className="text-xs text-gray-400">
@@ -1845,11 +1875,11 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
       {/* Header with View Toggle */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-800">
+          <h2 className="text-lg font-bold text-gray-800">
             {selectedSupervisor ? `Employees under ${selectedSupervisor.name}` : 'Select a Supervisor'}
           </h2>
           {selectedSupervisor && (
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-gray-600 font-medium">
               Supervisor ID: {selectedSupervisor.employee_id}
             </p>
           )}
@@ -1862,7 +1892,7 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
             className={`p-2 rounded transition ${
               viewMode === 'grid'
                 ? 'bg-blue-100 text-blue-700'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
             }`}
             title="Grid View"
           >
@@ -1873,7 +1903,7 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
             className={`p-2 rounded transition ${
               viewMode === 'list'
                 ? 'bg-blue-100 text-blue-700'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
             }`}
             title="List View"
           >
@@ -1891,26 +1921,26 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
             placeholder="Search by name, employee ID, or position..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
           />
         </div>
-        <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+        <label className="inline-flex items-center gap-2 text-sm text-gray-600">
           <input
             type="checkbox"
             checked={hasCompetenciesOnly}
             onChange={(e) => setHasCompetenciesOnly(e.target.checked)}
-            className="rounded border-gray-300"
+            className="rounded border-gray-200"
           />
           Show only employees with competencies
         </label>
       </div>
 
       {!selectedSupervisorId ? (
-        <p className="text-sm text-gray-500 text-center py-8">
+        <p className="text-sm text-gray-400 text-center py-8">
           Please select a supervisor from the sidebar to view their employees.
         </p>
       ) : filteredEmployees.length === 0 ? (
-        <p className="text-sm text-gray-500 text-center py-8">
+        <p className="text-sm text-gray-400 text-center py-8">
           {searchQuery ? 'No employees found matching your search.' : 'No employees found.'}
         </p>
       ) : viewMode === 'grid' ? (
@@ -1940,12 +1970,12 @@ function EmployeeCard({ employee, goTo }) {
     <button
       type="button"
       onClick={() => employee.latestCL && goTo(`/cl/submissions/${employee.latestCL.id}?viewOnly=true`)}
-      className="relative border border-slate-200 border-l-4 border-l-blue-500 rounded-sm pl-3 pr-4 py-4 text-left shadow-sm transition
+      className="relative border border-gray-200 border-l-4 border-l-blue-400 rounded-sm pl-3 pr-4 py-4 text-left shadow-sm transition
         flex gap-3 items-start bg-white hover:shadow-md hover:-translate-y-0.5"
     >
       {/* Avatar / Icon */}
       <div className="flex-shrink-0 mt-1">
-        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-100 text-gray-400">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             className="w-5 h-5"
@@ -1966,49 +1996,49 @@ function EmployeeCard({ employee, goTo }) {
       {/* Text content */}
       <div className="flex-1">
         <div className="flex items-center justify-between gap-2">
-          <div className="font-semibold text-sm truncate text-slate-800">
+          <div className="font-bold text-sm truncate text-gray-800">
             {employee.name}
           </div>
-          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold">
             {employee.employee_id}
           </span>
         </div>
 
         {employee.position_title && (
-          <div className="text-xs text-slate-700 mt-1">
+          <div className="text-xs text-gray-700 font-medium mt-1">
             {employee.position_title}
           </div>
         )}
 
         <div className="mt-2 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600">
             {employee.competencyCount || 0} competenc{employee.competencyCount === 1 ? 'y' : 'ies'}
           </span>
           
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
             {employee.historyCount || 0} CL record(s)
           </span>
 
           {employee.latestCL?.status ? (
             <span className={`text-[10px] px-2 py-0.5 rounded-full ${
-              employee.latestCL.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' :
-              employee.latestCL.status === 'PENDING_MANAGER' ? 'bg-yellow-50 text-yellow-700' :
-              employee.latestCL.status === 'PENDING_HR' ? 'bg-blue-50 text-blue-700' :
-              employee.latestCL.status === 'PENDING_AM' ? 'bg-purple-50 text-purple-700' :
-              employee.latestCL.status === 'DRAFT' ? 'bg-slate-50 text-slate-700' :
-              'bg-slate-100 text-slate-600'
+              employee.latestCL.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600' :
+              employee.latestCL.status === 'PENDING_MANAGER' ? 'bg-yellow-50 text-yellow-600' :
+              employee.latestCL.status === 'PENDING_HR' ? 'bg-blue-50 text-blue-600' :
+              employee.latestCL.status === 'PENDING_AM' ? 'bg-purple-50 text-purple-600' :
+              employee.latestCL.status === 'DRAFT' ? 'bg-gray-50 text-gray-600' :
+              'bg-gray-100 text-gray-500'
             }`}>
               Latest: {displayStatus(employee.latestCL.status)}
               {latestDate ? ` • ${latestDate}` : ''}
             </span>
           ) : (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
               No CL yet
             </span>
           )}
         </div>
 
-        <div className="mt-2 text-[11px] text-slate-500">
+        <div className="mt-2 text-[11px] text-gray-400">
           {employee.latestCL ? 'Click to view latest CL' : 'No CL available'}
         </div>
       </div>
@@ -2024,12 +2054,12 @@ function EmployeeListItem({ employee, goTo }) {
     <button
       type="button"
       onClick={() => employee.latestCL && goTo(`/cl/submissions/${employee.latestCL.id}?viewOnly=true`)}
-      className="w-full border border-slate-200 border-l-4 border-l-blue-500 rounded-sm pl-3 pr-4 py-3 text-left shadow-sm transition
-        flex gap-3 items-center bg-white hover:shadow-md hover:bg-slate-50"
+      className="w-full border border-gray-200 border-l-4 border-l-blue-400 rounded-sm pl-3 pr-4 py-3 text-left shadow-sm transition
+        flex gap-3 items-center bg-white hover:shadow-md hover:bg-gray-50"
     >
       {/* Avatar / Icon */}
       <div className="flex-shrink-0">
-        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-100 text-gray-400">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             className="w-5 h-5"
@@ -2052,43 +2082,43 @@ function EmployeeListItem({ employee, goTo }) {
         <div className="flex items-center gap-4 flex-1 min-w-0">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <div className="font-semibold text-sm truncate text-slate-800">
+              <div className="font-bold text-sm truncate text-gray-800">
                 {employee.name}
               </div>
-              <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 flex-shrink-0">
+              <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold flex-shrink-0">
                 {employee.employee_id}
               </span>
             </div>
             
             {employee.position_title && (
-              <div className="text-xs text-slate-600 mt-0.5 truncate">
+              <div className="text-xs text-gray-700 font-medium mt-0.5 truncate">
                 {employee.position_title}
               </div>
             )}
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 whitespace-nowrap">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 whitespace-nowrap">
               {employee.competencyCount || 0} competenc{employee.competencyCount === 1 ? 'y' : 'ies'}
             </span>
             
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 whitespace-nowrap">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 whitespace-nowrap">
               {employee.historyCount || 0} CL
             </span>
 
             {employee.latestCL?.status ? (
               <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${
-                employee.latestCL.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' :
-                employee.latestCL.status === 'PENDING_MANAGER' ? 'bg-yellow-50 text-yellow-700' :
-                employee.latestCL.status === 'PENDING_HR' ? 'bg-blue-50 text-blue-700' :
-                employee.latestCL.status === 'PENDING_AM' ? 'bg-purple-50 text-purple-700' :
-                employee.latestCL.status === 'DRAFT' ? 'bg-slate-50 text-slate-700' :
-                'bg-slate-100 text-slate-600'
+                employee.latestCL.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600' :
+                employee.latestCL.status === 'PENDING_MANAGER' ? 'bg-yellow-50 text-yellow-600' :
+                employee.latestCL.status === 'PENDING_HR' ? 'bg-blue-50 text-blue-600' :
+                employee.latestCL.status === 'PENDING_AM' ? 'bg-purple-50 text-purple-600' :
+                employee.latestCL.status === 'DRAFT' ? 'bg-gray-50 text-gray-600' :
+                'bg-gray-100 text-gray-500'
               }`}>
                 {displayStatus(employee.latestCL.status)}
               </span>
             ) : (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 whitespace-nowrap">
                 No CL
               </span>
             )}
@@ -2201,43 +2231,43 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h2 className="text-lg font-semibold text-black">Employee Information</h2>
+                <h2 className="text-lg font-bold text-gray-900">Employee Information</h2>
                 <p className="text-sm text-gray-600 mt-1">Review details and development activity information.</p>
               </div>
-              <div className="text-xs text-gray-500 text-right">
+              <div className="text-xs text-gray-600 text-right font-medium">
                 <div className="hidden sm:block">Date of IDP Creation</div>
-                <div className="font-semibold text-gray-800">{creationDate}</div>
+                <div className="font-bold text-gray-800">{creationDate}</div>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div className="min-w-0">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Name</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-2">Name</label>
+                <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-800 border border-gray-100 shadow-sm">
                   {employee?.name}
                 </div>
               </div>
               <div className="min-w-0">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Position</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-2">Position</label>
+                <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-800 border border-gray-100 shadow-sm">
                   {employee?.position_title}
                 </div>
               </div>
               <div className="min-w-0">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-2">Department</label>
+                <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-800 border border-gray-100 shadow-sm">
                   {employee?.department_name}
                 </div>
               </div>
               <div className="min-w-0">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Supervisor/Manager</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-2">Supervisor/Manager</label>
+                <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-800 border border-gray-100 shadow-sm">
                   {supervisor?.name}
                 </div>
               </div>
               <div className="min-w-0">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">CL Score</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-2">CL Score</label>
+                <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-800 border border-gray-100 shadow-sm">
                   {header?.latest_cl_score ? Number(header.latest_cl_score).toFixed(2) : 'No approved CL'}
                 </div>
               </div>
@@ -2245,14 +2275,14 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Review Period</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-2">Review Period</label>
+                <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-800 border border-gray-100 shadow-sm">
                   {header?.review_period || '1st Cycle Performance Review'}
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Next Review Date</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-2">Next Review Date</label>
+                <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-800 border border-gray-100 shadow-sm">
                   {header?.next_review_date ? new Date(header.next_review_date).toLocaleDateString() : 'N/A'}
                 </div>
               </div>
@@ -2261,11 +2291,11 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
 
           {/* IDP Status */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-            <h3 className="text-lg font-semibold text-gray-800 mb-1">IDP Status</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">IDP Status</h3>
 
             <div className="space-y-3">
               <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">Current Status</div>
+                <div className="text-xs font-bold text-gray-700 mb-2\">Current Status</div>
                 <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border bg-yellow-50 text-yellow-800 border-yellow-200">
                   <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
                   For Manager Approval
@@ -2273,8 +2303,8 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">Competencies</div>
-                <p className="text-sm font-medium text-red-600">{items?.length || 0} development plan{items?.length !== 1 ? 's' : ''}</p>
+                <div className="text-xs font-bold text-gray-700 mb-2\">Competencies</div>
+                <p className="text-sm font-bold text-gray-900">{items?.length || 0} development plan{items?.length !== 1 ? 's' : ''}</p>
               </div>
             </div>
 
@@ -2293,7 +2323,7 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
         {/* Manager Remarks and Action Buttons - Visible at top */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-            <h3 className="text-lg font-semibold text-gray-800 mb-3">Manager Remarks</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-3">Manager Remarks</h3>
             <textarea
               className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black resize-none"
               rows="4"
@@ -2331,15 +2361,15 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-            <h3 className="text-lg font-semibold text-gray-800 mb-3">Action Guide</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-3">Action Guide</h3>
             <div className="space-y-3 text-sm text-gray-700">
               <div>
-                <p className="font-semibold text-gray-800 mb-1">Approve</p>
-                <p>Accept the IDP as is and move to next step</p>
+                <p className="font-bold text-gray-900 mb-1">Approve</p>
+                <p className="text-gray-700">Accept the IDP as is and move to next step</p>
               </div>
               <div>
-                <p className="font-semibold text-gray-800 mb-1">Return</p>
-                <p>Send back with remarks for supervisor revision</p>
+                <p className="font-bold text-gray-900 mb-1">Return</p>
+                <p className="text-gray-700">Send back with remarks for supervisor revision</p>
               </div>
             </div>
           </div>
@@ -2351,10 +2381,8 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
             <div className="absolute inset-0 bg-black/60" onClick={() => setShowScoringGuide(false)} aria-hidden="true" />
             <div className="relative h-full w-full flex items-center justify-center p-4">
               <div className="w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl bg-white rounded-xl border border-gray-100">
-                <div className="flex justify-between items-center px-5 py-4 border-b border-gray-200">
-                  <h2 className="text-lg font-bold text-black">
-                    Scoring Guide for IDP Completion and Competency Mastery
-                  </h2>
+                <div className="flex justify-between items-center px-5 py-4 border-b border-gray-100\">
+                  <h2 className="text-lg font-bold text-gray-900\">\n                    Scoring Guide for IDP Completion and Competency Mastery\n                  </h2>
                   <button
                     onClick={() => setShowScoringGuide(false)}
                     className="text-black text-2xl font-bold bg-gray-100 hover:bg-gray-200 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-black/10"
@@ -2366,14 +2394,14 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
 
                 <div className="p-5 space-y-3 overflow-y-auto max-h-[calc(85vh-64px)]">
                   {SCORING_GUIDE.map((guide) => (
-                    <div key={guide.score} className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                    <div key={guide.score} className="p-4 bg-white rounded-lg border border-gray-100 shadow-sm">
                       <div className="flex items-center gap-3 mb-2">
-                        <span className="font-bold text-lg text-black bg-white rounded-md px-3 py-1 border border-gray-200">
+                        <span className="font-bold text-lg text-gray-900 bg-gray-50 rounded-md px-3 py-1 border border-gray-100">
                           {guide.score}
                         </span>
-                        <span className="font-semibold text-black">{guide.status}</span>
+                        <span className="font-bold text-gray-900">{guide.status}</span>
                       </div>
-                      <p className="text-black text-sm leading-relaxed">{guide.description}</p>
+                      <p className="text-gray-800 text-sm leading-relaxed font-medium">{guide.description}</p>
                     </div>
                   ))}
                 </div>
@@ -2384,20 +2412,20 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
 
         {/* Development Plan Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-black">Development Plan</h2>
+              <h2 className="text-lg font-bold text-gray-900">Development Plan</h2>
               <p className="text-sm text-gray-600 mt-1">Detailed competency development activities and progress.</p>
             </div>
-            <div className="text-xs text-gray-500 text-right">
+            <div className="text-xs text-gray-600 text-right font-medium">
               <div>{items?.length || 0} competenc{items?.length !== 1 ? 'ies' : 'y'}</div>
             </div>
           </div>
 
           {!items || items.length === 0 ? (
             <div className="text-center py-10 bg-gray-50 rounded-xl border border-gray-100 mx-5 my-5">
-              <p className="text-gray-800 font-semibold">No development activities found</p>
-              <p className="text-sm text-gray-600 mt-1">This IDP does not contain any development activities.</p>
+              <p className="text-gray-900 font-bold">No development activities found</p>
+              <p className="text-sm text-gray-600 mt-1 font-medium">This IDP does not contain any development activities.</p>
             </div>
           ) : (
             <div className="p-5 space-y-4">
@@ -2419,7 +2447,7 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="flex items-center gap-3">
-                            <span className="text-base font-semibold text-gray-900">{item.competency_name}</span>
+                            <span className="text-base font-bold text-gray-900">{item.competency_name}</span>
                             <span
                               className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border ${chip.bg} ${chip.text} ${chip.border}`}
                             >
@@ -2427,14 +2455,14 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
                               {item.competency_area || 'Technical'}
                             </span>
                           </div>
-                          <div className="mt-1 text-sm text-gray-600">
-                            Current level <span className="font-semibold text-gray-900">{item.current_level}</span> → Target level{' '}
-                            <span className="font-semibold text-gray-900">{item.target_level}</span>
+                          <div className="mt-1 text-sm text-gray-700 font-medium">
+                            Current level <span className="font-bold text-gray-900">{item.current_level}</span> → Target level{' '}
+                            <span className="font-bold text-gray-900">{item.target_level}</span>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-3">
-                          <span className="text-xs font-semibold text-gray-500 px-2 py-1 rounded-lg bg-gray-50 border border-gray-100">
+                          <span className="text-xs font-bold text-gray-700 px-2 py-1 rounded-lg bg-gray-100 border border-gray-100 shadow-sm">
                             {totalActivities} {totalActivities === 1 ? 'Activity' : 'Activities'}
                           </span>
                           
@@ -2473,35 +2501,35 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
                       <div className="p-4 space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           <div>
-                            <label className="block text-xs font-semibold text-gray-600 mb-1">Activity Type</label>
-                            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100">
+                            <label className="block text-xs font-bold text-gray-700 mb-2">Activity Type</label>
+                            <div className="px-3 py-2 bg-white rounded-lg text-sm text-gray-800 font-semibold border border-gray-100 shadow-sm">
                               {activity.type || 'N/A'}
                             </div>
                           </div>
                           <div>
-                            <label className="block text-xs font-semibold text-gray-600 mb-1">Completion Status</label>
-                            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100">
+                            <label className="block text-xs font-bold text-gray-700 mb-2">Completion Status</label>
+                            <div className="px-3 py-2 bg-white rounded-lg text-sm text-gray-800 font-semibold border border-gray-100 shadow-sm">
                               {activity.completionStatus || activity.status || 'N/A'}
                             </div>
                           </div>
                           <div>
-                            <label className="block text-xs font-semibold text-gray-600 mb-1">Score</label>
-                            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100">
+                            <label className="block text-xs font-bold text-gray-700 mb-2">Score</label>
+                            <div className="px-3 py-2 bg-white rounded-lg text-sm text-gray-800 font-semibold border border-gray-100 shadow-sm">
                               {activity.score || 'N/A'}
                             </div>
                           </div>
                           {activity.targetDate && (
                             <div>
-                              <label className="block text-xs font-semibold text-gray-600 mb-1">Target Date</label>
-                              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100">
+                              <label className="block text-xs font-bold text-gray-700 mb-2">Target Date</label>
+                              <div className="px-3 py-2 bg-white rounded-lg text-sm text-gray-800 font-semibold border border-gray-100 shadow-sm">
                                 {new Date(activity.targetDate).toLocaleDateString()}
                               </div>
                             </div>
                           )}
                           {activity.actualDate && (
                             <div>
-                              <label className="block text-xs font-semibold text-gray-600 mb-1">Actual Date</label>
-                              <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100">
+                              <label className="block text-xs font-bold text-gray-700 mb-2">Actual Date</label>
+                              <div className="px-3 py-2 bg-white rounded-lg text-sm text-gray-800 font-semibold border border-gray-100 shadow-sm">
                                 {new Date(activity.actualDate).toLocaleDateString()}
                               </div>
                             </div>
@@ -2510,8 +2538,8 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
 
                         {activity.activity && (
                           <div>
-                            <label className="block text-xs font-semibold text-gray-600 mb-1">Development Activity</label>
-                            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 min-h-[60px]">
+                            <label className="block text-xs font-bold text-gray-700 mb-2">Development Activity</label>
+                            <div className="px-3 py-2 bg-white rounded-lg text-sm text-gray-800 font-semibold border border-gray-100 min-h-[60px] shadow-sm">
                               {activity.activity}
                             </div>
                           </div>
@@ -2521,24 +2549,24 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {activity.expectedResults && (
                               <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">Expected Results</label>
-                                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 min-h-[80px]">
+                                <label className="block text-xs font-bold text-gray-700 mb-2">Expected Results</label>
+                                <div className="px-3 py-2 bg-white rounded-lg text-sm text-gray-800 font-semibold border border-gray-100 min-h-[80px] shadow-sm">
                                   {activity.expectedResults}
                                 </div>
                               </div>
                             )}
                             {activity.sharingMethod && (
                               <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">Knowledge Sharing Method</label>
-                                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 min-h-[80px]">
+                                <label className="block text-xs font-bold text-gray-700 mb-2">Knowledge Sharing Method</label>
+                                <div className="px-3 py-2 bg-white rounded-lg text-sm text-gray-800 font-semibold border border-gray-100 min-h-[80px] shadow-sm">
                                   {activity.sharingMethod}
                                 </div>
                               </div>
                             )}
                             {activity.applicationMethod && (
                               <div>
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">Application Method</label>
-                                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-black border border-gray-100 min-h-[80px]">
+                                <label className="block text-xs font-bold text-gray-700 mb-2">Application Method</label>
+                                <div className="px-3 py-2 bg-white rounded-lg text-sm text-gray-800 font-semibold border border-gray-100 min-h-[80px] shadow-sm">
                                   {activity.applicationMethod}
                                 </div>
                               </div>
@@ -2551,22 +2579,22 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
                     {/* Extra Tables for Experience/Exposure */}
                     {extraTables && extraTables.length > 0 && (
                       <div className="p-4 border-t border-gray-100">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Additional Activities</h4>
+                        <h4 className="text-sm font-bold text-gray-900 mb-3">Additional Activities</h4>
                         <div className="space-y-3">
                           {extraTables.map((table, tableIndex) => (
-                            <div key={tableIndex} className="bg-gray-50 rounded-lg border border-gray-100 p-3">
+                            <div key={tableIndex} className="bg-white rounded-lg border border-gray-100 p-3 shadow-sm">
                               <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
                                 <div>
-                                  <span className="font-semibold text-gray-600">Activity:</span> {table.activity || 'N/A'}
+                                  <span className="font-bold text-gray-700">Activity:</span> <span className="text-gray-800 font-medium">{table.activity || 'N/A'}</span>
                                 </div>
                                 <div>
-                                  <span className="font-semibold text-gray-600">Type:</span> {table.type || 'N/A'}
+                                  <span className="font-bold text-gray-700">Type:</span> <span className="text-gray-800 font-medium">{table.type || 'N/A'}</span>
                                 </div>
                                 <div>
-                                  <span className="font-semibold text-gray-600">Status:</span> {table.completionStatus || table.status || 'N/A'}
+                                  <span className="font-bold text-gray-700">Status:</span> <span className="text-gray-800 font-medium">{table.completionStatus || table.status || 'N/A'}</span>
                                 </div>
                                 <div>
-                                  <span className="font-semibold text-gray-600">Score:</span> {table.score || 'N/A'}
+                                  <span className="font-bold text-gray-700">Score:</span> <span className="text-gray-800 font-medium">{table.score || 'N/A'}</span>
                                 </div>
                               </div>
                             </div>

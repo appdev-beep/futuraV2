@@ -1,7 +1,7 @@
 // src/pages/Supervisor/CreateIDPPage.jsx
 // @ts-nocheck
 /* eslint-disable */
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import { ArrowLeftIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
@@ -20,7 +20,7 @@ function ModalShell({ title, onClose, children, maxWidth = 'max-w-lg' }) {
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} aria-hidden="true" />
       <div className="relative h-full w-full flex items-center justify-center p-4">
-        <div className={`w-full ${maxWidth} bg-white rounded-xl border border-gray-100 shadow-2xl overflow-hidden`}>
+        <div className={`w-full ${maxWidth} bg-white rounded-xl border-0 shadow-2xl overflow-hidden`}>
           <div className="flex items-start justify-between px-5 py-4 border-b border-gray-200">
             <h3 className="text-lg font-semibold text-black">{title}</h3>
             <button onClick={onClose} className="text-black/60" aria-label="Close">
@@ -37,8 +37,8 @@ function ModalShell({ title, onClose, children, maxWidth = 'max-w-lg' }) {
 function StatusBadge({ status }) {
   if (!status) return null;
 
-  const base = 'inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border';
-  const dot = 'h-1.5 w-1.5 rounded-full';
+  const base = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold border';
+  const dot = 'h-2 w-2 rounded-full';
 
   const variants = {
     RETURNED: { cls: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
@@ -81,18 +81,18 @@ function BlackButton({ onClick, disabled, label, className = '' }) {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, readOnly = false }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+      <label className={`block ${readOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>{label}</label>
       {children}
     </div>
   );
 }
 
-function TextBox({ value }) {
+function TextBox({ value, readOnly = false }) {
   return (
-    <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100 truncate">
+    <div className={`px-3 py-2 bg-gray-50 rounded-lg ${readOnly ? 'text-base' : 'text-sm'} font-semibold text-black ${readOnly ? 'border-0' : 'border border-gray-100'}`}>
       {value}
     </div>
   );
@@ -111,7 +111,7 @@ function PdfUpload({
 }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+      <label className="block text-sm font-bold text-gray-700 mb-2">{label}</label>
       <div className="mt-1 flex items-center gap-2">
         <label
           className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm ${
@@ -459,8 +459,17 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           }
 
           // Employee
-          if (idpRes.header.employee) setEmployee(idpRes.header.employee);
-          else if (idpRes.header.employee_id) {
+          if (idpRes.header.employee) {
+            setEmployee(idpRes.header.employee);
+          } else if (idpRes.header.employee_name) {
+            // Use employee data from header (already fetched with JOINs)
+            setEmployee({
+              name: idpRes.header.employee_name,
+              first_name: idpRes.header.employee_first_name,
+              last_name: idpRes.header.employee_last_name,
+              id: idpRes.header.employee_id
+            });
+          } else if (idpRes.header.employee_id) {
             try {
               const emp = await apiRequest(`/api/users/${idpRes.header.employee_id}`);
               setEmployee(emp || {});
@@ -470,8 +479,17 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           } else setEmployee({});
 
           // Supervisor
-          if (idpRes.header.supervisor) setSupervisor(idpRes.header.supervisor);
-          else if (idpRes.header.supervisor_id) {
+          if (idpRes.header.supervisor) {
+            setSupervisor(idpRes.header.supervisor);
+          } else if (idpRes.header.supervisor_name) {
+            // Use supervisor data from header (already fetched with JOINs)
+            setSupervisor({
+              name: idpRes.header.supervisor_name,
+              first_name: idpRes.header.supervisor_first_name,
+              last_name: idpRes.header.supervisor_last_name,
+              id: idpRes.header.supervisor_id
+            });
+          } else if (idpRes.header.supervisor_id) {
             try {
               const sup = await apiRequest(`/api/users/${idpRes.header.supervisor_id}`);
               setSupervisor(sup || {});
@@ -481,7 +499,10 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           } else setSupervisor({});
 
           // Load CL score for the employee
-          if (idpRes.header?.employee_id) {
+          if (idpRes.header?.cl_score) {
+            setLatestCLScore(idpRes.header.cl_score);
+          } else if (idpRes.header?.employee_id) {
+            // Try to fetch history if not in header
             try {
               const history = await apiRequest(`/api/cl/employee/${idpRes.header.employee_id}/history`);
               const approved = (history || []).find((h) => String(h.status).toUpperCase() === 'APPROVED');
@@ -490,7 +511,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 setLatestCLScore(clFull?.total_score || approved?.total_score || null);
               }
             } catch (e) {
-              console.error('Failed to load CL score in edit mode', e);
+              // Silently fail - CL score is not critical
+              console.debug('Could not load CL score history');
             }
           }
 
@@ -1301,9 +1323,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
                 <div className="p-5 space-y-3 overflow-y-auto max-h-[calc(85vh-64px)]">
                   {SCORING_GUIDE.map((guide) => (
-                    <div key={guide.score} className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                    <div key={guide.score} className={`p-4 bg-gray-50 rounded-lg ${viewOnly ? 'border-0' : 'border border-gray-100'}`}>
                       <div className="flex items-center gap-3 mb-2">
-                        <span className="font-bold text-lg text-black bg-white rounded-md px-3 py-1 border border-gray-200">
+                        <span className={`font-bold text-lg text-black bg-white rounded-md px-3 py-1 ${viewOnly ? 'border-0' : 'border border-gray-200'}`}>
                           {guide.score}
                         </span>
                         <span className="font-semibold text-black">{guide.status}</span>
@@ -1386,13 +1408,13 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         {/* Top summary */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Employee card */}
-          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <div className={`lg:col-span-2 bg-white rounded-xl shadow-sm ${viewOnly ? 'border-0' : 'border border-gray-100'} p-5`}>
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
                 <h2 className="text-lg font-semibold text-black">Employee Information</h2>
                 <p className="text-sm text-gray-600 mt-1">Review details and complete the development activity fields below.</p>
               </div>
-              <div className="text-xs text-gray-500 text-right">
+              <div className="text-sm text-gray-700 text-right">
                 <div className="hidden sm:block">Date of IDP Creation</div>
                 <div className="font-semibold text-gray-800">{creationDate}</div>
               </div>
@@ -1400,55 +1422,55 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div className="min-w-0">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Name</label>
-                <TextBox value={employee.name} />
+                <label className={`block ${viewOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>Name</label>
+                <TextBox value={employee.name} readOnly={viewOnly} />
               </div>
 
               <div className="min-w-0">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Position</label>
-                <TextBox value={employee.position_title} />
+                <label className={`block ${viewOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>Position</label>
+                <TextBox value={employee.position_title} readOnly={viewOnly} />
               </div>
 
               <div className="min-w-0">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
-                <TextBox value={employee.department_name} />
+                <label className={`block ${viewOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>Department</label>
+                <TextBox value={employee.department_name} readOnly={viewOnly} />
               </div>
 
               <div className="min-w-0">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Supervisor/Manager</label>
-                <TextBox value={supervisor?.name || 'N/A'} />
+                <label className={`block ${viewOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>Supervisor/Manager</label>
+                <TextBox value={supervisor?.name || supervisor?.full_name || `${supervisor?.first_name || ''} ${supervisor?.last_name || ''}`.trim() || 'N/A'} readOnly={viewOnly} />
               </div>
 
               <div className="min-w-0">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">CL Score</label>
-                <TextBox value={latestCLScore ? Number(latestCLScore).toFixed(2) : 'No approved CL'} />
+                <label className={`block ${viewOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>CL Score</label>
+                <TextBox value={latestCLScore ? Number(latestCLScore).toFixed(2) : 'N/A'} readOnly={viewOnly} />
               </div>
 
               <div className="sm:col-span-1 lg:col-span-2">
-                <Field label="Review Period">
+                <Field label="Review Period" readOnly={viewOnly}>
                   <input
                     type="text"
                     value={idpData.reviewPeriod}
                     onChange={(e) => updateIdpData('reviewPeriod', e.target.value)}
                     disabled={viewOnly}
-                    className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className={`w-full bg-gray-50 rounded-lg px-3 py-2 ${viewOnly ? 'text-base' : 'text-sm'} text-black outline-none focus:ring-2 focus:ring-black/10 ${viewOnly ? 'border-0' : 'border border-gray-100'} disabled:opacity-60 disabled:cursor-not-allowed`}
                   />
                 </Field>
               </div>
 
-              <Field label="Next Review Date">
+              <Field label="Next Review Date" readOnly={viewOnly}>
                 <input
                   type="date"
                   value={idpData.nextReviewDate}
                   onChange={(e) => updateIdpData('nextReviewDate', e.target.value)}
                   disabled={viewOnly}
-                  className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className={`w-full bg-gray-50 rounded-lg px-3 py-2 ${viewOnly ? 'text-base' : 'text-sm'} text-black outline-none focus:ring-2 focus:ring-black/10 ${viewOnly ? 'border-0' : 'border border-gray-100'} disabled:opacity-60 disabled:cursor-not-allowed`}
                 />
               </Field>
 
               <div className="sm:hidden lg:col-span-2">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Date of IDP Creation</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm font-semibold text-black border border-gray-100">
+                <label className={`block ${viewOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>Date of IDP Creation</label>
+                <div className={`px-3 py-2 bg-gray-50 rounded-lg ${viewOnly ? 'text-base' : 'text-sm'} font-semibold text-black ${viewOnly ? 'border-0' : 'border border-gray-100'}`}>
                   {creationDate}
                 </div>
               </div>
@@ -1457,9 +1479,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
           {/* Manager Remarks Display OR Helpful Notes */}
           {idpHeader?.manager_remarks && !editMode ? (
-            <div className="bg-blue-50 rounded-xl shadow-sm border border-blue-200 p-5">
+            <div className={`bg-blue-50 rounded-xl shadow-sm ${viewOnly ? 'border-0' : 'border border-blue-200'} p-5`}>
               <h3 className="text-lg font-semibold text-blue-900 mb-3">Manager Remarks & Feedback</h3>
-              <div className="bg-white rounded-lg p-4 border border-blue-100 mb-4">
+              <div className={`bg-white rounded-lg p-4 ${viewOnly ? 'border-0' : 'border border-blue-100'} mb-4`}>
                 <p className="text-gray-800 text-sm whitespace-pre-wrap">{idpHeader.manager_remarks}</p>
               </div>
               {idpHeader?.updated_at && (
@@ -1469,7 +1491,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               )}
             </div>
           ) : viewOnly && userRole !== 'Supervisor' && idpHeader?.status !== 'FOR_COMPLETION' ? (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div className={`bg-white rounded-xl shadow-sm ${viewOnly ? 'border-0' : 'border border-gray-100'} p-5`}>
               <h3 className="text-lg font-semibold text-gray-800 mb-3">
                 {(() => {
                   const role = getUserRole();
@@ -1480,7 +1502,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 })()}
               </h3>
               <textarea
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black resize-none mb-4"
+                className={`w-full ${viewOnly ? 'border-0' : 'border border-gray-300'} rounded-lg px-4 py-3 text-base text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black resize-none mb-4`}
                 rows="4"
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
@@ -1494,10 +1516,10 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               />
               
               {/* Action Buttons */}
-              <div className="flex justify-end gap-3 mb-4">
+              <div className="flex flex-col sm:flex-row gap-3 mb-4">
                 <button
                   onClick={handleReturnIDP}
-                  className="px-6 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap"
+                  className="flex-1 px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 transition-colors"
                   disabled={actionLoading}
                 >
                   {actionLoading ? 'Processing...' : 'Return to Supervisor'}
@@ -1505,7 +1527,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 
                 <button
                   onClick={handleApproveIDP}
-                  className="px-6 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500/50 disabled:opacity-50 whitespace-nowrap"
+                  className="flex-1 px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500/50 disabled:opacity-50 transition-colors"
                   disabled={actionLoading}
                 >
                   {actionLoading ? 'Processing...' : (() => {
@@ -1557,7 +1579,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                         value={remarks}
                         onChange={(e) => setRemarks(e.target.value)}
                         rows={3}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-md text-base font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="Add any remarks about the cycle completion..."
                       />
                     </div>
@@ -1605,11 +1627,11 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               <h3 className="text-sm font-semibold text-black">Helpful Notes</h3>
               <div className="mt-3 space-y-3 text-sm text-gray-700">
               <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
-                <div className="text-xs font-semibold text-gray-600">Activities</div>
+                <div className="text-sm font-bold text-gray-800">Activities</div>
                 <div className="mt-1">One activity per competency is enforced.</div>
               </div>
               <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
-                <div className="text-xs font-semibold text-gray-600">Tip</div>
+                <div className="text-sm font-bold text-gray-800">Tip</div>
                 <div className="mt-1">Fill out “Expected Results”, “Knowledge Sharing”, and “Application Method” for a complete submission.</div>
               </div>
               <button
@@ -1628,7 +1650,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         {!editMode && !viewOnly && availableCompetencies?.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
             <h3 className="text-sm font-semibold text-black">Select Competencies (min 1, max 2)</h3>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-sm text-gray-700 mt-2">
               Choose up to two competencies from the employee&apos;s competency list to include in this IDP. Only level 1-2 competencies are eligible.
             </p>
 
@@ -1666,7 +1688,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                     />
                     <div className="text-sm">
                       <div className={`font-semibold ${isLevelTooHigh ? 'text-gray-500' : 'text-gray-800'}`}>{comp.competencyName || comp.name}</div>
-                      <div className={`text-xs ${isLevelTooHigh ? 'text-gray-400' : 'text-gray-500'}`}>
+                      <div className={`text-sm font-medium ${isLevelTooHigh ? 'text-gray-500' : 'text-gray-700'}`}>
                         Current level: {currentLevel}{isLevelTooHigh ? ' (Not eligible)' : ''}
                       </div>
                     </div>
@@ -1682,14 +1704,14 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         )}
 
         {/* Development Plan */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="px-5 py-4 border-b border-gray-100">
+        <div className={`bg-white rounded-xl shadow-sm ${viewOnly ? 'border-0' : 'border border-gray-100'}`}>
+          <div className={`px-5 py-4 ${viewOnly ? 'border-0' : 'border-b border-gray-100'}`}>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
                 <h2 className="text-lg font-semibold text-black">Development Plan</h2>
                 <p className="text-sm text-gray-600 mt-1">{viewOnly ? 'Review the submitted development activities.' : 'Update the fields inside each competency card.'}</p>
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-sm text-gray-700">
                 {idpData.items.length} competency{(idpData.items.length === 1) ? '' : 'ies'}
               </div>
             </div>
@@ -1697,7 +1719,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
           <div className={`p-5 ${viewOnly ? 'pointer-events-none opacity-75' : ''}`}>
             {idpData.items.length === 0 ? (
-              <div className="text-center py-10 bg-gray-50 rounded-xl border border-gray-100">
+              <div className={`text-center py-10 bg-gray-50 rounded-xl ${viewOnly ? 'border-0' : 'border border-gray-100'}`}>
                 <p className="text-gray-800 font-semibold">No approved competencies found for this employee.</p>
                 <p className="text-sm text-gray-600 mt-1">Employee must have approved CL competencies before creating IDP.</p>
               </div>
@@ -1743,16 +1765,16 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                     <div
                       id={`item-${itemIndex}`}
                       key={item.competencyId}
-                      className="rounded-xl border border-gray-100 bg-gray-50 overflow-hidden"
+                      className={`rounded-xl ${viewOnly ? 'border-0' : 'border border-gray-100'} bg-gray-50 overflow-hidden`}
                     >
                       {/* Card header */}
-                      <div className="px-4 py-4 bg-white border-b border-gray-100">
+                      <div className={`px-4 py-4 bg-white ${viewOnly ? 'border-0' : 'border-b border-gray-100'}`}>
                         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-base font-semibold text-black">{item.competencyName}</span>
                               <span
-                                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border ${chip.bg} ${chip.text} ${chip.border}`}
+                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold border ${chip.bg} ${chip.text} ${chip.border}`}
                               >
                                 <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
                                 {item.developmentArea}
@@ -1765,7 +1787,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                           </div>
 
                           <div className="flex items-center gap-3">
-                            <span className="text-xs font-semibold text-gray-500 px-2 py-1 rounded-lg bg-gray-50 border border-gray-100">
+                            <span className="text-sm font-bold text-gray-700 px-3 py-2 rounded-lg bg-gray-50 border border-gray-100">
                               {totalActivities} {totalActivities === 1 ? 'Activity' : 'Activities'}
                             </span>
                             
@@ -1826,15 +1848,10 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                             No activity initialized.
                           </div>
                         ) : viewOnly ? (
-                          <div className="space-y-3 opacity-60 pointer-events-none">
-                            {/* Display activity in read-only format */}
-                            <div className="bg-white rounded-lg p-4 border border-gray-100">
-                              <p className="text-sm text-gray-700"><strong>Type:</strong> {activity.type}</p>
-                              <p className="text-sm text-gray-700 mt-2"><strong>Activity:</strong> {activity.activity}</p>
-                              <p className="text-sm text-gray-700 mt-2"><strong>Target Date:</strong> {activity.targetCompletionDate || 'N/A'}</p>
-                              <p className="text-sm text-gray-700 mt-2"><strong>Actual Date:</strong> {activity.actualCompletionDate || 'N/A'}</p>
-                              <p className="text-sm text-gray-700 mt-2"><strong>Status:</strong> {activity.completionStatus}</p>
-                              <p className="text-sm text-gray-700 mt-2"><strong>Score:</strong> {activity.score}</p>
+                          <div className="space-y-4 opacity-100 pointer-events-none">
+                            {/* Display activity type in read-only format */}
+                            <div className="bg-white rounded-lg p-5 border border-gray-100">
+                              <p className="text-base text-gray-800"><strong className="text-gray-900">Type:</strong> {activity.type}</p>
                             </div>
                           </div>
                         ) : (
@@ -1857,7 +1874,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 <select
                                   value={activity.type}
                                   onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.type`, e.target.value)}
-                                  className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                  className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                 >
                                   <option value="">-- Select activity type --</option>
                                   {DEVELOPMENT_TYPES.map((type) => (
@@ -1881,7 +1898,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         value={activity.activity}
                                         onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.activity`, e.target.value)}
                                         placeholder="Describe the development activity..."
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                        className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                       />
                                     </Field>
                                   </div>
@@ -1893,7 +1910,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                     onChange={(e) =>
                                       updateIdpData(`items.${itemIndex}.developmentActivities.0.targetCompletionDate`, e.target.value)
                                     }
-                                    className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                    className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                   />
                                 </Field>
 
@@ -1906,7 +1923,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                     }
                                     disabled={!isCompletedStatus(activity.completionStatus)}
                                     required={isCompletedStatus(activity.completionStatus)}
-                                    className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                    className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                   />
                                 </Field>
 
@@ -1916,7 +1933,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                     onChange={(e) =>
                                       updateIdpData(`items.${itemIndex}.developmentActivities.0.completionStatus`, e.target.value)
                                     }
-                                    className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                    className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                   >
                                     {COMPLETION_STATUS_OPTIONS.map((status) => (
                                       <option key={status} value={status}>
@@ -1932,7 +1949,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                     onChange={(e) =>
                                       updateIdpData(`items.${itemIndex}.developmentActivities.0.score`, parseInt(e.target.value))
                                     }
-                                    className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                    className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                   >
                                     {[1, 2, 3, 4, 5].map((score) => (
                                       <option key={score} value={score}>
@@ -1944,12 +1961,12 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
                                 {((activity.pdfPath) || isCompletedStatus(activity.completionStatus)) && (
                                   <div>
-                                    <label className="block text-xs font-semibold text-gray-600 mb-1">Proof of Completion</label>
+                                    <label className="block text-sm font-bold text-gray-800 mb-2">Proof of Completion</label>
                                     <div className="flex items-center gap-2 w-full">
                                       <select
                                         value={activity.pdfPath || ''}
                                         onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, e.target.value)}
-                                        className="flex-1 bg-gray-50 rounded-lg px-3 py-2 text-sm text-black border border-gray-100 truncate"
+                                        className="flex-1 bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium border border-gray-300 truncate"
                                       >
                                         <option value="">-- No file --</option>
                                         {activity.pdfPath && (
@@ -2015,9 +2032,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                     <table className="w-full border-collapse text-sm">
                                       <thead>
                                         <tr className="bg-gray-100 border border-gray-200">
-                                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Expected Results</th>
-                                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Knowledge Sharing Method</th>
-                                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Application Method</th>
+                                          <th className="border border-gray-200 px-3 py-2 text-left font-bold text-gray-800 text-sm">Expected Results</th>
+                                          <th className="border border-gray-200 px-3 py-2 text-left font-bold text-gray-800 text-sm">Knowledge Sharing Method</th>
+                                          <th className="border border-gray-200 px-3 py-2 text-left font-bold text-gray-800 text-sm">Application Method</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -2030,7 +2047,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                               }
                                               placeholder="What new or enhanced skill or knowledge will you learn from this IDP?"
                                               rows={2}
-                                              className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                              className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                             />
                                           </td>
                                           <td className="border border-gray-200 px-3 py-2">
@@ -2041,7 +2058,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                               }
                                               placeholder="How will you share these enhanced skills or knowledge with your TLs, peers, or direct reports?"
                                               rows={2}
-                                              className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                              className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                             />
                                           </td>
                                           <td className="border border-gray-200 px-3 py-2">
@@ -2052,7 +2069,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                               }
                                               placeholder="How will you apply the skills or knowledge that you learned to improve your work performance?"
                                               rows={2}
-                                              className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                              className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                             />
                                           </td>
                                         </tr>
@@ -2075,7 +2092,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         value={activity.activity}
                                         onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.activity`, e.target.value)}
                                         placeholder="Describe the development activity..."
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                        className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                       />
                                     </Field>
                                   </div>
@@ -2089,7 +2106,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         }
                                         placeholder="What new or enhanced skill or knowledge will you learn from this IDP?"
                                         rows={3}
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                        className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                       />
                                     </Field>
                                   </div>
@@ -2103,7 +2120,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         }
                                         placeholder="How will you share these enhanced skills or knowledge with your TLs, peers, or direct reports?"
                                         rows={3}
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                        className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                       />
                                     </Field>
                                   </div>
@@ -2117,7 +2134,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         }
                                         placeholder="How will you apply the skills or knowledge that you learned to improve your work performance?"
                                         rows={3}
-                                        className="w-full bg-gray-50 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100"
+                                        className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
                                       />
                                     </Field>
                                   </div>
@@ -2133,24 +2150,33 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                             <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto">
                               <table className="w-full border-collapse">
                                 <thead>
+                                  {item.extraTables.map((t, ti) => (
+                                    <tr key={`${ti}-quarter-header`} className="bg-gray-700 text-white">
+                                      <td colSpan="7" className="border border-gray-300 px-4 py-3">
+                                        <span className="text-base font-bold">{t.quarter || `Q${ti + 1}`}</span>
+                                      </td>
+                                    </tr>
+                                  ))[0] || null}
                                   <tr className="bg-gray-800 text-white">
-                                    <th className="border border-gray-300 px-4 py-2 text-left text-xs font-semibold">Activity</th>
-                                    <th className="border border-gray-300 px-4 py-2 text-left text-xs font-semibold">Target Date</th>
-                                    <th className="border border-gray-300 px-4 py-2 text-left text-xs font-semibold">Completion Date</th>
-                                    <th className="border border-gray-300 px-4 py-2 text-left text-xs font-semibold">Status</th>
-                                    <th className="border border-gray-300 px-4 py-2 text-left text-xs font-semibold">Score</th>
-                                    <th className="border border-gray-300 px-4 py-2 text-center text-xs font-semibold">Proof</th>
-                                    <th className="border border-gray-300 px-4 py-2 text-center text-xs font-semibold">Action</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Activity</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Target Date</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Completion Date</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Status</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Score</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-center text-sm font-bold">Proof</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-center text-sm font-bold">Action</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {item.extraTables.map((t, ti) => (
-                                    <>
-                                      <tr key={`${ti}-row0`} className="bg-gray-700 text-white">
-                                        <td colSpan="7" className="border border-gray-300 px-4 py-2">
-                                          <span className="text-sm font-bold">{t.quarter || `Q${ti + 1}`}</span>
-                                        </td>
-                                      </tr>
+                                    <React.Fragment key={`table-${itemIndex}-${ti}`}>
+                                      {ti > 0 && (
+                                        <tr key={`${ti}-row0`} className="bg-gray-700 text-white">
+                                          <td colSpan="7" className="border border-gray-300 px-4 py-3">
+                                            <span className="text-base font-bold">{t.quarter || `Q${ti + 1}`}</span>
+                                          </td>
+                                        </tr>
+                                      )}
                                       <tr key={`${ti}-row1`} className="hover:bg-gray-100 transition-colors">
                                         <td className="border border-gray-300 px-4 py-2">
                                           <input
@@ -2160,7 +2186,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                               updateIdpData(`items.${itemIndex}.extraTables.${ti}.developmentActivity`, e.target.value)
                                             }
                                             placeholder="Activity..."
-                                            className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
+                                            className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
                                           />
                                         </td>
                                         <td className="border border-gray-300 px-4 py-2">
@@ -2170,7 +2196,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                             onChange={(e) =>
                                               updateIdpData(`items.${itemIndex}.extraTables.${ti}.targetCompletionDate`, e.target.value)
                                             }
-                                            className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
+                                            className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
                                           />
                                         </td>
                                         <td className="border border-gray-300 px-4 py-2">
@@ -2198,7 +2224,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                     style={{ width: `${percentage}%` }}
                                                   />
                                                 </div>
-                                                <div className="text-xs font-semibold text-gray-700 text-center">
+                                                <div className="text-sm font-bold text-gray-800 text-center">
                                                   {percentage}% ({completedAreas}/{totalAreas})
                                                 </div>
                                               </div>
@@ -2219,7 +2245,13 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                           </select>
                                         </td>
                                         <td className="border border-gray-300 px-4 py-2 text-center">
-                                          {((t.pdfPath) || isCompletedStatus(t.completionStatus)) && (
+                                          {(() => {
+                                            const areas = t.areasOfExposure || [];
+                                            const totalAreas = areas.length;
+                                            const completedAreas = areas.filter(a => a.status === 'Completed').length;
+                                            const allCompleted = totalAreas > 0 && completedAreas === totalAreas;
+                                            return (t.pdfPath || isCompletedStatus(t.completionStatus) || allCompleted);
+                                          })() && (
                                             <div className="flex items-center justify-center gap-1">
                                               <label className={`inline-flex items-center px-2 py-1 bg-white border border-gray-200 rounded text-xs ${!isCompletedStatus(t.completionStatus) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                                                 <input
@@ -2227,8 +2259,12 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                   accept="application/pdf"
                                                   style={{ display: 'none' }}
                                                   onChange={async (e) => {
-                                                    if (!isCompletedStatus(t.completionStatus)) {
-                                                      alert('Please mark activity as Completed to upload proof.');
+                                                    const areas = t.areasOfExposure || [];
+                                                    const totalAreas = areas.length;
+                                                    const completedAreas = areas.filter(a => a.status === 'Completed').length;
+                                                    const allCompleted = totalAreas > 0 && completedAreas === totalAreas;
+                                                    if (!isCompletedStatus(t.completionStatus) && !allCompleted) {
+                                                      alert('Upload allowed once activity is completed or all areas are completed.');
                                                       return;
                                                     }
                                                     const f = e.target.files && e.target.files[0];
@@ -2280,21 +2316,21 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                       </tr>
                                       <tr key={`${ti}-duration`} className="hover:bg-gray-50 transition-colors bg-gray-50">
                                         <td colSpan="7" className="border border-gray-300 px-4 py-2">
-                                          <div className="text-xs font-semibold text-gray-700 mb-2">Duration of Exposure</div>
+                                          <div className="text-sm font-bold text-gray-800 mb-3">Duration of Exposure</div>
                                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                             <div>
-                                              <label className="block text-xs font-semibold text-gray-600 mb-1">From: [Start Date]</label>
+                                              <label className="block text-sm font-bold text-gray-800 mb-2">From: [Start Date]</label>
                                               <input
                                                 type="date"
                                                 value={t.exposureStartDate || ''}
                                                 onChange={(e) =>
                                                   updateIdpData(`items.${itemIndex}.extraTables.${ti}.exposureStartDate`, e.target.value)
                                                 }
-                                                className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
+                                                className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
                                               />
                                             </div>
                                             <div>
-                                              <label className="block text-xs font-semibold text-gray-600 mb-1">To: [End Date]</label>
+                                              <label className="block text-sm font-bold text-gray-800 mb-2">To: [End Date]</label>
                                               {(() => {
                                                 const areas = t.areasOfExposure || [];
                                                 const completedAreas = areas.filter(a => a.status === 'Completed' && a.dateTime);
@@ -2313,14 +2349,14 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                 }
                                                 
                                                 return (
-                                                  <div className="w-full bg-gray-100 rounded px-2 py-1 text-xs text-black border border-gray-200 font-semibold">
+                                                  <div className="w-full bg-gray-100 rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300">
                                                     {latestDate ? latestDate : 'Auto-generated when areas are completed'}
                                                   </div>
                                                 );
                                               })()}
                                             </div>
                                             <div>
-                                              <label className="block text-xs font-semibold text-gray-600 mb-1">Total Hours of Exposure</label>
+                                              <label className="block text-sm font-bold text-gray-800 mb-2">Total Hours of Exposure</label>
                                               {(() => {
                                                 const startDate = t.exposureStartDate ? new Date(t.exposureStartDate) : null;
                                                 
@@ -2349,7 +2385,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                 }
                                                 
                                                 return (
-                                                  <div className="w-full bg-gray-100 rounded px-2 py-1 text-xs text-black border border-gray-200 font-semibold">
+                                                  <div className="w-full bg-gray-100 rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300">
                                                     {totalHours ? `${totalHours} hours` : 'Select dates to calculate'}
                                                   </div>
                                                 );
@@ -2361,7 +2397,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                       <tr key={`${ti}-row2`} className="hover:bg-blue-50 transition-colors">
                                         <td colSpan="7" className="border border-gray-300 px-4 py-2">
                                           <div className="flex items-center justify-between mb-3">
-                                            <label className="block text-xs font-semibold text-gray-600">Areas of Exposure</label>
+                                            <label className="block text-sm font-bold text-gray-800 mb-2">Areas of Exposure</label>
                                             {!viewOnly && idpHeader?.status !== 'FOR_COMPLETION' && (
                                               <button
                                                 type="button"
@@ -2385,15 +2421,15 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                           </div>
                                           {Array.isArray(t.areasOfExposure) && t.areasOfExposure.length > 0 && (
                                             <div className="overflow-x-auto">
-                                              <table className="w-full border-collapse text-xs">
+                                              <table className="w-full border-collapse text-sm">
                                                 <thead>
                                                   <tr className="bg-gray-200">
-                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Area</th>
-                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Status</th>
-                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Date & Time</th>
-                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Duration</th>
-                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Trainer Name</th>
-                                                    <th className="border border-gray-300 px-2 py-1 text-left font-semibold">Comments</th>
+                                                    <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Area</th>
+                                                    <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Status</th>
+                                                    <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Date & Time</th>
+                                                    <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Duration</th>
+                                                    <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Trainer Name</th>
+                                                    <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Comments</th>
                                                     <th className="border border-gray-300 px-2 py-1 text-center font-semibold">Action</th>
                                                   </tr>
                                                 </thead>
@@ -2423,7 +2459,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                           }}
                                                           disabled={viewOnly}
                                                           placeholder="Area..."
-                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                          className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
                                                         />
                                                       </td>
                                                       <td className="border border-gray-300 px-2 py-1">
@@ -2447,7 +2483,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                             });
                                                           }}
                                                           disabled={viewOnly}
-                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                          className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
                                                         >
                                                           <option value="">-- Select Status --</option>
                                                           <option value="Not Started">Not Started</option>
@@ -2483,7 +2519,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                             });
                                                           }}
                                                           disabled={viewOnly}
-                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                          className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
                                                           placeholder="Select date and time"
                                                         />
                                                       </td>
@@ -2510,7 +2546,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                           }}
                                                           disabled={viewOnly}
                                                           placeholder="Duration..."
-                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                          className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
                                                         />
                                                       </td>
                                                       <td className="border border-gray-300 px-2 py-1">
@@ -2536,7 +2572,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                           }}
                                                           disabled={viewOnly}
                                                           placeholder="Trainer name..."
-                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                          className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
                                                         />
                                                       </td>
                                                       <td className="border border-gray-300 px-2 py-1">
@@ -2562,7 +2598,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                           disabled={viewOnly}
                                                           placeholder="Comments..."
                                                           rows={1}
-                                                          className="w-full bg-white rounded px-1 py-0.5 text-xs border border-gray-200"
+                                                          className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
                                                         />
                                                       </td>
                                                       <td className="border border-gray-300 px-2 py-1 text-center">
@@ -2587,7 +2623,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                             </div>
                                           )}
                                           <div className="mt-4">
-                                            <label className="block text-xs font-semibold text-gray-600 mb-2">Learning</label>
+                                            <label className="block text-sm font-bold text-gray-800 mb-3">Learning</label>
                                             <textarea
                                               value={t.learning || ''}
                                               onChange={(e) =>
@@ -2598,9 +2634,67 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                               className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
                                             />
                                           </div>
+                                          
+                                          {/* PDF Submission Section - Appears when all areas are completed */}
+                                          {(() => {
+                                            const areas = t.areasOfExposure || [];
+                                            if (areas.length === 0) return null;
+                                            const allCompleted = areas.every(area => area.status === 'Completed');
+                                            if (!allCompleted) return null;
+
+                                            return (
+                                              <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                                                <label className="block text-xs font-semibold text-emerald-800 mb-2">
+                                                  ✓ All activities completed - PDF submission available
+                                                </label>
+                                                {!viewOnly && (
+                                                  <div className="flex items-center gap-2">
+                                                    <label className="inline-flex items-center px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold transition cursor-pointer">
+                                                      <input
+                                                        type="file"
+                                                        accept="application/pdf"
+                                                        style={{ display: 'none' }}
+                                                        onChange={async (e) => {
+                                                          const f = e.target.files && e.target.files[0];
+                                                          if (!f) return;
+                                                          const form = new FormData();
+                                                          form.append('pdf', f);
+                                                          try {
+                                                            const res = await fetch(`${apiBase}/api/idp/upload`, {
+                                                              method: 'POST',
+                                                              headers: { Authorization: `Bearer ${token}` },
+                                                              body: form,
+                                                            });
+                                                            const data = await res.json();
+                                                            if (!res.ok) throw new Error(data.message || 'Upload failed');
+                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.pdfPath`, data.pdf_path);
+                                                            alert('PDF uploaded');
+                                                          } catch (err) {
+                                                            console.error('Upload failed', err);
+                                                            alert('Upload failed: ' + (err.message || ''));
+                                                          }
+                                                        }}
+                                                      />
+                                                      📄 Submit as PDF
+                                                    </label>
+                                                    {t.pdfPath && (
+                                                      <a
+                                                        href={`${apiBase}/${t.pdfPath}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-xs text-blue-600 hover:underline"
+                                                      >
+                                                        View PDF
+                                                      </a>
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })()}
                                         </td>
                                       </tr>
-                                    </>
+                                    </React.Fragment>
                                   ))}
                                 </tbody>
                               </table>

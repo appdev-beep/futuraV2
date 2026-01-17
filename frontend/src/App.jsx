@@ -13,6 +13,7 @@ import AdminPage from './pages/Admin/AdminPage';
 import SupervisorDashboard from './pages/Supervisor/SupervisorDashboard';
 import SupervisorReviewCLPage from './pages/Supervisor/SupervisorReviewCLPage';
 import StartCLPage from './pages/Supervisor/StartCLPage';
+import StartIDPPage from './pages/Supervisor/StartIDPPage';
 import CreateIDPPage from './pages/Supervisor/CreateIDPPage';
 
 // Manager pages
@@ -53,6 +54,7 @@ function App() {
             <Route path="/supervisor" element={<SupervisorDashboard />} />
             <Route path="/cl/supervisor/review/:id" element={<SupervisorReviewCLPage />} />
             <Route path="/cl/start" element={<StartCLPage />} />
+            <Route path="/idp/start" element={<StartIDPPage />} />
             <Route path="/supervisor/idp/create/:employeeId" element={<CreateIDPPage />} />
             <Route path="/supervisor/idp/:id" element={<CreateIDPPage />} />
 
