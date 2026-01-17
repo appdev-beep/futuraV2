@@ -425,10 +425,10 @@ function SupervisorDashboard() {
   return (
     <div className="flex h-screen bg-white">
       {/* LEFT SIDEBAR */}
-      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-800">FUTURA</h2>
-          <p className="text-sm text-gray-500">{user.role}</p>
+      <aside className="w-72 bg-blue-900 border-r border-gray-200 flex flex-col">
+        <div className="p-4 border-b border-blue-800">
+          <h2 className="text-xl font-semibold text-white">FUTURA</h2>
+          <p className="text-sm text-blue-100">{user.role}</p>
         </div>
 
         <nav className="p-4 space-y-4 overflow-y-auto">
@@ -437,27 +437,27 @@ function SupervisorDashboard() {
             <button
               onClick={() => setActivePage('CL')}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded transition
-                ${activePage === 'CL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                ${activePage === 'CL' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
             >
-              <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-600" />
+              <ClipboardDocumentCheckIcon className="w-5 h-5 text-white" />
               <span>Competency Leveling</span>
             </button>
 
             <div className="pr-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-200 mb-2 px-3">
                 CL Sections
               </p>
               <button
                 type="button"
                 onClick={() => { setActivePage('CL'); setActiveSection('ALL'); }}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                  ${activeSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  ${activeSection === 'ALL' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
               >
                 <span className="flex items-center gap-2">
                   <Squares2X2Icon className="w-4 h-4" />
                   All
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
                   {sectionCounts.ALL || 0}
                 </span>
               </button>
@@ -470,13 +470,13 @@ function SupervisorDashboard() {
                       type="button"
                       onClick={() => { setActivePage('CL'); setActiveSection(key); }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                        ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                        ${activeSection === key ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
                     >
                       <span className="flex items-center gap-2">
                         <Icon className="w-4 h-4" />
                         {label}
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
                         {sectionCounts[key] || 0}
                       </span>
                     </button>
@@ -486,7 +486,7 @@ function SupervisorDashboard() {
               <button
                 onClick={() => goTo('/cl/start')}
                 className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded
-                           text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 transition"
+                           text-xs text-blue-900 bg-blue-100 hover:bg-blue-200 transition"
               >
                 <span>➤ Start Competency Leveling</span>
               </button>
@@ -498,26 +498,26 @@ function SupervisorDashboard() {
             <button
               onClick={() => setActivePage('IDP')}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded transition
-                ${activePage === 'IDP' ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                ${activePage === 'IDP' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
             >
-              <BookOpenIcon className="w-5 h-5 text-green-600" />
+              <BookOpenIcon className="w-5 h-5 text-white" />
               <span>IDP Leveling</span>
             </button>
             <div className="pr-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-200 mb-2 px-3">
                 IDP Sections
               </p>
               <button
                 type="button"
                 onClick={() => { setActivePage('IDP'); setActiveIDPSection('ALL'); }}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                  ${activeIDPSection === 'ALL' ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  ${activeIDPSection === 'ALL' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
               >
                 <span className="flex items-center gap-2">
                   <Squares2X2Icon className="w-4 h-4" />
                   All
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
                   {idpSectionCounts.ALL || 0}
                 </span>
               </button>
@@ -530,13 +530,13 @@ function SupervisorDashboard() {
                       type="button"
                       onClick={() => { setActivePage('IDP'); setActiveIDPSection(key); }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                        ${activeIDPSection === key ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                        ${activeIDPSection === key ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
                     >
                       <span className="flex items-center gap-2">
                         <Icon className="w-4 h-4" />
                         {label}
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
                         {idpSectionCounts[key] || 0}
                       </span>
                     </button>

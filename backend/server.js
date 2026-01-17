@@ -28,6 +28,6 @@ const PORT = process.env.PORT || 4000;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`FUTURA backend listening:`);
-  console.log(`  Local:   http://localhost:${PORT}`);
+  console.log(`  Local:   http://127.0.0.1:${PORT}`);
   console.log(`  LAN:     http://10.10.1.243:${PORT}`);
 });
