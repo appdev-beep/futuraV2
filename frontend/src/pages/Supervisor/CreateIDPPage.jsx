@@ -245,6 +245,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
   // Manager review state
   const [remarks, setRemarks] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [processHistory, setProcessHistory] = useState([]);
 
   const [idpData, setIdpData] = useState({
     reviewPeriod: '1st Cycle Performance Review',
@@ -317,6 +318,19 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       return totalActivities > 0 && completedActivities === totalActivities;
     });
   }, [idpData.items, isCompletedStatus]);
+
+  // Load process history for the IDP
+  const loadProcessHistory = async () => {
+    if (!id) return;
+    
+    try {
+      const historyData = await apiRequest(`/api/recent-actions/idp/${id}`);
+      setProcessHistory(historyData || []);
+    } catch (err) {
+      console.error('Failed to load process history:', err);
+      // Don't show error to user, just log it
+    }
+  };
 
   // Handle cycle completion approval for HR
   const handleApproveCycleCompletion = async () => {
@@ -639,6 +653,10 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         console.error('Failed to load IDP data:', err);
         alert('Failed to load employee data. Please try again.');
       } finally {
+        // Load process history if we have an IDP ID
+        if (id) {
+          loadProcessHistory();
+        }
         setLoading(false);
       }
     }
@@ -983,38 +1001,15 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
         // Determine where to send the resubmission based on current status
         let submitEndpoint = `/api/idp/${id}/submit`;
-        const currentStatus = idpHeader?.status;
         
-        // Debug: log what fields are available
-        console.log('DEBUG idpHeader fields:', Object.keys(idpHeader || {}));
-        console.log('DEBUG idpHeader status:', currentStatus);
-        console.log('DEBUG full idpHeader:', idpHeader);
-        console.log('DEBUG idpHeader values:', JSON.stringify(idpHeader, null, 2));
-        
-        // Since we can't reliably detect who returned it from the header,
-        // but we know from the manager_id field that it went through manager approval,
-        // if it's returned and has a manager_id, it likely came from HR
-        if (currentStatus === 'RETURNED' && idpHeader?.manager_id) {
-          // Try to submit directly to HR since it already went through manager approval
-          submitEndpoint = `/api/idp/${id}/hr/resubmit`;
-          console.log('DEBUG: Detected manager_id, attempting HR resubmit');
-        } else if (currentStatus === 'RETURNED') {
-          // No manager_id, probably returned by manager
-          submitEndpoint = `/api/idp/${id}/manager/resubmit`;
-          console.log('DEBUG: No manager_id, attempting manager resubmit');
-        }
-        
+        // For returned IDPs, use the regular submit endpoint which has
+        // smart routing logic to detect who returned it and route back appropriately
         console.log('DEBUG submitEndpoint:', submitEndpoint);
         
         try {
           await apiRequest(submitEndpoint, { method: 'PUT' });
         } catch (error) {
-          // If specific endpoint doesn't exist, fall back to regular submit
-          if (error.status === 404) {
-            await apiRequest(`/api/idp/${id}/submit`, { method: 'PUT' });
-          } else {
-            throw error;
-          }
+          throw error;
         }
 
         alert('IDP resubmitted successfully!');
@@ -1432,7 +1427,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 </button>
               )}
 
-              {!viewOnly && (hasActivitiesSetup || editMode) && (submitLabel === 'Mark Cycle Completed' || !editMode || idpHeader?.status === 'DRAFT' || idpHeader?.status === 'RETURNED') && <PrimaryActionButton onClick={submitIDP} disabled={saving} label={submitLabel} />}
+              {!viewOnly && (hasActivitiesSetup || editMode) && (submitLabel === 'Mark Cycle Completed' || !editMode || idpHeader?.status === 'DRAFT' || idpHeader?.status === 'RETURNED' || idpHeader?.status === 'FOR_COMPLETION') && <PrimaryActionButton onClick={submitIDP} disabled={saving} label={submitLabel} />}
             </div>
           </div>
         </div>
@@ -1673,7 +1668,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             
             // Only show approval buttons if user role matches the pending status
             const shouldShowApproval = (
-              (status === 'PENDING_MANAGER' && (role === 'Manager' || role === 'AM')) ||
+              (status === 'PENDING_MANAGER' && role === 'Manager') ||
               (status === 'PENDING_AM' && role === 'AM') ||
               (status === 'PENDING_HR' && role === 'HR') ||
               (status === 'PENDING_EMPLOYEE' && role === 'Employee') ||
@@ -2183,6 +2178,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         value={activity.pdfPath || ''}
                                         onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, e.target.value)}
                                         className="flex-1 bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium border border-gray-300 truncate"
+                                        disabled={viewOnly || userRole !== 'Supervisor'}
                                       >
                                         <option value="">-- No file --</option>
                                         {activity.pdfPath && (
@@ -2190,41 +2186,43 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         )}
                                       </select>
 
-                                      <label
-                                        className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm shrink-0 cursor-pointer`}
-                                      >
-                                        <input
-                                          type="file"
-                                          accept="application/pdf"
-                                          style={{ display: 'none' }}
-                                          onChange={async (e) => {
-                                            console.log('Activity completion status:', activity.completionStatus);
-                                            console.log('isCompletedStatus result:', isCompletedStatus(activity.completionStatus));
-                                            // Temporarily allowing upload regardless of completion status
-                                            const f = e.target.files && e.target.files[0];
-                                            if (!f) return;
+                                      {!viewOnly && userRole === 'Supervisor' && (
+                                        <label
+                                          className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm shrink-0 cursor-pointer`}
+                                        >
+                                          <input
+                                            type="file"
+                                            accept="application/pdf"
+                                            style={{ display: 'none' }}
+                                            onChange={async (e) => {
+                                              console.log('Activity completion status:', activity.completionStatus);
+                                              console.log('isCompletedStatus result:', isCompletedStatus(activity.completionStatus));
+                                              // Temporarily allowing upload regardless of completion status
+                                              const f = e.target.files && e.target.files[0];
+                                              if (!f) return;
 
-                                            const form = new FormData();
-                                            form.append('pdf', f);
+                                              const form = new FormData();
+                                              form.append('pdf', f);
 
-                                            try {
-                                              const res = await fetch(`${apiBase}/api/idp/upload`, {
-                                                method: 'POST',
-                                                headers: { Authorization: `Bearer ${token}` },
-                                                body: form,
-                                              });
-                                              const data = await res.json();
-                                              if (!res.ok) throw new Error(data.message || 'Upload failed');
-                                              updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, data.pdf_path);
-                                              alert('PDF uploaded');
-                                            } catch (err) {
-                                              console.error('Upload failed', err);
-                                              alert('Upload failed: ' + (err.message || ''));
-                                            }
-                                          }}
-                                        />
-                                        Upload
-                                      </label>
+                                              try {
+                                                const res = await fetch(`${apiBase}/api/idp/upload`, {
+                                                  method: 'POST',
+                                                  headers: { Authorization: `Bearer ${token}` },
+                                                  body: form,
+                                                });
+                                                const data = await res.json();
+                                                if (!res.ok) throw new Error(data.message || 'Upload failed');
+                                                updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, data.pdf_path);
+                                                alert('PDF uploaded');
+                                              } catch (err) {
+                                                console.error('Upload failed', err);
+                                                alert('Upload failed: ' + (err.message || ''));
+                                              }
+                                            }}
+                                          />
+                                          Upload
+                                        </label>
+                                      )}
 
                                       {activity.pdfPath && (
                                         <a
@@ -2463,53 +2461,59 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                             const totalAreas = areas.length;
                                             const completedAreas = areas.filter(a => a.status === 'Completed').length;
                                             const allCompleted = totalAreas > 0 && completedAreas === totalAreas;
-                                            return (t.pdfPath || isCompletedStatus(t.completionStatus) || allCompleted);
-                                          })() && (
-                                            <div className="flex items-center justify-center gap-2 pointer-events-auto">
-                                              <label className={`inline-flex items-center px-2 py-1 bg-white border border-gray-200 rounded text-xs cursor-pointer`}>
-                                                <input
-                                                  type="file"
-                                                  accept="application/pdf"
-                                                  style={{ display: 'none' }}
-                                                  onChange={async (e) => {
-                                                    // Temporarily allowing all uploads
-                                                    console.log('Extra table upload clicked for:', t);
-                                                    const f = e.target.files && e.target.files[0];
-                                                    if (!f) return;
-                                                    const form = new FormData();
-                                                    form.append('pdf', f);
-                                                    try {
-                                                      const res = await fetch(`${apiBase}/api/idp/upload`, {
-                                                        method: 'POST',
-                                                        headers: { Authorization: `Bearer ${token}` },
-                                                        body: form,
-                                                      });
-                                                      const data = await res.json();
-                                                      if (!res.ok) throw new Error(data.message || 'Upload failed');
-                                                      updateIdpData(`items.${itemIndex}.extraTables.${ti}.pdfPath`, data.pdf_path);
-                                                      alert('PDF uploaded');
-                                                    } catch (err) {
-                                                      console.error('Upload failed', err);
-                                                      alert('Upload failed: ' + (err.message || ''));
-                                                    }
-                                                  }}
-                                                />
-                                                Upload
-                                              </label>
-                                              {t.pdfPath && (
-                                                <a
-                                                  href={`${apiBase}/${t.pdfPath}`}
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-semibold pointer-events-auto"
-                                                  style={{ pointerEvents: 'auto' }}
-                                                  onClick={(e) => e.stopPropagation()}
-                                                >
-                                                  View
-                                                </a>
-                                              )}
-                                            </div>
-                                          )}
+                                            const hasProof = t.pdfPath || isCompletedStatus(t.completionStatus) || allCompleted;
+                                            
+                                            if (!hasProof) return <span className="text-xs text-gray-500">-</span>;
+                                            
+                                            return (
+                                              <div className="flex items-center justify-center gap-2 pointer-events-auto">
+                                                {!viewOnly && userRole === 'Supervisor' && (
+                                                  <label className={`inline-flex items-center px-2 py-1 bg-white border border-gray-200 rounded text-xs cursor-pointer`}>
+                                                    <input
+                                                      type="file"
+                                                      accept="application/pdf"
+                                                      style={{ display: 'none' }}
+                                                      onChange={async (e) => {
+                                                        // Temporarily allowing all uploads
+                                                        console.log('Extra table upload clicked for:', t);
+                                                        const f = e.target.files && e.target.files[0];
+                                                        if (!f) return;
+                                                        const form = new FormData();
+                                                        form.append('pdf', f);
+                                                        try {
+                                                          const res = await fetch(`${apiBase}/api/idp/upload`, {
+                                                            method: 'POST',
+                                                            headers: { Authorization: `Bearer ${token}` },
+                                                            body: form,
+                                                          });
+                                                          const data = await res.json();
+                                                          if (!res.ok) throw new Error(data.message || 'Upload failed');
+                                                          updateIdpData(`items.${itemIndex}.extraTables.${ti}.pdfPath`, data.pdf_path);
+                                                          alert('PDF uploaded');
+                                                        } catch (err) {
+                                                          console.error('Upload failed', err);
+                                                          alert('Upload failed: ' + (err.message || ''));
+                                                        }
+                                                      }}
+                                                    />
+                                                    Upload
+                                                  </label>
+                                                )}
+                                                {t.pdfPath && (
+                                                  <a
+                                                    href={`${apiBase}/${t.pdfPath}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-semibold pointer-events-auto"
+                                                    style={{ pointerEvents: 'auto' }}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                  >
+                                                    View
+                                                  </a>
+                                                )}
+                                              </div>
+                                            );
+                                          })()}
                                         </td>
                                         <td className="border border-gray-300 px-4 py-2 text-center">
                                           {!viewOnly && idpHeader?.status !== 'FOR_COMPLETION' && (
@@ -2734,27 +2738,32 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                       </td>
                                                       <td className="border border-gray-300 px-2 py-1">
                                                         <input
-                                                          type="text"
+                                                          type="number"
+                                                          min="0"
+                                                          step="0.1"
                                                           value={area.duration || ''}
                                                           onChange={(e) => {
                                                             if (viewOnly) return;
                                                             const newValue = e.target.value;
                                                             
-                                                            setIdpData((prev) => {
-                                                              const newData = { ...prev };
-                                                              const newItems = [...(newData.items || [])];
-                                                              const newExtraTables = [...(newItems[itemIndex]?.extraTables || [])];
-                                                              const newAreas = [...(newExtraTables[ti]?.areasOfExposure || [])];
-                                                              
-                                                              newAreas[ai] = { ...newAreas[ai], duration: newValue };
-                                                              newExtraTables[ti] = { ...newExtraTables[ti], areasOfExposure: newAreas };
-                                                              newItems[itemIndex] = { ...newItems[itemIndex], extraTables: newExtraTables };
-                                                              newData.items = newItems;
-                                                              return newData;
-                                                            });
+                                                            // Allow empty string or valid numbers only
+                                                            if (newValue === '' || (!isNaN(parseFloat(newValue)) && isFinite(newValue))) {
+                                                              setIdpData((prev) => {
+                                                                const newData = { ...prev };
+                                                                const newItems = [...(newData.items || [])];
+                                                                const newExtraTables = [...(newItems[itemIndex]?.extraTables || [])];
+                                                                const newAreas = [...(newExtraTables[ti]?.areasOfExposure || [])];
+                                                                
+                                                                newAreas[ai] = { ...newAreas[ai], duration: newValue };
+                                                                newExtraTables[ti] = { ...newExtraTables[ti], areasOfExposure: newAreas };
+                                                                newItems[itemIndex] = { ...newItems[itemIndex], extraTables: newExtraTables };
+                                                                newData.items = newItems;
+                                                                return newData;
+                                                              });
+                                                            }
                                                           }}
                                                           disabled={viewOnly}
-                                                          placeholder="Duration..."
+                                                          placeholder="Hours (e.g., 8 or 2.5)"
                                                           className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
                                                         />
                                                       </td>
@@ -2860,6 +2869,41 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             )}
           </div>
         </div>
+
+        {/* Process History */}
+        {editMode && processHistory.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 className="text-lg font-semibold text-black mb-4">Process History</h3>
+            <div className="space-y-3">
+              {processHistory
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                .map((action, index) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-gray-900">{action.title}</h4>
+                        <p className="text-sm text-gray-600">{action.description}</p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-gray-900">
+                          {action.actor_name || 'System'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(action.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                    {action.remarks && (
+                      <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-100">
+                        <div className="text-xs font-semibold text-gray-700 mb-1">Remarks:</div>
+                        <div className="text-sm text-gray-800 whitespace-pre-wrap">{action.remarks}</div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
 
 
       </div>

@@ -511,6 +511,18 @@ async function update(id, payload, actorId = null, actorRole = null) {
                 const newExtraTableId = extraTableInsertResult.insertId;
                 
                 for (const area of extraTable.areasOfExposure) {
+                  // Validate duration_hours - must be a valid number or null/empty
+                  let durationHours = area.durationHours;
+                  if (durationHours !== null && durationHours !== undefined && durationHours !== '') {
+                    const parsed = parseFloat(durationHours);
+                    if (isNaN(parsed) || !isFinite(parsed)) {
+                      throw new Error(`Invalid duration hours value: "${durationHours}". Duration must be a valid number.`);
+                    }
+                    durationHours = parsed;
+                  } else {
+                    durationHours = null;
+                  }
+
                   await conn.query(
                     `INSERT INTO idp_areas_of_exposure 
                      (extra_table_id, area, status, datetime, duration_hours, trainer_name, comments, created_at, updated_at)
@@ -520,7 +532,7 @@ async function update(id, payload, actorId = null, actorRole = null) {
                       area.area || null,
                       area.status || null,
                       area.datetime || null,
-                      area.durationHours || null,
+                      durationHours,
                       area.trainerName || null,
                       area.comments || null
                     ]
@@ -690,7 +702,9 @@ async function submit(id) {
     nextStatus = 'FOR_COMPLETION';
     console.log(`[IDP SUBMIT DEBUG] FOR_COMPLETION detected, keeping status as FOR_COMPLETION`);
   } else if (header.status === 'RETURNED') {
+    // When resubmitting a returned IDP, route back to whoever returned it
     try {
+        console.log(`[IDP SUBMIT DEBUG] Looking for return action for IDP ${id}`);
         const [raRows] = await db.query(
           `SELECT actor_id, action_type, url, title, description
            FROM recent_actions
@@ -699,28 +713,70 @@ async function submit(id) {
            LIMIT 20`,
           [`%/idp/view/${id}%`, `%IDP #${id}%`, `%IDP #${id}%`]
         );
-        let returnedByEmployee = false;
+        
+        console.log(`[IDP SUBMIT DEBUG] Found ${raRows.length} recent actions for IDP ${id}`);
+        raRows.forEach((ra, index) => {
+          console.log(`[IDP SUBMIT DEBUG] Action ${index}: ${ra.action_type}, actor: ${ra.actor_id}, title: "${ra.title}"`);
+        });
+        
+        let returnerRole = null;
+        let returnerActorId = null;
         for (const ra of raRows) {
+          console.log(`[IDP SUBMIT DEBUG] Checking action: ${ra.action_type}, title: ${ra.title}`);
           const action = String(ra.action_type || '').toLowerCase();
           const title = String(ra.title || '').toLowerCase();
-          const desc = String(ra.description || '').toLowerCase();
-          if (action.includes('return') || title.includes('return') || desc.includes('return')) {
+          
+          // Look for any action that is clearly a return action (by action type or title)
+          const isReturnAction = (
+            action.includes('returned') || 
+            action.includes('_return') ||
+            action === 'idp_returned' || 
+            action === 'idp_returned_by_am' || 
+            action === 'idp_returned_by_manager' || 
+            action === 'idp_returned_by_hr' ||
+            action === 'idp_returned_by_employee' ||
+            title.includes('returned idp') ||
+            title.includes('return')
+          );
+          
+          if (isReturnAction) {
             // Found a returned action; check actor role
             try {
+              console.log(`[IDP SUBMIT DEBUG] Found return action! Actor ID: ${ra.actor_id}, Action: ${ra.action_type}`);
               const [uRows] = await db.query('SELECT role FROM users WHERE id = ?', [ra.actor_id]);
-              const role = (uRows[0] && uRows[0].role) || '';
-              if (String(role).toLowerCase() === 'employee') {
-                returnedByEmployee = true;
+              if (uRows.length > 0) {
+                const role = uRows[0].role;
+                returnerRole = String(role).toLowerCase();
+                returnerActorId = ra.actor_id;
+                console.log(`[IDP SUBMIT DEBUG] Found returner with role: ${returnerRole} (actor ID: ${returnerActorId})`);
                 break;
+              } else {
+                console.log(`[IDP SUBMIT DEBUG] No user found for actor ID: ${ra.actor_id}`);
               }
             } catch (e) {
               // ignore lookup errors and continue searching
+              console.log(`[IDP SUBMIT DEBUG] Error looking up user role for actor ${ra.actor_id}: ${e.message}`);
             }
           }
         }
-      if (returnedByEmployee) {
-        nextStatus = 'PENDING_EMPLOYEE';
-      }
+        
+        console.log(`[IDP SUBMIT DEBUG] Final returner role determined: ${returnerRole}`);
+        
+        // Route back to whoever returned it
+        if (returnerRole === 'employee') {
+          nextStatus = 'PENDING_EMPLOYEE';
+        } else if (returnerRole === 'am') {
+          nextStatus = 'PENDING_AM';
+        } else if (returnerRole === 'manager') {
+          nextStatus = 'PENDING_MANAGER';
+        } else if (returnerRole === 'hr') {
+          nextStatus = 'PENDING_HR';
+        } else {
+          console.log(`[IDP SUBMIT DEBUG] No valid returner found, falling back to default routing`);
+        }
+        // If no returner found, fall back to default routing (AM or Manager)
+        
+        console.log(`[IDP SUBMIT DEBUG] Resubmission routing to: ${nextStatus} (returned by ${returnerRole || 'unknown'})`);
     } catch (e) {
       // If unable to determine recent action, fall back to default routing
       console.error('Failed to determine last return actor for IDP submit:', e && e.message ? e.message : e);

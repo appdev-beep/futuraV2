@@ -600,6 +600,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     if (activeSection === 'idp_pending_hr') return `For Approval by HR${supervisorSuffix}`;
     if (activeSection === 'idp_for_completion') return `For Completion${supervisorSuffix}`;
     if (activeSection === 'idp_approved') return `Manager Approved IDPs${supervisorSuffix}`;
+    if (activeSection === 'idp_returned') return `Returned to Supervisor${supervisorSuffix}`;
     if (activeSection === 'idp_cycle_completed') return `Cycle Completed IDPs${supervisorSuffix}`;
     const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
     if (section) return `${section.label}${supervisorSuffix}`;
@@ -638,6 +639,8 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       for_completion: (pendingIDPs || []).filter(i => i.status === 'FOR_COMPLETION'),
       // manager-approved (employee pending acknowledgement)
       approved: (pendingIDPs || []).filter(i => i.status === 'PENDING_EMPLOYEE'),
+      // returned to supervisor
+      returned: (pendingIDPs || []).filter(i => i.status === 'RETURNED'),
       // final cycle completed
       cycle_completed: (pendingIDPs || []).filter(i => i.status === 'CYCLE_COMPLETED'),
     };
@@ -653,6 +656,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       pending_hr: idpByStatus.pending_hr.filter(i => i.supervisor_id === selectedSupervisorId),
       for_completion: idpByStatus.for_completion.filter(i => i.supervisor_id === selectedSupervisorId),
       approved: idpByStatus.approved.filter(i => i.supervisor_id === selectedSupervisorId),
+      returned: idpByStatus.returned.filter(i => i.supervisor_id === selectedSupervisorId),
       cycle_completed: idpByStatus.cycle_completed.filter(i => i.supervisor_id === selectedSupervisorId),
     };
   }, [idpByStatus, selectedSupervisorId]);
@@ -663,6 +667,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       pending_hr: filteredIDPsByStatus.pending_hr.length,
       for_completion: filteredIDPsByStatus.for_completion.length,
       approved: filteredIDPsByStatus.approved.length,
+      returned: filteredIDPsByStatus.returned.length,
       cycle_completed: filteredIDPsByStatus.cycle_completed.length,
       all: Object.values(filteredIDPsByStatus).reduce((sum, arr) => sum + arr.length, 0),
     };
@@ -884,6 +889,16 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                 >
                   <span className="flex items-center gap-2"><CheckCircleIcon className="w-4 h-4" />Approved</span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.approved || 0}</span>
+                </button>
+
+                {/* Returned to Supervisor */}
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('idp_returned')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_returned' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2"><XCircleIcon className="w-4 h-4" />Returned to Supervisor</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.returned || 0}</span>
                 </button>
 
                 {/* Cycle Completed */}
@@ -1131,6 +1146,12 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               <p className="text-gray-400 text-sm italic">No manager-approved IDPs.</p>
             ) : (
               <IDPTable data={filteredIDPsByStatus.approved} openIdpView={openIdpView} />
+            )
+          ) : activeSection === 'idp_returned' ? (
+            filteredIDPsByStatus.returned.length === 0 ? (
+              <p className="text-gray-400 text-sm italic">No IDPs returned to supervisor.</p>
+            ) : (
+              <IDPTable data={filteredIDPsByStatus.returned} openIdpView={openIdpView} />
             )
           ) : activeSection === 'idp_cycle_completed' ? (
             filteredIDPsByStatus.cycle_completed.length === 0 ? (
