@@ -1,6 +1,7 @@
 // src/pages/HR/HRDashboard.jsx
 import { useEffect, useState, useMemo } from 'react';
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import {
   BellIcon,
@@ -27,6 +28,8 @@ function HRDashboard() {
   const storedUser = localStorage.getItem('user');
   const initialUser = storedUser ? JSON.parse(storedUser) : null;
   const [user] = useState(initialUser);
+  const navigate = useNavigate();
+  
   useEffect(() => {
     if (!user) {
       window.location.assign('/login');
@@ -504,6 +507,18 @@ function HRDashboard() {
         </div>
 
         <nav className="p-4 space-y-4 overflow-y-auto">
+          {/* Employee Management */}
+          <div className="space-y-1">
+            <button
+              onClick={() => navigate('/hr/employees')}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded
+                         text-gray-700 hover:bg-gray-100 transition"
+            >
+              <UsersIcon className="w-5 h-5 text-green-600" />
+              <span>Employee Management</span>
+            </button>
+          </div>
+
           {/* Competency Leveling */}
           <div className="space-y-1">
             <button

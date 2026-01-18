@@ -27,6 +27,7 @@ import AMReviewCLPage from './pages/AssistantManager/AMReviewCLPage';
 // HR pages
 import HRDashboard from './pages/HR/HRDashboard';
 import HRReviewCLPage from './pages/HR/HRReviewCLPage';
+import HREmployeeManagement from './pages/HR/HREmployeeManagement';
 
 // Employee pages
 import EmployeeDashboard from './pages/Employee/EmployeeDashboard';
@@ -75,6 +76,7 @@ function App() {
 
             {/* HR pages */}
             <Route path="/hr" element={<HRDashboard />} />
+            <Route path="/hr/employees" element={<HREmployeeManagement />} />
             <Route path="/hr/idp/:id" element={<CreateIDPPage />} />
             <Route path="/cl/hr/review/:id" element={<HRReviewCLPage />} />
 

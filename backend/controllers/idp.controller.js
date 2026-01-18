@@ -52,6 +52,54 @@ async function getManagerGroupedIDPs(req, res, next) {
   }
 }
 
+// =====================================
+// AM (ASSISTANT MANAGER) ENDPOINTS
+// =====================================
+
+// GET /api/idp/am/pending
+async function getAMPendingIDPs(req, res, next) {
+  try {
+    const amId = req.user.id;
+    const idps = await idpService.getIDPsPendingAM(amId);
+    res.json(idps);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /api/idp/:id/am/approve
+async function amApproveIDP(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid IDP id' });
+    const amId = req.user.id;
+    const { remarks } = req.body || {};
+    const result = await idpService.amApprove(id, amId, remarks || '');
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /api/idp/:id/am/return
+async function amReturnIDP(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) {
+      return res.status(400).json({ message: 'Invalid IDP id' });
+    }
+    const { remarks } = req.body;
+    if (!remarks) {
+      return res.status(400).json({ message: 'Remarks are required.' });
+    }
+    const amId = req.user.id;
+    const result = await idpService.amReturnIDP(id, amId, remarks);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // GET /api/idp/employee/my - return IDPs for the logged-in employee
 async function getEmployeeIDPs(req, res, next) {
   try {
@@ -139,6 +187,36 @@ async function submit(req, res, next) {
     }
 
     const result = await idpService.submit(id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /api/idp/:id/hr/resubmit
+async function resubmitToHR(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) {
+      return res.status(400).json({ message: 'Invalid IDP id' });
+    }
+
+    const result = await idpService.resubmitToHR(id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /api/idp/:id/manager/resubmit
+async function resubmitToManager(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) {
+      return res.status(400).json({ message: 'Invalid IDP id' });
+    }
+
+    const result = await idpService.resubmitToManager(id);
     res.json(result);
   } catch (err) {
     next(err);
@@ -318,6 +396,9 @@ module.exports = {
   getManagerPendingIDPs,
   managerReturnIDP,
   managerApproveIDP,
+  getAMPendingIDPs,
+  amApproveIDP,
+  amReturnIDP,
   getEmployeeIDPs,
   employeeApproveIDP,
   employeeReturnIDP,
@@ -326,6 +407,8 @@ module.exports = {
   hrApproveCycleIDP,
   hrReturnIDP,
   getHRIncomingIDPs,
+  resubmitToHR,
+  resubmitToManager,
 };
 
 // POST /api/idp/create

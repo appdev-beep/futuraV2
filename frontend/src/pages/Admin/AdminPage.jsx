@@ -37,7 +37,7 @@ function AdminPage() {
     setModal({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
   };
 
-  // Check that current user is Admin or Supervisor
+  // Check that current user is HR only
   useEffect(() => {
     const userStr = localStorage.getItem('user');
     if (!userStr) {
@@ -45,9 +45,8 @@ function AdminPage() {
       return;
     }
     const user = JSON.parse(userStr);
-    const allowedRoles = ['Admin', 'Supervisor'];
-    if (!allowedRoles.includes(user.role)) {
-      showModal('Access Denied', 'Only Admin and Supervisor can access this page.', 'error');
+    if (user.role !== 'HR') {
+      showModal('Access Denied', 'Only HR can access this page.', 'error');
       setTimeout(() => window.location.href = '/', 2000);
       return;
     }
@@ -140,10 +139,10 @@ function AdminPage() {
           body: JSON.stringify(body)
         });
         
-        setMessage(`User "${name}" was updated successfully`);
+        setMessage(`Employee "${name}" was updated successfully`);
         setEditingUser(null);
       } else {
-        // Create new user
+        // Create new employee
         body.password = password;
         
         const created = await apiRequest('/api/users', {
@@ -156,8 +155,8 @@ function AdminPage() {
         
         setMessage(
           isReactivation 
-            ? `User "${created.name}" was reactivated successfully` 
-            : `User created successfully with ID ${created.id || created.employee_id || 'N/A'}`
+            ? `Employee "${created.name}" was reactivated successfully` 
+            : `Employee created successfully with ID ${created.id || created.employee_id || 'N/A'}`
         );
       }
       
@@ -175,7 +174,7 @@ function AdminPage() {
       await fetchUsers();
     } catch (err) {
       console.error(err);
-      setError(err.message || `Failed to ${editingUser ? 'update' : 'create'} user.`);
+      setError(err.message || `Failed to ${editingUser ? 'update' : 'create'} employee.`);
     }
   }
 
@@ -208,18 +207,18 @@ function AdminPage() {
   // Handle delete user
   async function handleDeleteUser(userId, userName) {
     showConfirmModal(
-      'Delete User',
-      `Are you sure you want to delete user "${userName}"? This action cannot be undone.`,
+      'Delete Employee',
+      `Are you sure you want to delete employee "${userName}"? This action cannot be undone.`,
       async () => {
         try {
           await apiRequest(`/api/users/${userId}`, {
             method: 'DELETE'
           });
-          showModal('Success', 'User deleted successfully.', 'success');
+          showModal('Success', 'Employee deleted successfully.', 'success');
           await fetchUsers();
         } catch (err) {
           console.error(err);
-          showModal('Error', err.message || 'Failed to delete user.', 'error');
+          showModal('Error', err.message || 'Failed to delete employee.', 'error');
         }
       }
     );
@@ -231,7 +230,7 @@ function AdminPage() {
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
           <h1 className="text-lg font-semibold text-gray-900">
-            Admin – Create User Account
+            HR – Employee Management
           </h1>
           <button
             type="button"
@@ -259,7 +258,7 @@ function AdminPage() {
         <div className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-semibold text-gray-900">
-              {editingUser ? 'Edit User' : 'Create New User'}
+              {editingUser ? 'Edit Employee' : 'Add New Employee'}
             </h2>
             {editingUser && (
               <button
@@ -365,10 +364,9 @@ function AdminPage() {
               >
                 <option value="Employee">Employee</option>
                 <option value="Supervisor">Supervisor</option>
-                <option value="AM">AM</option>
+                <option value="AM">Assistant Manager</option>
                 <option value="Manager">Manager</option>
                 <option value="HR">HR</option>
-                <option value="Admin">Admin</option>
               </select>
             </div>
 
@@ -416,7 +414,7 @@ function AdminPage() {
                 type="submit"
                 className="inline-flex w-full justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
               >
-                {editingUser ? 'Update User' : 'Create User'}
+                {editingUser ? 'Update Employee' : 'Add Employee'}
               </button>
             </div>
           </form>
@@ -425,7 +423,7 @@ function AdminPage() {
         {/* NEW: Users list */}
         <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-base font-semibold text-gray-900">
-            Existing Users
+            Employee Directory
           </h2>
 
           {loadingUsers ? (

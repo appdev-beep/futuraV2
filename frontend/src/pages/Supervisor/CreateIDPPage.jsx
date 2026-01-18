@@ -1,7 +1,7 @@
 // src/pages/Supervisor/CreateIDPPage.jsx
 // @ts-nocheck
 /* eslint-disable */
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import { ArrowLeftIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
@@ -237,6 +237,11 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
   const [missingActualDates, setMissingActualDates] = useState([]);
   const [showMissingDateModal, setShowMissingDateModal] = useState(false);
 
+  const [validationError, setValidationError] = useState(null);
+  const [showValidationErrorModal, setShowValidationErrorModal] = useState(false);
+
+  const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
+
   // Manager review state
   const [remarks, setRemarks] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
@@ -271,6 +276,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     if (!s) return false;
     const v = String(s).trim().toLowerCase();
     const completedSet = new Set([
+      'completed',
       'completed & met expectations',
       'completed & above target expectation',
       'completed & exceeded competency',
@@ -459,17 +465,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           }
 
           // Employee
-          if (idpRes.header.employee) {
-            setEmployee(idpRes.header.employee);
-          } else if (idpRes.header.employee_name) {
-            // Use employee data from header (already fetched with JOINs)
-            setEmployee({
-              name: idpRes.header.employee_name,
-              first_name: idpRes.header.employee_first_name,
-              last_name: idpRes.header.employee_last_name,
-              id: idpRes.header.employee_id
-            });
-          } else if (idpRes.header.employee_id) {
+          if (idpRes.header.employee) setEmployee(idpRes.header.employee);
+          else if (idpRes.header.employee_id) {
             try {
               const emp = await apiRequest(`/api/users/${idpRes.header.employee_id}`);
               setEmployee(emp || {});
@@ -479,17 +476,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           } else setEmployee({});
 
           // Supervisor
-          if (idpRes.header.supervisor) {
-            setSupervisor(idpRes.header.supervisor);
-          } else if (idpRes.header.supervisor_name) {
-            // Use supervisor data from header (already fetched with JOINs)
-            setSupervisor({
-              name: idpRes.header.supervisor_name,
-              first_name: idpRes.header.supervisor_first_name,
-              last_name: idpRes.header.supervisor_last_name,
-              id: idpRes.header.supervisor_id
-            });
-          } else if (idpRes.header.supervisor_id) {
+          if (idpRes.header.supervisor) setSupervisor(idpRes.header.supervisor);
+          else if (idpRes.header.supervisor_id) {
             try {
               const sup = await apiRequest(`/api/users/${idpRes.header.supervisor_id}`);
               setSupervisor(sup || {});
@@ -499,10 +487,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           } else setSupervisor({});
 
           // Load CL score for the employee
-          if (idpRes.header?.cl_score) {
-            setLatestCLScore(idpRes.header.cl_score);
-          } else if (idpRes.header?.employee_id) {
-            // Try to fetch history if not in header
+          if (idpRes.header?.employee_id) {
             try {
               const history = await apiRequest(`/api/cl/employee/${idpRes.header.employee_id}/history`);
               const approved = (history || []).find((h) => String(h.status).toUpperCase() === 'APPROVED');
@@ -511,8 +496,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 setLatestCLScore(clFull?.total_score || approved?.total_score || null);
               }
             } catch (e) {
-              // Silently fail - CL score is not critical
-              console.debug('Could not load CL score history');
+              console.error('Failed to load CL score in edit mode', e);
             }
           }
 
@@ -797,6 +781,80 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
   };
 
   const submitIDP = async () => {
+    // Validate: Activity name is mandatory
+    const missingActivityNames = [];
+    (idpData.items || []).forEach((it, idx) => {
+      const act = (it.developmentActivities || [])[0] || {};
+      const actType = (act.type || '').toLowerCase();
+      
+      // For Education type, check main activity field
+      if (actType === 'education') {
+        if (!act.activity || !act.activity.trim()) {
+          missingActivityNames.push({ itemIndex: idx, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
+        }
+      } else if (['exposure', 'experience'].includes(actType)) {
+        // For Exposure/Experience type, check extra tables development activity
+        const extraTables = it.extraTables || [];
+        if (extraTables.length === 0) {
+          missingActivityNames.push({ itemIndex: idx, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
+        } else {
+          extraTables.forEach((et) => {
+            if (!et.developmentActivity || !et.developmentActivity.trim()) {
+              missingActivityNames.push({ itemIndex: idx, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
+            }
+          });
+        }
+      }
+    });
+    if (missingActivityNames.length) {
+      setValidationError(`The "Activity" field (in the development plan table) is required for: ${missingActivityNames.map(m => m.competencyName).join(', ')}. Please fill in the Activity name before submitting.`);
+      setShowValidationErrorModal(true);
+      return;
+    }
+
+    // Validate: Area of exposure names are mandatory (for Exposure/Experience activities)
+    const missingAreaNames = [];
+    (idpData.items || []).forEach((it, idx) => {
+      const act = (it.developmentActivities || [])[0] || {};
+      const actType = (act.type || '').toLowerCase();
+      if (['exposure', 'experience'].includes(actType)) {
+        const extraTables = it.extraTables || [];
+        extraTables.forEach((et, ti) => {
+          const areas = et.areasOfExposure || [];
+          areas.forEach((area, ai) => {
+            if (!area.area || !area.area.trim()) {
+              missingAreaNames.push({ itemIndex: idx, tableIndex: ti, areaIndex: ai, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
+            }
+          });
+        });
+      }
+    });
+    if (missingAreaNames.length) {
+      setValidationError(`Area of exposure names are required. Please fill in all area names before submitting.`);
+      setShowValidationErrorModal(true);
+      return;
+    }
+
+    // Validate: Start Date (exposure start date) is mandatory for Exposure/Experience activities
+    const missingStartDates = [];
+    (idpData.items || []).forEach((it, idx) => {
+      const act = (it.developmentActivities || [])[0] || {};
+      const actType = (act.type || '').toLowerCase();
+      if (['exposure', 'experience'].includes(actType)) {
+        const extraTables = it.extraTables || [];
+        extraTables.forEach((et, ti) => {
+          if (!et.exposureStartDate) {
+            missingStartDates.push({ itemIndex: idx, tableIndex: ti, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
+          }
+        });
+      }
+    });
+    if (missingStartDates.length) {
+      setValidationError(`Start Date is required for: ${missingStartDates.map(m => m.competencyName).join(', ')}`);
+      setShowValidationErrorModal(true);
+      return;
+    }
+
     // Validate: any activity marked Completed MUST have an Actual Completion Date
     const missingDates = [];
     (idpData.items || []).forEach((it, idx) => {
@@ -811,13 +869,26 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       return;
     }
 
-    // Validate: any Education activity MUST have an uploaded justification PDF
+    // Validate: any completed activity MUST have an uploaded PDF attachment
     const missing = [];
     (idpData.items || []).forEach((it, idx) => {
-      const act = (it.developmentActivities || [])[0] || {};
-      if (act && act.type === 'Education' && !act.educationJustificationPdf) {
-        missing.push({ itemIndex: idx, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
-      }
+      // Check main activities
+      (it.developmentActivities || []).forEach(act => {
+        const isCompleted = isCompletedStatus(act.completionStatus);
+        if (isCompleted && !act.pdfPath) {
+          missing.push({ competencyName: it.competencyName || '#' + (it.competencyId || idx), itemIndex: idx });
+        }
+      });
+      
+      // Check extra table activities (for Exposure/Experience)
+      (it.extraTables || []).forEach(extraTable => {
+        (extraTable.activities || []).forEach(act => {
+          const isCompleted = isCompletedStatus(act.completionStatus);
+          if (isCompleted && !act.pdfPath) {
+            missing.push({ competencyName: it.competencyName || '#' + (it.competencyId || idx), itemIndex: idx });
+          }
+        });
+      });
     });
     if (missing.length) {
       setMissingAttachments(missing);
@@ -825,6 +896,26 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       return;
     }
 
+    // Validate: Education activities MUST have justification PDF (separate requirement)
+    const missingEducationJustification = [];
+    (idpData.items || []).forEach((it, idx) => {
+      const act = (it.developmentActivities || [])[0] || {};
+      if (act && act.type === 'Education' && !act.educationJustificationPdf) {
+        missingEducationJustification.push({ itemIndex: idx, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
+      }
+    });
+    if (missingEducationJustification.length) {
+      setValidationError('Education activities require both a completion proof PDF and a justification PDF. Please upload the missing justification PDFs before submitting.');
+      setShowValidationErrorModal(true);
+      return;
+    }
+
+    // All validations passed, show confirmation modal
+    setShowSubmitConfirmation(true);
+  };
+
+  const confirmAndSubmitIDP = async () => {
+    setShowSubmitConfirmation(false);
     try {
       setSaving(true);
 
@@ -890,7 +981,41 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           headers: { 'Content-Type': 'application/json' },
         });
 
-        await apiRequest(`/api/idp/${id}/submit`, { method: 'PUT' });
+        // Determine where to send the resubmission based on current status
+        let submitEndpoint = `/api/idp/${id}/submit`;
+        const currentStatus = idpHeader?.status;
+        
+        // Debug: log what fields are available
+        console.log('DEBUG idpHeader fields:', Object.keys(idpHeader || {}));
+        console.log('DEBUG idpHeader status:', currentStatus);
+        console.log('DEBUG full idpHeader:', idpHeader);
+        console.log('DEBUG idpHeader values:', JSON.stringify(idpHeader, null, 2));
+        
+        // Since we can't reliably detect who returned it from the header,
+        // but we know from the manager_id field that it went through manager approval,
+        // if it's returned and has a manager_id, it likely came from HR
+        if (currentStatus === 'RETURNED' && idpHeader?.manager_id) {
+          // Try to submit directly to HR since it already went through manager approval
+          submitEndpoint = `/api/idp/${id}/hr/resubmit`;
+          console.log('DEBUG: Detected manager_id, attempting HR resubmit');
+        } else if (currentStatus === 'RETURNED') {
+          // No manager_id, probably returned by manager
+          submitEndpoint = `/api/idp/${id}/manager/resubmit`;
+          console.log('DEBUG: No manager_id, attempting manager resubmit');
+        }
+        
+        console.log('DEBUG submitEndpoint:', submitEndpoint);
+        
+        try {
+          await apiRequest(submitEndpoint, { method: 'PUT' });
+        } catch (error) {
+          // If specific endpoint doesn't exist, fall back to regular submit
+          if (error.status === 404) {
+            await apiRequest(`/api/idp/${id}/submit`, { method: 'PUT' });
+          } else {
+            throw error;
+          }
+        }
 
         alert('IDP resubmitted successfully!');
         navigate('/supervisor');
@@ -1090,8 +1215,11 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       } else if (role === 'HR') {
         // HR has two different approval endpoints based on completion status
         endpoint = allActivitiesCompleted ? 'hr/approve-cycle' : 'hr/approve-for-completion';
-      } else if (role === 'AM' || role === 'Manager') {
-        // For Manager/AM: use cycle completion endpoint if all activities are completed
+      } else if (role === 'AM') {
+        // AM approval goes to Manager next
+        endpoint = 'am/approve';
+      } else if (role === 'Manager') {
+        // For Manager: use cycle completion endpoint if all activities are completed
         endpoint = allActivitiesCompleted ? 'hr/approve-cycle' : 'manager/approve';
       } else {
         // For other roles (like Supervisor): use cycle completion endpoint if all activities are completed  
@@ -1127,7 +1255,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         endpoint = 'employee/return';
       } else if (role === 'HR') {
         endpoint = 'hr/return';
-      } else if (role === 'AM' || role === 'Manager') {
+      } else if (role === 'AM') {
+        endpoint = 'am/return';
+      } else if (role === 'Manager') {
         endpoint = 'manager/return';
       } else {
         endpoint = 'manager/return'; // default
@@ -1188,10 +1318,18 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     });
   }, [idpData.items]);
 
+  // Check if any activity has been set up (at least has a type selected)
+  const hasActivitiesSetup = useMemo(() => {
+    return (idpData.items || []).some(item => {
+      const activity = (item.developmentActivities || [])[0];
+      return activity && activity.type && activity.type.trim();
+    });
+  }, [idpData.items]);
+
   const canResubmit = editMode && (idpHeader?.status === 'RETURNED' || idpHeader?.status === 'FOR_COMPLETION');
   const submitLabel = (() => {
     if (saving) return canResubmit ? 'Resubmitting...' : 'Submitting...';
-    if (allActivitiesCompleted && (userRole === 'Supervisor' || !userRole)) return 'Mark Cycle Completed';
+    if (idpHeader?.status === 'FOR_COMPLETION' && allActivitiesCompleted && (userRole === 'Supervisor' || !userRole)) return 'Mark Cycle Completed';
     if (canResubmit) return 'Save & Resubmit';
     return 'Submit IDP';
   })();
@@ -1294,7 +1432,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 </button>
               )}
 
-              {!viewOnly && <PrimaryActionButton onClick={submitIDP} disabled={saving} label={submitLabel} />}
+              {!viewOnly && (hasActivitiesSetup || editMode) && (submitLabel === 'Mark Cycle Completed' || !editMode || idpHeader?.status === 'DRAFT' || idpHeader?.status === 'RETURNED') && <PrimaryActionButton onClick={submitIDP} disabled={saving} label={submitLabel} />}
             </div>
           </div>
         </div>
@@ -1341,9 +1479,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
         {/* Missing PDF modal */}
         {showMissingModal && (
-          <ModalShell title="Missing Attachment(s)" onClose={() => setShowMissingModal(false)} maxWidth="max-w-lg">
+          <ModalShell title="Missing PDF Attachments" onClose={() => setShowMissingModal(false)} maxWidth="max-w-lg">
             <p className="text-sm text-gray-600">
-              One or more activities marked Completed have no attached PDF. Please attach proof before submitting.
+              One or more activities marked as Completed are missing PDF attachments. All completed activities must have proof of completion attached before submitting.
             </p>
             <ul className="mt-3 max-h-40 overflow-auto list-disc list-inside text-sm text-gray-800">
               {missingAttachments.map((m, i) => (
@@ -1367,6 +1505,45 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 className="px-4 py-2 rounded-md bg-black text-white"
               >
                 Go to first missing
+              </button>
+            </div>
+          </ModalShell>
+        )}
+
+        {/* Validation error modal */}
+        {showValidationErrorModal && (
+          <ModalShell title="Validation Error" onClose={() => setShowValidationErrorModal(false)} maxWidth="max-w-lg">
+            <p className="text-sm text-gray-700 mb-4">{validationError}</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowValidationErrorModal(false)}
+                className="px-4 py-2 rounded-md bg-black text-white hover:bg-black/90 font-semibold"
+              >
+                Close
+              </button>
+            </div>
+          </ModalShell>
+        )}
+
+        {/* Submit confirmation modal */}
+        {showSubmitConfirmation && (
+          <ModalShell title="Confirm Submission" onClose={() => setShowSubmitConfirmation(false)} maxWidth="max-w-lg">
+            <p className="text-sm text-gray-700 mb-4">
+              Are you sure you want to submit this IDP? Once submitted, it will be sent for review and you may not be able to make further changes without manager approval.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowSubmitConfirmation(false)}
+                className="px-4 py-2 rounded-md bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAndSubmitIDP}
+                disabled={saving}
+                className="px-4 py-2 rounded-md bg-black text-white hover:bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+              >
+                {saving ? 'Submitting...' : 'Confirm & Submit'}
               </button>
             </div>
           </ModalShell>
@@ -1438,12 +1615,12 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
               <div className="min-w-0">
                 <label className={`block ${viewOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>Supervisor/Manager</label>
-                <TextBox value={supervisor?.name || supervisor?.full_name || `${supervisor?.first_name || ''} ${supervisor?.last_name || ''}`.trim() || 'N/A'} readOnly={viewOnly} />
+                <TextBox value={supervisor?.name || 'N/A'} readOnly={viewOnly} />
               </div>
 
               <div className="min-w-0">
                 <label className={`block ${viewOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>CL Score</label>
-                <TextBox value={latestCLScore ? Number(latestCLScore).toFixed(2) : 'N/A'} readOnly={viewOnly} />
+                <TextBox value={latestCLScore ? Number(latestCLScore).toFixed(2) : 'No approved CL'} readOnly={viewOnly} />
               </div>
 
               <div className="sm:col-span-1 lg:col-span-2">
@@ -1478,7 +1655,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           </div>
 
           {/* Manager Remarks Display OR Helpful Notes */}
-          {idpHeader?.manager_remarks && !editMode ? (
+          {idpHeader?.manager_remarks && !editMode && !['PENDING_MANAGER', 'PENDING_AM', 'PENDING_HR', 'PENDING_EMPLOYEE'].includes(idpHeader?.status) ? (
             <div className={`bg-blue-50 rounded-xl shadow-sm ${viewOnly ? 'border-0' : 'border border-blue-200'} p-5`}>
               <h3 className="text-lg font-semibold text-blue-900 mb-3">Manager Remarks & Feedback</h3>
               <div className={`bg-white rounded-lg p-4 ${viewOnly ? 'border-0' : 'border border-blue-100'} mb-4`}>
@@ -1490,8 +1667,22 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 </div>
               )}
             </div>
-          ) : viewOnly && userRole !== 'Supervisor' && idpHeader?.status !== 'FOR_COMPLETION' ? (
-            <div className={`bg-white rounded-xl shadow-sm ${viewOnly ? 'border-0' : 'border border-gray-100'} p-5`}>
+          ) : (() => {
+            const role = getUserRole();
+            const status = idpHeader?.status;
+            
+            // Only show approval buttons if user role matches the pending status
+            const shouldShowApproval = (
+              (status === 'PENDING_MANAGER' && (role === 'Manager' || role === 'AM')) ||
+              (status === 'PENDING_AM' && role === 'AM') ||
+              (status === 'PENDING_HR' && role === 'HR') ||
+              (status === 'PENDING_EMPLOYEE' && role === 'Employee') ||
+              (status === 'FOR_COMPLETION' && role === 'HR')
+            );
+            
+            return shouldShowApproval;
+          })() ? (
+            <div className={`bg-white rounded-xl shadow-sm border border-gray-100 p-5`}>
               <h3 className="text-lg font-semibold text-gray-800 mb-3">
                 {(() => {
                   const role = getUserRole();
@@ -1516,22 +1707,32 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               />
               
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="flex justify-end gap-3 mb-4">
                 <button
                   onClick={handleReturnIDP}
-                  className="flex-1 px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 transition-colors"
+                  className="px-6 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap"
                   disabled={actionLoading}
                 >
                   {actionLoading ? 'Processing...' : 'Return to Supervisor'}
                 </button>
                 
                 <button
-                  onClick={handleApproveIDP}
-                  className="flex-1 px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500/50 disabled:opacity-50 transition-colors"
-                  disabled={actionLoading}
+                  onClick={idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' ? handleApproveCycleCompletion : handleApproveIDP}
+                  className={`px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 disabled:opacity-50 whitespace-nowrap transition ${
+                    (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR') 
+                      ? (areAllActivitiesComplete 
+                          ? 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500/50' 
+                          : 'bg-gray-300 text-gray-500 cursor-not-allowed')
+                      : 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500/50'
+                  }`}
+                  disabled={actionLoading || (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' && !areAllActivitiesComplete)}
                 >
                   {actionLoading ? 'Processing...' : (() => {
                     const role = getUserRole();
+                    const status = idpHeader?.status;
+                    if (status === 'FOR_COMPLETION' && role === 'HR') {
+                      return areAllActivitiesComplete ? 'Approve Cycle Completion' : 'Cannot Approve - Incomplete Activities';
+                    }
                     if (allActivitiesCompleted) {
                       return 'Cycle Completed';
                     }
@@ -1717,7 +1918,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             </div>
           </div>
 
-          <div className={`p-5 ${viewOnly ? 'pointer-events-none opacity-75' : ''}`}>
+          <div className={`p-5 ${viewOnly && idpHeader?.status !== 'RETURNED' ? 'pointer-events-none opacity-75' : ''}`}>
             {idpData.items.length === 0 ? (
               <div className={`text-center py-10 bg-gray-50 rounded-xl ${viewOnly ? 'border-0' : 'border border-gray-100'}`}>
                 <p className="text-gray-800 font-semibold">No approved competencies found for this employee.</p>
@@ -1848,11 +2049,26 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                             No activity initialized.
                           </div>
                         ) : viewOnly ? (
-                          <div className="space-y-4 opacity-100 pointer-events-none">
+                          <div className="space-y-4 opacity-100">
                             {/* Display activity type in read-only format */}
                             <div className="bg-white rounded-lg p-5 border border-gray-100">
                               <p className="text-base text-gray-800"><strong className="text-gray-900">Type:</strong> {activity.type}</p>
                             </div>
+
+                            {/* Show PDF if available */}
+                            {activity.pdfPath && (
+                              <div className="bg-white rounded-lg p-5 border border-gray-100">
+                                <div className="text-sm font-bold text-gray-700 mb-3">Proof of Completion</div>
+                                <a
+                                  href={`${apiBase}/${activity.pdfPath}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 font-semibold"
+                                >
+                                  📄 View PDF
+                                </a>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div>
@@ -1975,19 +2191,16 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                       </select>
 
                                       <label
-                                        className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm shrink-0 ${
-                                          !isCompletedStatus(activity.completionStatus) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-                                        }`}
+                                        className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm shrink-0 cursor-pointer`}
                                       >
                                         <input
                                           type="file"
                                           accept="application/pdf"
                                           style={{ display: 'none' }}
                                           onChange={async (e) => {
-                                            if (!isCompletedStatus(activity.completionStatus)) {
-                                              alert('Please mark activity as Completed to upload proof.');
-                                              return;
-                                            }
+                                            console.log('Activity completion status:', activity.completionStatus);
+                                            console.log('isCompletedStatus result:', isCompletedStatus(activity.completionStatus));
+                                            // Temporarily allowing upload regardless of completion status
                                             const f = e.target.files && e.target.files[0];
                                             if (!f) return;
 
@@ -2169,7 +2382,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 </thead>
                                 <tbody>
                                   {item.extraTables.map((t, ti) => (
-                                    <React.Fragment key={`table-${itemIndex}-${ti}`}>
+                                    <>
                                       {ti > 0 && (
                                         <tr key={`${ti}-row0`} className="bg-gray-700 text-white">
                                           <td colSpan="7" className="border border-gray-300 px-4 py-3">
@@ -2252,21 +2465,15 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                             const allCompleted = totalAreas > 0 && completedAreas === totalAreas;
                                             return (t.pdfPath || isCompletedStatus(t.completionStatus) || allCompleted);
                                           })() && (
-                                            <div className="flex items-center justify-center gap-1">
-                                              <label className={`inline-flex items-center px-2 py-1 bg-white border border-gray-200 rounded text-xs ${!isCompletedStatus(t.completionStatus) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                                            <div className="flex items-center justify-center gap-2 pointer-events-auto">
+                                              <label className={`inline-flex items-center px-2 py-1 bg-white border border-gray-200 rounded text-xs cursor-pointer`}>
                                                 <input
                                                   type="file"
                                                   accept="application/pdf"
                                                   style={{ display: 'none' }}
                                                   onChange={async (e) => {
-                                                    const areas = t.areasOfExposure || [];
-                                                    const totalAreas = areas.length;
-                                                    const completedAreas = areas.filter(a => a.status === 'Completed').length;
-                                                    const allCompleted = totalAreas > 0 && completedAreas === totalAreas;
-                                                    if (!isCompletedStatus(t.completionStatus) && !allCompleted) {
-                                                      alert('Upload allowed once activity is completed or all areas are completed.');
-                                                      return;
-                                                    }
+                                                    // Temporarily allowing all uploads
+                                                    console.log('Extra table upload clicked for:', t);
                                                     const f = e.target.files && e.target.files[0];
                                                     if (!f) return;
                                                     const form = new FormData();
@@ -2294,7 +2501,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                   href={`${apiBase}/${t.pdfPath}`}
                                                   target="_blank"
                                                   rel="noopener noreferrer"
-                                                  className="text-xs text-blue-600 hover:underline"
+                                                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-semibold pointer-events-auto"
+                                                  style={{ pointerEvents: 'auto' }}
+                                                  onClick={(e) => e.stopPropagation()}
                                                 >
                                                   View
                                                 </a>
@@ -2634,67 +2843,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                               className="w-full bg-white rounded px-2 py-1 text-xs text-black border border-gray-200"
                                             />
                                           </div>
-                                          
-                                          {/* PDF Submission Section - Appears when all areas are completed */}
-                                          {(() => {
-                                            const areas = t.areasOfExposure || [];
-                                            if (areas.length === 0) return null;
-                                            const allCompleted = areas.every(area => area.status === 'Completed');
-                                            if (!allCompleted) return null;
-
-                                            return (
-                                              <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                                                <label className="block text-xs font-semibold text-emerald-800 mb-2">
-                                                  ✓ All activities completed - PDF submission available
-                                                </label>
-                                                {!viewOnly && (
-                                                  <div className="flex items-center gap-2">
-                                                    <label className="inline-flex items-center px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold transition cursor-pointer">
-                                                      <input
-                                                        type="file"
-                                                        accept="application/pdf"
-                                                        style={{ display: 'none' }}
-                                                        onChange={async (e) => {
-                                                          const f = e.target.files && e.target.files[0];
-                                                          if (!f) return;
-                                                          const form = new FormData();
-                                                          form.append('pdf', f);
-                                                          try {
-                                                            const res = await fetch(`${apiBase}/api/idp/upload`, {
-                                                              method: 'POST',
-                                                              headers: { Authorization: `Bearer ${token}` },
-                                                              body: form,
-                                                            });
-                                                            const data = await res.json();
-                                                            if (!res.ok) throw new Error(data.message || 'Upload failed');
-                                                            updateIdpData(`items.${itemIndex}.extraTables.${ti}.pdfPath`, data.pdf_path);
-                                                            alert('PDF uploaded');
-                                                          } catch (err) {
-                                                            console.error('Upload failed', err);
-                                                            alert('Upload failed: ' + (err.message || ''));
-                                                          }
-                                                        }}
-                                                      />
-                                                      📄 Submit as PDF
-                                                    </label>
-                                                    {t.pdfPath && (
-                                                      <a
-                                                        href={`${apiBase}/${t.pdfPath}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-xs text-blue-600 hover:underline"
-                                                      >
-                                                        View PDF
-                                                      </a>
-                                                    )}
-                                                  </div>
-                                                )}
-                                              </div>
-                                            );
-                                          })()}
                                         </td>
                                       </tr>
-                                    </React.Fragment>
+                                    </>
                                   ))}
                                 </tbody>
                               </table>

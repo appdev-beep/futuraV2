@@ -131,6 +131,148 @@ async function getIDPsPendingManager(managerId) {
   );
   return headers;
 }
+
+// =====================================
+// AM (ASSISTANT MANAGER) FUNCTIONS
+// =====================================
+
+// Get all IDPs pending AM approval
+async function getIDPsPendingAM(amId) {
+  const [headers] = await db.query(
+    `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id,
+            s.name AS supervisor_name
+     FROM idp_headers h
+     JOIN users e ON h.employee_id = e.id
+     LEFT JOIN users s ON h.supervisor_id = s.id
+     WHERE h.status = 'PENDING_AM' AND h.am_id = ?
+     ORDER BY h.created_at DESC`,
+    [amId]
+  );
+  return headers;
+}
+
+// AM approves IDP and routes it to Manager
+async function amApprove(idpId, amId, remarks = '') {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    
+    // Verify IDP exists and is pending AM approval
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ? AND am_id = ?', [idpId, 'PENDING_AM', amId]);
+    if (rows.length === 0) {
+      throw new Error('IDP not found or not pending AM approval.');
+    }
+
+    // Update status to PENDING_MANAGER and save remarks
+    await conn.query('UPDATE idp_headers SET status = ?, am_remarks = ?, updated_at = NOW() WHERE id = ?', ['PENDING_MANAGER', remarks, idpId]);
+
+    // Fetch header for notifications
+    const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+    const header = hdrRows[0] || {};
+    const employeeId = header.employee_id || null;
+    const managerId = header.manager_id || null;
+
+    await conn.commit();
+
+    try {
+      const [amRows] = await db.query('SELECT name FROM users WHERE id = ?', [amId]);
+      const amName = (amRows[0] && amRows[0].name) || 'Assistant Manager';
+      const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
+      const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+
+      await logRecentAction({
+        actor_id: amId,
+        module: 'IDP',
+        action_type: 'IDP_APPROVED_BY_AM',
+        cl_id: null,
+        employee_id: employeeId,
+        title: `AM approved IDP for ${employeeName}`,
+        description: remarks || 'No remarks provided',
+        url: `/idp/view/${idpId}`,
+      }).catch(() => {});
+
+      if (managerId) {
+        await createNotification({
+          recipient_id: managerId,
+          message: `IDP #${idpId} for ${employeeName} has been approved by AM and requires your review.`,
+          module: 'IDP',
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.error('Failed to log/notify on AM approve:', notifErr.message || notifErr);
+    }
+
+    logInfo('AM approved IDP', { idpId, amId });
+    return await getById(idpId);
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// AM returns IDP to supervisor
+async function amReturnIDP(idpId, amId, remarks) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    
+    // Check if IDP exists and is pending AM
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ? AND am_id = ?', [idpId, 'PENDING_AM', amId]);
+    if (rows.length === 0) {
+      throw new Error('IDP not found or not pending AM approval.');
+    }
+    
+    // Update status and remarks
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['RETURNED', idpId]);
+    await conn.query('UPDATE idp_headers SET am_remarks = ? WHERE id = ?', [remarks, idpId]);
+    
+    // Fetch header for notifications
+    const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
+    const header = hdrRows[0] || {};
+    const employeeId = header.employee_id || null;
+    const supervisorId = header.supervisor_id || null;
+
+    await conn.commit();
+
+    try {
+      const [amRows] = await db.query('SELECT name FROM users WHERE id = ?', [amId]);
+      const amName = (amRows[0] && amRows[0].name) || 'Assistant Manager';
+      const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
+      const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
+
+      await logRecentAction({
+        actor_id: amId,
+        module: 'IDP',
+        action_type: 'IDP_RETURNED_BY_AM',
+        cl_id: null,
+        employee_id: employeeId,
+        title: `AM returned IDP for ${employeeName}`,
+        description: remarks || 'No remarks provided',
+        url: `/idp/view/${idpId}`,
+      }).catch(() => {});
+
+      if (supervisorId) {
+        await createNotification({
+          recipient_id: supervisorId,
+          message: `IDP #${idpId} for ${employeeName} has been returned by AM for revision.`,
+          module: 'IDP',
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.error('Failed to log/notify on AM return:', notifErr.message || notifErr);
+    }
+
+    logInfo('AM returned IDP', { idpId, amId });
+    return { message: 'IDP returned successfully.' };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
 // Delete IDP by id (only DRAFT)
 async function deleteById(id) {
   const conn = await db.getConnection();
@@ -1074,13 +1216,16 @@ async function hrReturn(idpId, hrId, remarks) {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
-    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status = ?', [idpId, 'PENDING_HR']);
+    const [rows] = await conn.query('SELECT * FROM idp_headers WHERE id = ? AND status IN (?, ?)', [idpId, 'PENDING_HR', 'FOR_COMPLETION']);
     if (rows.length === 0) {
       throw new Error('IDP not found or not pending HR review.');
     }
 
-    // Set status to RETURNED so supervisor can revise the IDP (return for revision)
-    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', ['RETURNED', idpId]);
+    const currentStatus = rows[0].status;
+    // If IDP was in FOR_COMPLETION, keep it in FOR_COMPLETION when returned
+    // If IDP was in PENDING_HR, set it to RETURNED for revision
+    const newStatus = currentStatus === 'FOR_COMPLETION' ? 'FOR_COMPLETION' : 'RETURNED';
+    await conn.query('UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?', [newStatus, idpId]);
 
     const [hdrRows] = await conn.query('SELECT * FROM idp_headers WHERE id = ?', [idpId]);
     const header = hdrRows[0] || {};
@@ -1095,14 +1240,18 @@ async function hrReturn(idpId, hrId, remarks) {
       const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [employeeId]);
       const employeeName = (empRows[0] && empRows[0].name) || 'Employee';
 
+      const actionType = newStatus === 'FOR_COMPLETION' ? 'IDP_RETURNED_FOR_COMPLETION' : 'IDP_RETURNED_BY_HR';
+      const titleSuffix = newStatus === 'FOR_COMPLETION' ? '(for completion updates)' : '(for revision)';
+      const descriptionSuffix = newStatus === 'FOR_COMPLETION' ? 'for completion updates' : 'for revision';
+      
       await logRecentAction({
         actor_id: hrId,
         module: 'IDP',
-        action_type: 'IDP_RETURNED_BY_HR',
+        action_type: actionType,
         cl_id: null,
         employee_id: employeeId,
-        title: `HR returned IDP for ${employeeName} (for revision)`,
-        description: `IDP #${idpId} returned by HR ${hrName} for revision. Remarks: ${remarks}`,
+        title: `HR returned IDP for ${employeeName} ${titleSuffix}`,
+        description: `IDP #${idpId} returned by HR ${hrName} ${descriptionSuffix}. Remarks: ${remarks}`,
         url: `/supervisor/idp/view/${idpId}`,
       }).catch(() => {});
 
@@ -1126,12 +1275,129 @@ async function hrReturn(idpId, hrId, remarks) {
   }
 }
 
+// Resubmit IDP directly to HR (when HR previously returned it)
+async function resubmitToHR(id) {
+  console.log(`[IDP RESUBMIT TO HR DEBUG] Starting resubmit to HR for IDP ${id}`);
+  
+  const [headerRows] = await db.query('SELECT * FROM idp_headers WHERE id = ?', [id]);
+  if (!headerRows.length) throw new Error('IDP not found');
+  const header = headerRows[0];
+  
+  console.log(`[IDP RESUBMIT TO HR DEBUG] Current status: ${header.status}`);
+  
+  // Set status directly to PENDING_HR
+  await db.query(
+    `UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?`,
+    ['PENDING_HR', id]
+  );
+  
+  console.log(`[IDP RESUBMIT TO HR DEBUG] Status updated to PENDING_HR`);
+  
+  // Create notifications
+  try {
+    const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [header.employee_id]);
+    const employeeName = empRows[0]?.name || 'Employee';
+    const [supRows] = await db.query('SELECT name FROM users WHERE id = ?', [header.supervisor_id]);
+    const supervisorName = supRows[0]?.name || 'Supervisor';
+    
+    // Notify HR
+    const [hrRows] = await db.query("SELECT id FROM users WHERE role = 'HR' LIMIT 1");
+    const hrId = hrRows[0]?.id || null;
+    if (hrId) {
+      await createNotification({
+        recipient_id: hrId,
+        message: `IDP #${id} for ${employeeName} resubmitted by ${supervisorName} for your review`,
+        module: 'IDP'
+      }).catch(() => {});
+    }
+    
+    await logRecentAction({
+      actor_id: header.supervisor_id,
+      module: 'IDP',
+      action_type: 'IDP_RESUBMITTED_TO_HR',
+      cl_id: null,
+      employee_id: header.employee_id,
+      title: `Resubmitted IDP to HR for ${employeeName}`,
+      description: `IDP #${id}`,
+      url: `/supervisor/idp/view/${id}`,
+    }).catch(() => {});
+  } catch (e) {
+    console.error('IDP resubmit to HR notifications failed', e);
+  }
+  
+  return await getById(id);
+}
+
+// Resubmit IDP directly to Manager (when Manager previously returned it)
+async function resubmitToManager(id) {
+  console.log(`[IDP RESUBMIT TO MANAGER DEBUG] Starting resubmit to Manager for IDP ${id}`);
+  
+  const [headerRows] = await db.query(
+    `SELECT ih.*, u.department_id, d.has_am
+     FROM idp_headers ih
+     JOIN users u ON ih.employee_id = u.id
+     JOIN departments d ON u.department_id = d.id
+     WHERE ih.id = ?`,
+    [id]
+  );
+  if (!headerRows.length) throw new Error('IDP not found');
+  const header = headerRows[0];
+  
+  console.log(`[IDP RESUBMIT TO MANAGER DEBUG] Current status: ${header.status}`);
+  
+  const hasAM = !!header.has_am;
+  const nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
+  
+  // Set status to pending manager/AM review
+  await db.query(
+    `UPDATE idp_headers SET status = ?, updated_at = NOW() WHERE id = ?`,
+    [nextStatus, id]
+  );
+  
+  console.log(`[IDP RESUBMIT TO MANAGER DEBUG] Status updated to ${nextStatus}`);
+  
+  // Create notifications
+  try {
+    const [empRows] = await db.query('SELECT name FROM users WHERE id = ?', [header.employee_id]);
+    const employeeName = empRows[0]?.name || 'Employee';
+    const [supRows] = await db.query('SELECT name FROM users WHERE id = ?', [header.supervisor_id]);
+    const supervisorName = supRows[0]?.name || 'Supervisor';
+    
+    // Notify Manager/AM
+    const approverId = hasAM ? header.am_id : header.manager_id;
+    if (approverId) {
+      await createNotification({
+        recipient_id: approverId,
+        message: `IDP #${id} for ${employeeName} resubmitted by ${supervisorName} for your review`,
+        module: 'IDP'
+      }).catch(() => {});
+    }
+    
+    await logRecentAction({
+      actor_id: header.supervisor_id,
+      module: 'IDP',
+      action_type: 'IDP_RESUBMITTED_TO_MANAGER',
+      cl_id: null,
+      employee_id: header.employee_id,
+      title: `Resubmitted IDP to Manager for ${employeeName}`,
+      description: `IDP #${id}`,
+      url: `/supervisor/idp/view/${id}`,
+    }).catch(() => {});
+  } catch (e) {
+    console.error('IDP resubmit to Manager notifications failed', e);
+  }
+  
+  return await getById(id);
+}
+
 module.exports = {
   getById,
   create,
   createWithItems,
   update,
   submit,
+  resubmitToHR,
+  resubmitToManager,
   getEmployeesForIDPCreation,
   getIDPsGroupedByStatus,
   getIDPsGroupedByManager,
@@ -1139,6 +1405,9 @@ module.exports = {
   getIDPsPendingManager,
   managerReturnIDP,
   managerApprove,
+  getIDPsPendingAM,
+  amApprove,
+  amReturnIDP,
   getIDPsForEmployee,
   getHRIncoming,
   employeeApprove,

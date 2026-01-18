@@ -8,6 +8,31 @@ const router = express.Router();
 
 router.use(requireAuth);
 
+// =====================================
+// AM (ASSISTANT MANAGER) ROUTES
+// =====================================
+
+// GET /api/idp/am/pending (IDPs pending AM approval)
+router.get(
+  '/am/pending',
+  requireRole('AM', 'HR', 'Admin'),
+  idpController.getAMPendingIDPs
+);
+
+// PUT /api/idp/:id/am/approve (AM approves IDP and routes to Manager)
+router.put(
+  '/:id/am/approve',
+  requireRole('AM', 'HR', 'Admin'),
+  idpController.amApproveIDP
+);
+
+// PUT /api/idp/:id/am/return (AM returns IDP to supervisor)
+router.put(
+  '/:id/am/return',
+  requireRole('AM', 'HR', 'Admin'),
+  idpController.amReturnIDP
+);
+
 // GET /api/idp/manager/pending (IDPs pending manager approval)
 router.get(
   '/manager/pending',
@@ -58,6 +83,20 @@ router.put(
   '/:id/submit',
   requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
   idpController.submit
+);
+
+// PUT /api/idp/:id/hr/resubmit (Supervisor resubmits to HR after HR returned it)
+router.put(
+  '/:id/hr/resubmit',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  idpController.resubmitToHR
+);
+
+// PUT /api/idp/:id/manager/resubmit (Supervisor resubmits to Manager after Manager returned it)
+router.put(
+  '/:id/manager/resubmit',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  idpController.resubmitToManager
 );
 
 // PUT /api/idp/:id/manager/return (Manager returns IDP to supervisor)
