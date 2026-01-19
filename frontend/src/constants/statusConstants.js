@@ -25,7 +25,8 @@ export const STATUS_DISPLAY_MAP = {
   PENDING_SUPERVISOR: 'For Supervisor Approval',
   PENDING_MANAGER: 'For Manager Approval',
   PENDING_HR: 'For HR Approval',
-  PENDING_AM: 'For AM Approval',
+  PENDING_AM: 'For Assistant Manager Review',
+  PENDING_AM_APPROVAL: 'For Assistant Manager Review',
   DRAFT: 'Draft',
   APPROVED: 'Approved',
   CYCLE_COMPLETED: 'Cycle Completed',
@@ -78,11 +79,12 @@ export function displayStatus(status) {
   if (status === null || status === undefined) return status;
   const key = String(status).trim().toUpperCase();
 
+  // First check the explicit mapping
   if (STATUS_DISPLAY_MAP[key]) {
     return STATUS_DISPLAY_MAP[key];
   }
 
-  // Handle dynamic PENDING_* statuses
+  // Handle dynamic PENDING_* statuses only if not in explicit mapping
   if (key.startsWith('PENDING_')) {
     const rest = key.slice('PENDING_'.length).toLowerCase();
     return `For ${rest.charAt(0).toUpperCase() + rest.slice(1)} Approval`;
@@ -104,7 +106,7 @@ export function buildCLStatusSections(department) {
   ];
   
   if (department && department.has_am) {
-    sections.push({ key: 'PENDING_AM', label: 'For Approval by Assistant Manager' });
+    sections.push({ key: 'PENDING_AM', label: 'For Assistant Manager Review' });
   }
   
   sections.push({ key: 'PENDING_MANAGER', label: 'For Approval by Manager' });
@@ -126,7 +128,7 @@ export function buildIDPStatusSections(department) {
   ];
   
   if (department && department.has_am) {
-    sections.push({ key: 'PENDING_AM', label: 'For Approval by Assistant Manager' });
+    sections.push({ key: 'PENDING_AM', label: 'For Assistant Manager Review' });
   }
   
   sections.push({ key: 'FOR_COMPLETION', label: 'For Completion' });

@@ -1,5 +1,5 @@
 // src/pages/Manager/ManagerDashboard.jsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { apiRequest } from '../../api/client';
 import { displayStatus } from '../../utils/statusHelper';
 import {
@@ -96,16 +96,16 @@ function IDPTable({ data, openIdpView }) {
 
 
 // Dynamically build CL status sections based on department.has_am
-const getCLStatusSections = (department) => {
+const getCLStatusSections = (department, isAM = false) => {
   const sections = [
-    { key: 'pending', label: 'For Approval by Manager', icon: ClockIcon },
+    { key: 'pending', label: isAM ? 'For Approval by Assistant Manager' : 'For Approval by Manager', icon: ClockIcon },
     { key: 'returned', label: 'Returned to Supervisor', icon: PencilSquareIcon },
-    { key: 'approved', label: 'Approved by Manager', icon: CheckCircleIcon },
+    { key: 'approved', label: isAM ? 'Approved by Assistant Manager' : 'Approved by Manager', icon: CheckCircleIcon },
     { key: 'department', label: 'Department CL Tracking', icon: Squares2X2Icon },
   ];
   if (department && department.has_am) {
     // Insert AM section before Manager
-    sections.splice(1, 0, { key: 'pending_am', label: 'For Approval by Assistant Manager', icon: ClockIcon });
+    sections.splice(1, 0, { key: 'pending_am', label: 'For Assistant Manager Review', icon: ClockIcon });
   }
   return sections;
 };
@@ -130,8 +130,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [employees, setEmployees] = useState([]); // All employees in department
   const [supervisors, setSupervisors] = useState([]); // All supervisors in department
 
-  const [expandedSupervisors, setExpandedSupervisors] = useState({}); // Track which supervisors are expanded
-  const [selectedSupervisorId, setSelectedSupervisorId] = useState(null); // Selected supervisor to view employees
+  const [selectedSupervisorId, _setSelectedSupervisorId] = useState(null); // Selected supervisor to view employees
   const [searchQuery, setSearchQuery] = useState(''); // Search for employees
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [hasCompetenciesOnly, setHasCompetenciesOnly] = useState(false); // Filter: only employees with competencies
@@ -151,7 +150,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
   // Supervisor sidebar state
   const [showClAction, setShowClAction] = useState(false);
-  const [showClInReview, setShowClInReview] = useState(false);
   const [showIdpAction, setShowIdpAction] = useState(false);
   const [showIdpInReview, setShowIdpInReview] = useState(false);
 
@@ -207,10 +205,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     window.location.href = `${path}?viewOnly=true`;
   }
 
-  function closeIdpView() {
-    // No longer needed - navigation handles closing
-  }
-
   // Helper components for IDP modal
   function TextBox({ value }) {
     return (
@@ -229,7 +223,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     );
   }
 
-  function areaColor(area) {
+  function _areaColor(area) {
     const safe = CRAYON_COLORS && typeof CRAYON_COLORS === 'object' ? CRAYON_COLORS : {};
     if (safe[area]) return safe[area];
 
@@ -246,7 +240,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     return palette[hash % palette.length];
   }
 
-  function getCompetencyCompletionStatus(item) {
+  function _getCompetencyCompletionStatus(item) {
     const mainActivities = (item.development_activity && typeof item.development_activity === 'object') 
       ? [item.development_activity] 
       : (item.developmentActivities || []);
@@ -285,105 +279,117 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }
 
   // ==========================
-  // LOAD DASHBOARD DATA
+  // LOAD DASHBOARD DATA (refactored into function)
   // ==========================
+  const loadDashboardData = useCallback(async () => {
+    try {
+      let clSummary, clPending, clAll, deptCLs;
+      if (isAMDashboard) {
+        [clSummary, clPending, clAll, deptCLs] = await Promise.all([
+          apiRequest('/api/cl/am/summary'),
+          apiRequest('/api/cl/am/pending'),
+          apiRequest('/api/cl/am/all'),
+          apiRequest('/api/cl/am/department'),
+        ]);
+      } else {
+        [clSummary, clPending, clAll, deptCLs] = await Promise.all([
+          apiRequest('/api/cl/manager/summary'),
+          apiRequest('/api/cl/manager/pending'),
+          apiRequest('/api/cl/manager/all'),
+          apiRequest('/api/cl/manager/department'),
+        ]);
+      }
+
+      setSummary({
+        clPending: clSummary.clPending || 0,
+        clInProgress: clSummary.clInProgress || 0,
+        clApproved: clSummary.clApproved || 0,
+        clReturned: clSummary.clReturned || 0,
+      });
+
+      setPendingCL(clPending || []);
+      setAllCL(clAll || []);
+      setDepartmentCLs(deptCLs || []);
+
+      // Fetch all users and filter by department
+      const allUsers = await apiRequest('/api/users');
+
+      // Get supervisors in the department
+      const deptSupervisors = (allUsers || []).filter(
+        u => u.department_id === user.department_id && u.role === 'Supervisor'
+      );
+      setSupervisors(deptSupervisors);
+
+      // Get employees in the department
+      const deptEmployees = (allUsers || []).filter(
+        u => u.department_id === user.department_id && u.role === 'Employee'
+      );
+
+      // Enrich with competency data
+      const enriched = await Promise.all(
+        deptEmployees.map(async (emp) => {
+          try {
+            const resp = await apiRequest(`/api/cl/employee/${emp.id}/competencies`);
+            const competencyCount = (resp?.competencies || []).length;
+
+            const histResp = await apiRequest(`/api/cl/employee/${emp.id}/history`);
+            const histArr = Array.isArray(histResp) ? histResp : (histResp?.history || []);
+            const historyCount = histArr.length;
+            const latestCL = histArr.length > 0 ? histArr[0] : null;
+
+            return {
+              ...emp,
+              competencyCount,
+              historyCount,
+              latestCL,
+            };
+          } catch {
+            return { ...emp, competencyCount: 0, historyCount: 0, latestCL: null };
+          }
+        })
+      );
+
+      setEmployees(enriched);
+      // Map supervisor IDs to names for CL records so UI shows names instead of raw ids
+      const userMap = {};
+      (allUsers || []).forEach(u => {
+        const display = u.name || u.full_name || ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.employee_id || u.id;
+        userMap[u.id] = display;
+      });
+
+      const mapCLsToNames = (arr) => (arr || []).map(item => ({
+        ...item,
+        supervisor_name: item.supervisor_name || item.supervisor || userMap[item.supervisor_id] || ''
+      }));
+
+      setPendingCL(mapCLsToNames(clPending || []));
+      setAllCL(mapCLsToNames(clAll || []));
+      setDepartmentCLs(mapCLsToNames(deptCLs || []));
+    } catch (err) {
+      console.error(err);
+      setError(isAMDashboard ? 'Failed to load Assistant Manager dashboard data.' : 'Failed to load Manager dashboard data.');
+    } finally {
+      setLoading(false);
+    }
+  }, [isAMDashboard, user]);
+
+  // Load dashboard on mount
   useEffect(() => {
     if (!user) return;
+    loadDashboardData();
+  }, [user, loadDashboardData]);
 
-    async function loadDashboard() {
-      try {
-        let clSummary, clPending, clAll, deptCLs;
-        if (isAMDashboard) {
-          [clSummary, clPending, clAll, deptCLs] = await Promise.all([
-            apiRequest('/api/cl/am/summary'),
-            apiRequest('/api/cl/am/pending'),
-            apiRequest('/api/cl/am/all'),
-            apiRequest('/api/cl/am/department'),
-          ]);
-        } else {
-          [clSummary, clPending, clAll, deptCLs] = await Promise.all([
-            apiRequest('/api/cl/manager/summary'),
-            apiRequest('/api/cl/manager/pending'),
-            apiRequest('/api/cl/manager/all'),
-            apiRequest('/api/cl/manager/department'),
-          ]);
-        }
-
-        setSummary({
-          clPending: clSummary.clPending || 0,
-          clInProgress: clSummary.clInProgress || 0,
-          clApproved: clSummary.clApproved || 0,
-          clReturned: clSummary.clReturned || 0,
-        });
-
-        setPendingCL(clPending || []);
-        setAllCL(clAll || []);
-        setDepartmentCLs(deptCLs || []);
-
-        // Fetch all users and filter by department
-        const allUsers = await apiRequest('/api/users');
-
-        // Get supervisors in the department
-        const deptSupervisors = (allUsers || []).filter(
-          u => u.department_id === user.department_id && u.role === 'Supervisor'
-        );
-        setSupervisors(deptSupervisors);
-
-        // Get employees in the department
-        const deptEmployees = (allUsers || []).filter(
-          u => u.department_id === user.department_id && u.role === 'Employee'
-        );
-
-        // Enrich with competency data
-        const enriched = await Promise.all(
-          deptEmployees.map(async (emp) => {
-            try {
-              const resp = await apiRequest(`/api/cl/employee/${emp.id}/competencies`);
-              const competencyCount = (resp?.competencies || []).length;
-
-              const histResp = await apiRequest(`/api/cl/employee/${emp.id}/history`);
-              const histArr = Array.isArray(histResp) ? histResp : (histResp?.history || []);
-              const historyCount = histArr.length;
-              const latestCL = histArr.length > 0 ? histArr[0] : null;
-
-              return {
-                ...emp,
-                competencyCount,
-                historyCount,
-                latestCL,
-              };
-            } catch {
-              return { ...emp, competencyCount: 0, historyCount: 0, latestCL: null };
-            }
-          })
-        );
-
-        setEmployees(enriched);
-        // Map supervisor IDs to names for CL records so UI shows names instead of raw ids
-        const userMap = {};
-        (allUsers || []).forEach(u => {
-          const display = u.name || u.full_name || ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.employee_id || u.id;
-          userMap[u.id] = display;
-        });
-
-        const mapCLsToNames = (arr) => (arr || []).map(item => ({
-          ...item,
-          supervisor_name: item.supervisor_name || item.supervisor || userMap[item.supervisor_id] || ''
-        }));
-
-        setPendingCL(mapCLsToNames(clPending || []));
-        setAllCL(mapCLsToNames(clAll || []));
-        setDepartmentCLs(mapCLsToNames(deptCLs || []));
-      } catch (err) {
-        console.error(err);
-        setError(isAMDashboard ? 'Failed to load Assistant Manager dashboard data.' : 'Failed to load Manager dashboard data.');
-      } finally {
-        setLoading(false);
+  // Refresh data when returning to dashboard (page visibility)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadDashboardData();
       }
-    }
+    };
 
-    loadDashboard();
-  }, [user, isAMDashboard]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [loadDashboardData]);
 
   // ==========================
   // LOAD NOTIFICATIONS (polling)
@@ -422,7 +428,35 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         const endpoint = recentFilter === 'ALL'
           ? '/api/recent-actions'
           : `/api/recent-actions?module=${recentFilter}`;
-        const data = await apiRequest(endpoint);
+        let data = await apiRequest(endpoint);
+        
+        // Filter out AM-specific actions when viewing Manager dashboard (not AM dashboard)
+        if (!isAMDashboard && data) {
+          data = data.filter(action => {
+            const actionType = action.action_type || '';
+            const description = action.description || '';
+            const title = action.title || '';
+            
+            // Exclude AM-specific action types
+            const isAMAction = (
+              actionType.includes('_AM') ||
+              actionType.includes('APPROVED_BY_AM') ||
+              actionType.includes('RETURNED_BY_AM') ||
+              actionType.includes('AM_') ||
+              title.toLowerCase().includes('am ') || // "AM approved", "AM returned", etc.
+              title.toLowerCase().startsWith('am ') || // Title starts with "AM "
+              title.toLowerCase().includes(' am ') || // " AM " anywhere in title
+              title.toLowerCase().includes('assistant manager') ||
+              description.toLowerCase().includes('am ') ||
+              description.toLowerCase().startsWith('am ') ||
+              description.toLowerCase().includes(' am ') ||
+              description.toLowerCase().includes('assistant manager')
+            );
+            
+            return !isAMAction;
+          });
+        }
+        
         setRecentActions(data || []);
       } catch (err) {
         console.error('Failed to load recent actions', err);
@@ -430,7 +464,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     }
 
     loadRecentActions();
-  }, [user, recentFilter]);
+  }, [user, recentFilter, isAMDashboard]);
 
   // ==========================
   // HELPERS
@@ -588,8 +622,8 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
   // Dynamically build CL status sections based on department
   const CL_STATUS_SECTIONS = useMemo(() => {
-    return getCLStatusSections(department);
-  }, [department]);
+    return getCLStatusSections(department, isAMDashboard);
+  }, [department, isAMDashboard]);
 
   const activeSectionLabel = useMemo(() => {
     const supervisor = supervisors.find(s => s.id === selectedSupervisorId);
@@ -634,7 +668,15 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   // IDP status mapping - use pending IDPs as source
   const idpByStatus = useMemo(() => {
     return {
-      pending_manager: (pendingIDPs || []).filter(i => i.status === 'PENDING_MANAGER' || i.status === 'PENDING_AM'),
+      pending_manager: (pendingIDPs || []).filter(i => {
+        if (isAMDashboard) {
+          // AM dashboard shows only PENDING_AM
+          return i.status === 'PENDING_AM';
+        } else {
+          // Manager dashboard shows only PENDING_MANAGER (exclude AM items)
+          return i.status === 'PENDING_MANAGER';
+        }
+      }),
       pending_hr: (pendingIDPs || []).filter(i => i.status === 'PENDING_HR'),
       for_completion: (pendingIDPs || []).filter(i => i.status === 'FOR_COMPLETION'),
       // manager-approved (employee pending acknowledgement)
@@ -644,7 +686,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       // final cycle completed
       cycle_completed: (pendingIDPs || []).filter(i => i.status === 'CYCLE_COMPLETED'),
     };
-  }, [pendingIDPs]);
+  }, [pendingIDPs, isAMDashboard]);
 
   // Filter IDPs by selected supervisor
   const filteredIDPsByStatus = useMemo(() => {
@@ -746,7 +788,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                     >
                       <span className="flex items-center gap-2">
                         <ClockIcon className="w-4 h-4" />
-                        For Approval by Manager
+                        {isAMDashboard ? 'For Approval by Assistant Manager' : 'For Approval by Manager'}
                       </span>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.pending || 0}</span>
                     </button>
@@ -1010,7 +1052,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             )
           ) : activeSection === 'approved' ? (
             approvedCLs.length === 0 ? (
-              <p className="text-gray-400 text-sm italic">No CLs approved by manager.</p>
+              <p className="text-gray-400 text-sm italic">No CLs approved by {isAMDashboard ? 'assistant manager' : 'manager'}.</p>
             ) : (
               <HistoryTable data={approvedCLs} goTo={goTo} />
             )
@@ -1318,6 +1360,9 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                           {a.description && (
                             <p className="text-gray-600 truncate text-[11px]">{a.description}</p>
                           )}
+                          {a.actor_name && (
+                            <p className="text-gray-500 text-[10px]">by {a.actor_name} ({a.actor_role})</p>
+                          )}
                         </td>
                         <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
                           {a.created_at ? new Date(a.created_at).toLocaleDateString() : '-'}
@@ -1379,6 +1424,7 @@ function PendingTable({ data, goTo, isAMDashboard }) {
             <Th>Employee ID</Th>
             <Th>Department</Th>
             <Th>Position</Th>
+            <Th>Competency Score</Th>
             <Th>{isAMDashboard ? 'For AM Approval' : 'Status'}</Th>
             <Th>Submitted At</Th>
             <Th>Actions</Th>
@@ -1392,9 +1438,10 @@ function PendingTable({ data, goTo, isAMDashboard }) {
               <Td>{item.employee_name}</Td>
               <Td>{item.employee_code || item.employee_id}</Td>
               <Td>{item.department_name}</Td>
-              <Td>{item.position_title}</Td>
+              <Td>{item.position_title || '-'}</Td>
+              <Td>{item.competency_score ? parseFloat(item.competency_score).toFixed(2) : '-'}</Td>
               <Td>{isAMDashboard ? 'For AM Approval' : displayStatus(item.status)}</Td>
-              <Td>{new Date(item.submitted_at).toLocaleString()}</Td>
+              <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
 
               <Td>
                 <button
@@ -1427,6 +1474,7 @@ function HistoryTable({ data, goTo, isAMDashboard }) {
             <Th>Department</Th>
             <Th>Position</Th>
             <Th>{isAMDashboard ? 'AM Decision' : 'Manager Decision'}</Th>
+            <Th>By</Th>
             <Th>{isAMDashboard ? 'AM Decided At' : 'Manager Decided At'}</Th>
             <Th>Actions</Th>
           </tr>
@@ -1441,6 +1489,14 @@ function HistoryTable({ data, goTo, isAMDashboard }) {
               <Td>{item.department_name}</Td>
               <Td>{item.position_title}</Td>
               <Td>{isAMDashboard ? (item.am_decision || '-') : (item.manager_decision || '-')}</Td>
+              <Td className="text-xs">
+                {item.returned_by_name ? (
+                  <div>
+                    <div className="font-semibold">{item.returned_by_name}</div>
+                    <div className="text-gray-500">{item.returned_by_role}</div>
+                  </div>
+                ) : '-'}
+              </Td>
               <Td>
                 {isAMDashboard
                   ? (item.am_decided_at ? new Date(item.am_decided_at).toLocaleString() : '-')
@@ -1606,14 +1662,18 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
 function FullRecentActionsModal({ open, recentActions, onActionClick, onClose }) {
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
 
 
-  // Reset pagination when filters change
-  useEffect(() => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const filterKey = `${dateFilter.startDate}-${dateFilter.endDate}-${searchTerm}`;
+  const [lastFilterKey, setLastFilterKey] = useState(filterKey);
+  
+  // Reset page when filters change
+  if (lastFilterKey !== filterKey) {
+    setLastFilterKey(filterKey);
     setCurrentPage(1);
-  }, [dateFilter, searchTerm]);
+  }
 
   // Filter actions by date range and search term
   const filteredActions = recentActions.filter(a => {
@@ -1718,6 +1778,7 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">Action</th>
+                    <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">By</th>
                     <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">Description</th>
                     <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">Date</th>
                   </tr>
@@ -1735,6 +1796,9 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                       className="hover:bg-gray-50 cursor-pointer"
                     >
                       <td className="px-4 py-3 text-gray-900 font-bold">{a.title || 'Action'}</td>
+                      <td className="px-4 py-3 text-gray-600 text-xs font-medium">
+                        {a.actor_name ? `${a.actor_name}` : '-'}
+                      </td>
                       <td className="px-4 py-3 text-gray-700 font-medium">{a.description || '-'}</td>
                       <td className="px-4 py-3 text-gray-600 font-medium">
                         {a.created_at ? new Date(a.created_at).toLocaleString() : '-'}

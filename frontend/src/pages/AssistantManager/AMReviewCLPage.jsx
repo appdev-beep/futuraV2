@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import Modal from '../../components/Modal';
 import { displayStatus } from '../../utils/statusHelper';

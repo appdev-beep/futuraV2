@@ -21,6 +21,7 @@ function CLTable({ data, goTo, onDelete }) {
             <Th>Employee ID</Th>
             <Th>Department</Th>
             <Th>Position</Th>
+            <Th>Final Score</Th>
             <Th>Status</Th>
             <Th>Submitted At</Th>
             <Th>Actions</Th>
@@ -35,12 +36,51 @@ function CLTable({ data, goTo, onDelete }) {
               <Td>{item.employee_code || item.employee_id}</Td>
               <Td>{item.department_name}</Td>
               <Td>{item.position_title}</Td>
+              <Td>{(() => {
+                // Calculate the final score exactly like in the detailed view
+                // Sum up (score * weight) for all competencies
+                let totalScore = 0;
+                let totalWeight = 0;
+                
+                // Check if we have competency items in various possible formats
+                const competencyItems = item.items || item.competencies || item.competency_items || [];
+                
+                if (Array.isArray(competencyItems) && competencyItems.length > 0) {
+                  competencyItems.forEach(comp => {
+                    const score = parseFloat(comp.score || comp.assigned_level || comp.level || 0);
+                    const weight = parseFloat(comp.weight || 0);
+                    
+                    if (weight > 0) {
+                      totalScore += (score * weight) / 100;
+                      totalWeight += weight;
+                    }
+                  });
+                  
+                  if (totalWeight > 0) {
+                    return totalScore.toFixed(2);
+                  }
+                }
+                
+                // Fallback to any pre-calculated score
+                if (item.total_final_score) return Number(item.total_final_score).toFixed(2);
+                if (item.final_score) return Number(item.final_score).toFixed(2);
+                if (item.calculated_final_score) return Number(item.calculated_final_score).toFixed(2);
+                
+                return '0.00';
+              })()}</Td>
               <Td>
-                {item.status === 'DRAFT'
-                  ? (item.awaiting_approval_from
-                      ? `Returned from ${item.awaiting_approval_from.replace('PENDING_', '').replace(/_/g, ' ')}`
-                      : 'Draft - Not Submitted')
-                  : item.status}
+                {item.status === 'PENDING_AM' ? 'For Assistant Manager Review' :
+                 item.status === 'PENDING_MANAGER' ? 'For Manager Approval' :
+                 item.status === 'PENDING_HR' ? 'For HR Approval' :
+                 item.status === 'PENDING_EMPLOYEE' ? 'For Employee Approval' :
+                 item.status === 'PENDING_SUPERVISOR' ? 'For Supervisor Approval' :
+                 item.status === 'APPROVED' ? 'Approved' :
+                 item.status === 'CYCLE_COMPLETED' ? 'Cycle Completed' :
+                 item.status === 'RETURNED' ? 'Returned for Review' :
+                 item.status === 'REJECTED' ? 'Rejected' :
+                 item.status === 'FOR_COMPLETION' ? 'For Completion' :
+                 item.status === 'DRAFT' ? (item.awaiting_approval_from ? `Returned from ${item.awaiting_approval_from.replace('PENDING_', '').replace(/_/g, ' ')}` : 'Draft - Not Submitted') :
+                 item.status}
               </Td>
               <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
 

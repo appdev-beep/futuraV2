@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../../api/client';
 import { useNavigate } from 'react-router-dom';
+import { displayStatus } from '../../constants/statusConstants';
 import {
   ClipboardDocumentCheckIcon,
   BookOpenIcon,
@@ -159,8 +160,9 @@ function SupervisorDashboard() {
   const navigate = useNavigate();
 
   // Load dashboard data; exposed so child components can trigger a refresh without reloading the page
-  async function loadDashboard() {
+  async function loadDashboard(preserveScroll = false) {
     if (!user) return;
+    const scrollPosition = preserveScroll ? window.scrollY : 0;
     try {
       setLoading(true);
       const [clSummary, clGrouped, idpCreation, idpGrouped] = await Promise.all([
@@ -193,6 +195,10 @@ function SupervisorDashboard() {
       setError('Failed to load Supervisor dashboard data.');
     } finally {
       setLoading(false);
+      // Restore scroll position if preserving
+      if (preserveScroll && scrollPosition > 0) {
+        setTimeout(() => window.scrollTo(0, scrollPosition), 100);
+      }
     }
   }
 
@@ -206,7 +212,7 @@ function SupervisorDashboard() {
     const total = Math.max(1, Math.ceil((recentActions || []).length / RECENT_PAGE_SIZE));
     if (recentPage > total) setRecentPage(total);
     if (recentPage < 1) setRecentPage(1);
-  }, [recentActions, recentFilter]);
+  }, [recentActions, recentFilter, recentPage]);
 
   // Notifications (polling)
   useEffect(() => {
@@ -230,20 +236,21 @@ function SupervisorDashboard() {
     return () => clearInterval(timer);
   }, [user, notificationFilter]);
 
+
   // Recent actions
-  useEffect(() => {
+  async function loadRecentActions() {
     if (!user) return;
-
-    async function loadRecentActions() {
-      try {
-        const query = recentFilter === 'ALL' ? '' : `?module=${recentFilter}`;
-        const data = await apiRequest(`/api/recent-actions${query}`);
-        setRecentActions(data || []);
-      } catch (err) {
-        console.error('Failed to load recent actions', err);
-      }
+    
+    try {
+      const query = recentFilter === 'ALL' ? '' : `?module=${recentFilter}`;
+      const data = await apiRequest(`/api/recent-actions${query}`);
+      setRecentActions(data || []);
+    } catch (err) {
+      console.error('Failed to load recent actions', err);
     }
+  }
 
+  useEffect(() => {
     loadRecentActions();
   }, [user, recentFilter]);
 
@@ -253,15 +260,7 @@ function SupervisorDashboard() {
   }
 
   function goTo(url) {
-    const currentPath = window.location.pathname;
-    const targetPath = url.split('?')[0];
-
-    // If already on the target page, refresh data instead of full refresh
-    if (currentPath === targetPath) {
-      loadDashboard();
-      return;
-    }
-
+    // Always use SPA navigation, never reload the page
     navigate(url);
   }
 
@@ -307,7 +306,10 @@ function SupervisorDashboard() {
             message: 'CL deleted successfully. The action has been logged in your Recent Actions.',
             showCancel: false,
             confirmText: 'OK',
-            onConfirm: () => loadDashboard(),
+            onConfirm: () => {
+              loadDashboard(true);
+              loadRecentActions(); // Refresh recent actions to show the deletion
+            },
           });
         } catch (err) {
           console.error(err);
@@ -357,17 +359,8 @@ function SupervisorDashboard() {
       return;
     }
     
-    // Check if we're staying on the same page
+    // Always navigate using SPA without page refresh
     const url = action.url || '/supervisor';
-    const currentPath = window.location.pathname;
-    const targetPath = url.split('?')[0];
-    
-    if (currentPath === targetPath) {
-      // Just close modal and stay on current page
-      return;
-    }
-
-    // Navigate within SPA
     const separator = url.includes('?') ? '&' : '?';
     navigate(`${url}${separator}viewOnly=true`);
   }
@@ -378,7 +371,7 @@ function SupervisorDashboard() {
     try {
       if (n?.id) {
         await apiRequest(`/api/notifications/${n.id}/read`, { method: 'PATCH' });
-        // Reload notifications to update UI
+        // Update notifications without reloading entire dashboard
         const data = await apiRequest('/api/notifications');
         setNotifications(data || []);
       }
@@ -386,23 +379,32 @@ function SupervisorDashboard() {
       console.error('Failed to mark notification as read', err);
     }
     
-    // Check if we're staying on the same page
+    // Always navigate using SPA without page refresh
     const url = n?.url || '/supervisor';
-    const currentPath = window.location.pathname;
-    const targetPath = url.split('?')[0];
-
-    if (currentPath === targetPath) {
-      // Stay on current page without refresh
-      return;
-    }
-
-    // Navigate within SPA
     navigate(url);
   }
 
   function closeNotificationModal() {
     setNotificationModalState({ open: false, notification: null });
     // Modal stays closed without refresh
+  }
+
+  async function handleMarkAllAsRead() {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/notifications/mark-all-read`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      // Reload notifications to update the list
+      const query = notificationFilter === 'ALL' ? '' : `?module=${notificationFilter}`;
+      const data = await apiRequest(`/api/notifications${query}`);
+      setNotifications(data || []);
+    } catch (err) {
+      console.error('Failed to mark all notifications as read:', err);
+    }
   }
 
   // ...removed openIDPModal and all IDP creation logic. Use navigation to CreateIDPPage.jsx for IDP creation.
@@ -842,21 +844,31 @@ function SupervisorDashboard() {
           </button>
 
           {/* Filter controls for Notifications */}
-          <div className="px-4 py-2 flex items-center gap-2 border-b border-gray-200">
-            {['ALL','CL','IDP'].map((opt) => (
+          <div className="px-4 py-2 border-b border-gray-200">
+            <div className="flex items-center gap-2 mb-2">
+              {['ALL','CL','IDP'].map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setNotificationFilter(opt)}
+                  className={`px-2 py-1 rounded text-xs border transition ${
+                    notificationFilter === opt
+                      ? 'bg-orange-50 border-orange-300 text-orange-700'
+                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            {unreadCount > 0 && (
               <button
-                key={opt}
-                type="button"
-                onClick={() => setNotificationFilter(opt)}
-                className={`px-2 py-1 rounded text-xs border transition ${
-                  notificationFilter === opt
-                    ? 'bg-orange-50 border-orange-300 text-orange-700'
-                    : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
+                onClick={handleMarkAllAsRead}
+                className="w-full text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition text-center"
               >
-                {opt}
+                Mark All as Read ({unreadCount})
               </button>
-            ))}
+            )}
           </div>
 
           <div className="flex-1 p-4 overflow-y-auto space-y-2 no-scrollbar">
@@ -1034,6 +1046,7 @@ function CLTable({ data, goTo, onDelete }) {
             <Th>Department</Th>
             <Th>Position</Th>
             <Th>Status</Th>
+            <Th>Final Score</Th>
             <Th>Submitted At</Th>
             <Th>Actions</Th>
           </tr>
@@ -1048,12 +1061,20 @@ function CLTable({ data, goTo, onDelete }) {
               <Td>{item.department_name}</Td>
               <Td>{item.position_title}</Td>
               <Td>
-                {item.status === 'DRAFT' 
-                  ? (item.awaiting_approval_from 
-                      ? `Returned from ${item.awaiting_approval_from.replace('PENDING_', '').replace(/_/g, ' ')}` 
-                      : 'Draft - Not Submitted')
-                  : item.status}
+                {item.status === 'PENDING_AM' ? 'For Assistant Manager Review' :
+                 item.status === 'PENDING_MANAGER' ? 'For Manager Approval' :
+                 item.status === 'PENDING_HR' ? 'For HR Approval' :
+                 item.status === 'PENDING_EMPLOYEE' ? 'For Employee Approval' :
+                 item.status === 'PENDING_SUPERVISOR' ? 'For Supervisor Approval' :
+                 item.status === 'APPROVED' ? 'Approved' :
+                 item.status === 'CYCLE_COMPLETED' ? 'Cycle Completed' :
+                 item.status === 'RETURNED' ? 'Returned for Review' :
+                 item.status === 'REJECTED' ? 'Rejected' :
+                 item.status === 'FOR_COMPLETION' ? 'For Completion' :
+                 item.status === 'DRAFT' ? 'Draft - Not Submitted' :
+                 item.status}
               </Td>
+              <Td>{item.total_score != null ? item.total_score : '-'}</Td>
               <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
 
               <Td>
@@ -1236,16 +1257,25 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
     return true;
   });
 
-  // Clamp page when filters change (before any conditional logic)
-  useEffect(() => {
+  // Auto-reset page when filters change using derived state
+  const currentValidPage = useMemo(() => {
     const total = Math.max(1, Math.ceil(filteredActions.length / PAGE_SIZE));
-    if (page > total) setPage(total);
-    if (page < 1) setPage(1);
-  }, [filteredActions]);
+    if (page > total) return total;
+    if (page < 1) return 1;
+    return page;
+  }, [filteredActions, page]);
+
+  // Update page state only when necessary to prevent infinite loops
+  useEffect(() => {
+    if (currentValidPage !== page) {
+      const timer = setTimeout(() => setPage(currentValidPage), 0);
+      return () => clearTimeout(timer);
+    }
+  }, [currentValidPage, page]);
 
   if (!open) return null;
 
-  const visibleActions = filteredActions.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const visibleActions = filteredActions.slice((currentValidPage - 1) * PAGE_SIZE, currentValidPage * PAGE_SIZE);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

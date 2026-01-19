@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import Modal from '../../components/Modal';
 import { displayStatus } from '../../utils/statusHelper';
@@ -21,7 +21,7 @@ function SupervisorReviewCLPage() {
 
   // separate remarks state:
   const [resubmitRemarks, setResubmitRemarks] = useState(''); // when CL is DRAFT
-  const [returnRemarks, setReturnRemarks] = useState('');     // when CL is PENDING_MANAGER
+  const [returnRemarks, _setReturnRemarks] = useState('');     // when CL is PENDING_MANAGER
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
 
   const showModal = (title, message, type = 'info') => {
@@ -92,11 +92,11 @@ function SupervisorReviewCLPage() {
   // (This is the “manager approve” style action; if you
   //  keep it, it just moves CL forward without remarks)
   // ==========================
-  function confirmApprove() {
-    showConfirmModal('Confirm Approval', 'Are you sure you want to approve this CL?', executeApprove, 'info');
+  function _confirmApprove() {
+    showConfirmModal('Confirm Approval', 'Are you sure you want to approve this CL?', _executeApprove, 'info');
   }
 
-  async function executeApprove() {
+  async function _executeApprove() {
     closeModal();
     setActionLoading(true);
     try {
@@ -117,15 +117,15 @@ function SupervisorReviewCLPage() {
   // ==========================
   // RETURN HANDLER (to employee)
   // ==========================
-  function confirmReturn() {
+  function _confirmReturn() {
     if (!returnRemarks.trim()) {
       showModal('Validation Error', 'Please provide remarks before returning the CL', 'warning');
       return;
     }
-    showConfirmModal('Confirm Return', 'Are you sure you want to return this CL to the employee?', executeReturn, 'warning');
+    showConfirmModal('Confirm Return', 'Are you sure you want to return this CL to the employee?', _executeReturn, 'warning');
   }
 
-  async function executeReturn() {
+  async function _executeReturn() {
     closeModal();
     setActionLoading(true);
     try {
@@ -216,6 +216,15 @@ function SupervisorReviewCLPage() {
     updated_at,
   } = cl;
 
+  // Compute display status: check if there's a recent RETURNED action in audit trail
+  let displayStatusText = displayStatus(status);
+  if (status === 'DRAFT' && auditTrail.length > 0) {
+    const lastReturnedAction = auditTrail.filter(e => e.action_type.includes('RETURNED')).pop();
+    if (lastReturnedAction) {
+      displayStatusText = `Returned by ${lastReturnedAction.actor_name} (${lastReturnedAction.actor_role})`;
+    }
+  }
+
   // Export CL to CSV (competencies + header info)
   function handleExportCSV() {
     try {
@@ -269,7 +278,7 @@ function SupervisorReviewCLPage() {
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const safeName = (employee_name || 'employee').replace(/[^a-z0-9_\-]/gi, '_');
+      const safeName = (employee_name || 'employee').replace(/[^a-z0-9_-]/gi, '_');
       a.href = url;
       a.download = `CL_${id}_${safeName}.csv`;
       document.body.appendChild(a);
@@ -287,7 +296,7 @@ function SupervisorReviewCLPage() {
     try {
       const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
-      const safeName = (employee_name || 'employee').replace(/[^a-z0-9_\-]/gi, '_');
+      const safeName = (employee_name || 'employee').replace(/[^a-z0-9_-]/gi, '_');
 
       // Title
       doc.setFontSize(14);
@@ -356,7 +365,7 @@ function SupervisorReviewCLPage() {
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/80">
             <div>
               <h1 className="text-lg font-semibold text-slate-800">Review CL</h1>
-              <p className="text-xs text-slate-500 mt-0.5">Status: <strong>{displayStatus(status)}</strong></p>
+              <p className="text-xs text-slate-500 mt-0.5">Status: <strong>{displayStatusText}</strong></p>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -489,7 +498,18 @@ function SupervisorReviewCLPage() {
                 <h3 className="text-sm font-semibold mb-2 text-slate-700">Process History</h3>
                 <div className="space-y-2">
                   {auditTrail.map((event, idx) => {
-                    const actionLabel = event.action_type.replace(/_/g, ' ');
+                    // Format action label based on action type
+                    let actionLabel = event.action_type;
+                    if (event.action_type === 'CREATED') {
+                      actionLabel = 'CREATED';
+                    } else if (event.action_type.includes('MANAGER_RETURNED')) {
+                      actionLabel = `RETURNED BY ${event.actor_role === 'AM' ? 'ASSISTANT MANAGER' : 'MANAGER'}`;
+                    } else if (event.action_type.includes('MANAGER_APPROVED')) {
+                      actionLabel = `APPROVED BY ${event.actor_role === 'AM' ? 'ASSISTANT MANAGER' : 'MANAGER'}`;
+                    } else {
+                      actionLabel = event.action_type.replace(/_/g, ' ');
+                    }
+                    
                     const actionColor = 
                       event.action_type.includes('APPROVED') ? 'text-green-600' :
                       event.action_type.includes('RETURNED') ? 'text-red-600' :

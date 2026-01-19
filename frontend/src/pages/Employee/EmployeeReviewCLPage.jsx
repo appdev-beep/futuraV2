@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import 'jspdf-autotable';
 
 function EmployeeReviewCLPage() {
   const { id } = useParams();
@@ -109,7 +109,7 @@ function EmployeeReviewCLPage() {
       it.justification || '',
     ]);
 
-    autoTable(doc, {
+    doc.autoTable({
       head: [['Competency', 'MPLR', 'Assigned', 'Weight (%)', 'Score', 'Justification']],
       body: tableData,
       startY: 55,
@@ -229,8 +229,8 @@ function EmployeeReviewCLPage() {
   const {
     id: clId,
     status,
-    employee_name,
-    employee_id,
+    employee_name: _employee_name,
+    employee_id: _employee_id,
     supervisor_remarks,
     manager_remarks,
   } = cl;
@@ -279,12 +279,28 @@ function EmployeeReviewCLPage() {
               <h3 className="text-sm font-semibold mb-2 text-slate-700">Employee Information</h3>
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div>
-                  <p className="text-slate-500">Name</p>
-                  <p className="font-medium text-slate-800">{employee_name || 'N/A'}</p>
+                  <p className="text-slate-500">Employee Name</p>
+                  <p className="font-medium text-slate-800">{cl.employee_name || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500">Employee ID</p>
-                  <p className="font-medium text-slate-800">{employee_id || 'N/A'}</p>
+                  <p className="font-medium text-slate-800">{cl.employee_id || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Email</p>
+                  <p className="font-medium text-slate-800">{cl.employee_email || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Position</p>
+                  <p className="font-medium text-slate-800">{cl.position_title || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Supervisor</p>
+                  <p className="font-medium text-slate-800">{cl.supervisor_name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Department</p>
+                  <p className="font-medium text-slate-800">{cl.department_name || 'N/A'}</p>
                 </div>
               </div>
             </div>

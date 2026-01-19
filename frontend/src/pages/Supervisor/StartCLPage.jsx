@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../api/client";
 import Modal from '../../components/Modal';
+import { displayStatus } from '../../constants/statusConstants';
 import { 
   MagnifyingGlassIcon, 
   Squares2X2Icon, 
@@ -589,7 +590,7 @@ function StartCLPage() {
 
                         {latest?.status ? (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                            Latest: {latest.status}
+                            Latest: {displayStatus(latest.status)}
                             {latestDate ? ` • ${latestDate}` : ""}
                           </span>
                         ) : (
@@ -681,7 +682,7 @@ function StartCLPage() {
 
                         {latest?.status ? (
                           <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 whitespace-nowrap">
-                            Latest: {latest.status}
+                            Latest: {displayStatus(latest.status)}
                             {latestDate ? ` • ${latestDate}` : ""}
                           </span>
                         ) : (
@@ -788,7 +789,7 @@ function StartCLPage() {
                               <td className="px-2 py-1 text-slate-700">
                                 {cl.cycle_name || cl.cycle_id || "-"}
                               </td>
-                              <td className="px-2 py-1 text-slate-700">{cl.status || "-"}</td>
+                              <td className="px-2 py-1 text-slate-700">{displayStatus(cl.status) || "-"}</td>
                               <td className="px-2 py-1 text-slate-700">{cl.created_at ? new Date(cl.created_at).toLocaleDateString() : "-"}</td>
                               <td className="px-2 py-1 text-slate-700">{cl.total_score != null ? cl.total_score : "-"}</td>
                             </tr>
@@ -976,7 +977,7 @@ function StartCLPage() {
                         <div><span className="text-gray-600">CL ID:</span><span className="ml-2 font-medium text-gray-800">{selectedCLDetails.id}</span></div>
                         <div><span className="text-gray-600">Employee:</span><span className="ml-2 font-medium text-gray-800">{selectedCLDetails.employee_name}</span></div>
                         <div><span className="text-gray-600">Supervisor:</span><span className="ml-2 font-medium text-gray-800">{selectedCLDetails.supervisor_name}</span></div>
-                        <div><span className="text-gray-600">Status:</span><span className="ml-2 font-medium text-blue-600">{selectedCLDetails.status}</span></div>
+                        <div><span className="text-gray-600">Status:</span><span className="ml-2 font-medium text-blue-600">{displayStatus(selectedCLDetails.status)}</span></div>
                         <div><span className="text-gray-600">Department:</span><span className="ml-2 font-medium text-gray-800">{selectedCLDetails.department_name || 'N/A'}</span></div>
                         <div><span className="text-gray-600">Total Score:</span><span className="ml-2 font-medium text-green-600">{selectedCLDetails.total_score || 'N/A'}</span></div>
                         <div className="col-span-2"><span className="text-gray-600">Created:</span><span className="ml-2 font-medium text-gray-800">{selectedCLDetails.created_at ? new Date(selectedCLDetails.created_at).toLocaleString() : 'N/A'}</span></div>

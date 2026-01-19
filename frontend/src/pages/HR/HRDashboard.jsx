@@ -86,6 +86,10 @@ function HRDashboard() {
   const [departmentSearch, setDepartmentSearch] = useState('');
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
   const [showFullNotifications, setShowFullNotifications] = useState(false);
+  const [recentActionsPagination, setRecentActionsPagination] = useState({
+    currentPage: 1,
+    itemsPerPage: 10
+  });
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
     notification: null,
@@ -96,6 +100,14 @@ function HRDashboard() {
     clId: null,
     details: null,
     loading: false,
+  });
+  const [exportModal, setExportModal] = useState({
+    open: false,
+    loading: false,
+    startDate: '',
+    endDate: '',
+    module: 'CL',
+    selectedStatus: 'ALL'
   });
   const [allIncomingIDP, setAllIncomingIDP] = useState([]);
   const [idpLoading, setIdpLoading] = useState(false);
@@ -316,6 +328,96 @@ function HRDashboard() {
     });
   }
 
+  // Export functions
+  function openExportModal() {
+    const today = new Date().toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setExportModal({
+      open: true,
+      loading: false,
+      startDate: thirtyDaysAgo,
+      endDate: today,
+      module: activeModule,
+      selectedStatus: 'ALL'
+    });
+  }
+
+  function closeExportModal() {
+    setExportModal({
+      open: false,
+      loading: false,
+      startDate: '',
+      endDate: '',
+      module: 'CL',
+      selectedStatus: 'ALL'
+    });
+  }
+
+  async function handleExportCSV() {
+    const { startDate, endDate, module, selectedStatus } = exportModal;
+    
+    if (!startDate || !endDate) {
+      alert('Please select both start and end dates');
+      return;
+    }
+
+    if (new Date(startDate) > new Date(endDate)) {
+      alert('Start date must be before end date');
+      return;
+    }
+
+    try {
+      setExportModal(prev => ({ ...prev, loading: true }));
+      
+      const queryParams = new URLSearchParams({
+        startDate,
+        endDate,
+        department: selectedDepartment === 'ALL' ? 'ALL' : selectedDepartment,
+        status: selectedStatus
+      });
+      
+      const endpoint = module === 'CL' ? '/api/cl/hr/export' : '/api/idp/hr/export';
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}${endpoint}?${queryParams}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        // Try to parse JSON error, but if response is HTML, show a generic message
+        let errorMessage = 'Export failed';
+        try {
+          const error = await response.json();
+          errorMessage = error.message || 'Export failed';
+        } catch {
+          // Response was not JSON (likely HTML error page)
+          errorMessage = `Export failed: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      const csvData = await response.text();
+      
+      // Create and download the file
+      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${module}_Export_${selectedDepartment === 'ALL' ? 'All' : selectedDepartment}_${startDate}_${endDate}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      closeExportModal();
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + error.message);
+    } finally {
+      setExportModal(prev => ({ ...prev, loading: false }));
+    }
+  }
+
   const unreadCount = useMemo(() => {
     return (notifications || []).filter(
       (n) => String(n.status || '').toLowerCase() === 'unread'
@@ -332,6 +434,16 @@ function HRDashboard() {
     return recentActions.filter(a => a.module === recentActionFilter);
   }, [recentActions, recentActionFilter]);
 
+  // Paginated recent actions for sidebar
+  const paginatedRecentActions = useMemo(() => {
+    const { currentPage, itemsPerPage } = recentActionsPagination;
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredRecentActions.slice(startIndex, endIndex);
+  }, [filteredRecentActions, recentActionsPagination]);
+
+  const totalRecentActionPages = Math.ceil(filteredRecentActions.length / recentActionsPagination.itemsPerPage);
+
   // Get unique departments from incoming CLs
   const departments = useMemo(() => {
     return allDepartments.map(d => d.name).sort();
@@ -347,7 +459,7 @@ function HRDashboard() {
   // Default is 'ALL' (explicit) so we don't auto-select the first department
 
   // Load department-specific summary when department changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (!user) return;
 
     async function loadDepartmentSummary() {
@@ -416,18 +528,6 @@ function HRDashboard() {
     fetchFiltered();
     return () => { cancelled = true; };
   }, [user, selectedDepartment, activeModule]);
-
-  // Utility to reload IDPs (used after actions)
-  async function reloadIDPs() {
-    if (!user) return;
-    try {
-      const qs = (selectedDepartment && selectedDepartment !== 'ALL') ? `?department=${encodeURIComponent(selectedDepartment)}` : '';
-      const data = await apiRequest(`/api/idp/hr/incoming${qs}`, { method: 'GET' });
-      setAllIncomingIDP(data || []);
-    } catch (err) {
-      console.error('Failed to reload IDPs', err);
-    }
-  }
 
   const sectionCounts = useMemo(() => {
     const counts = { ALL: 0 };
@@ -641,6 +741,17 @@ function HRDashboard() {
           </div>
 
           <div className="flex items-center gap-4">
+            <button
+              onClick={openExportModal}
+              className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white
+                         text-sm hover:bg-blue-700 transition"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Export CSV
+            </button>
+            
             <div className="text-right">
               <p className="text-sm font-semibold text-gray-800">{user.name}</p>
               <p className="text-xs text-gray-500">{user.role}</p>
@@ -875,7 +986,10 @@ function HRDashboard() {
               {['ALL', 'CL', 'IDP'].map(filter => (
                 <button
                   key={filter}
-                  onClick={() => setRecentActionFilter(filter)}
+                  onClick={() => {
+                    setRecentActionFilter(filter);
+                    setRecentActionsPagination(prev => ({ ...prev, currentPage: 1 }));
+                  }}
                   className={`px-3 py-1 text-xs rounded-full font-semibold transition ${
                     recentActionFilter === filter
                       ? 'bg-gray-700 text-white'
@@ -892,44 +1006,77 @@ function HRDashboard() {
             {filteredRecentActions.length === 0 ? (
               <p className="text-xs text-gray-400 italic px-2">No recent actions.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="px-2 py-1 text-left font-semibold text-gray-600">Action</th>
-                      <th className="px-2 py-1 text-left font-semibold text-gray-600">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRecentActions.slice(0, 10).map((a, idx) => (
-                      <tr
-                        key={`${a.id}-${idx}`}
-                        onClick={() => handleRecentActionClick(a)}
-                        className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
-                      >
-                        <td className="px-2 py-2">
-                          <div className="flex items-center gap-1">
-                            <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
-                            {a.module && (
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap ${
-                                a.module === 'CL' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-                              }`}>
-                                {a.module}
-                              </span>
-                            )}
-                          </div>
-                          {a.description && (
-                            <p className="text-gray-600 truncate text-[11px]">{a.description}</p>
-                          )}
-                        </td>
-                        <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
-                          {a.created_at ? new Date(a.created_at).toLocaleDateString() : '-'}
-                        </td>
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-2 py-1 text-left font-semibold text-gray-600">Action</th>
+                        <th className="px-2 py-1 text-left font-semibold text-gray-600">Date</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {paginatedRecentActions.map((a, idx) => (
+                        <tr
+                          key={`${a.id}-${idx}`}
+                          onClick={() => handleRecentActionClick(a)}
+                          className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <td className="px-2 py-2">
+                            <div className="flex items-center gap-1">
+                              <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
+                              {a.module && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap ${
+                                  a.module === 'CL' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                                }`}>
+                                  {a.module}
+                                </span>
+                              )}
+                            </div>
+                            {a.description && (
+                              <p className="text-gray-600 truncate text-[11px]">{a.description}</p>
+                            )}
+                          </td>
+                          <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
+                            {a.created_at ? new Date(a.created_at).toLocaleDateString() : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Pagination Controls */}
+                {totalRecentActionPages > 1 && (
+                  <div className="flex items-center justify-between px-2 py-2 mt-2 border-t border-gray-100">
+                    <button
+                      onClick={() => setRecentActionsPagination(prev => ({
+                        ...prev,
+                        currentPage: Math.max(1, prev.currentPage - 1)
+                      }))}
+                      disabled={recentActionsPagination.currentPage === 1}
+                      className="px-2 py-1 text-[10px] rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    
+                    <span className="text-[10px] text-gray-500">
+                      {recentActionsPagination.currentPage} of {totalRecentActionPages}
+                    </span>
+                    
+                    <button
+                      onClick={() => setRecentActionsPagination(prev => ({
+                        ...prev,
+                        currentPage: Math.min(totalRecentActionPages, prev.currentPage + 1)
+                      }))}
+                      disabled={recentActionsPagination.currentPage === totalRecentActionPages}
+                      className="px-2 py-1 text-[10px] rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -956,6 +1103,132 @@ function HRDashboard() {
         onMarkAllRead={handleMarkAllAsRead}
         onClose={() => setShowFullNotifications(false)}
       />
+
+      {/* Export Modal */}
+      {exportModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div
+            className="absolute inset-0"
+            onClick={closeExportModal}
+          />
+
+          <div className="relative z-50 bg-white rounded-lg shadow-xl border border-gray-300 max-w-md w-full">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800">Export Data</h3>
+              <button
+                onClick={closeExportModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Module</label>
+                <select
+                  value={exportModal.module}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, module: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="CL">Competency Leveling (CL)</option>
+                  <option value="IDP">Individual Development Plan (IDP)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+                <input
+                  type="text"
+                  value={selectedDepartment === 'ALL' ? 'All Departments' : selectedDepartment}
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600"
+                />
+                <p className="text-xs text-gray-500 mt-1">Export will use currently selected department filter</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                  <input
+                    type="date"
+                    value={exportModal.startDate}
+                    onChange={(e) => setExportModal(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                  <input
+                    type="date"
+                    value={exportModal.endDate}
+                    onChange={(e) => setExportModal(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Status Filter</label>
+                <select
+                  value={exportModal.selectedStatus}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, selectedStatus: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="ALL">All Statuses</option>
+                  {exportModal.module === 'CL' ? (
+                    CL_STATUS_SECTIONS.map(section => (
+                      <option key={section.key} value={section.key}>{section.label}</option>
+                    ))
+                  ) : (
+                    IDP_STATUS_SECTIONS.map(section => (
+                      <option key={section.key} value={section.key}>{section.label}</option>
+                    ))
+                  )}
+                </select>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
+              <button
+                onClick={closeExportModal}
+                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                disabled={exportModal.loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExportCSV}
+                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                disabled={exportModal.loading}
+              >
+                {exportModal.loading ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Export CSV
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CL Details Modal */}
       {clDetailsModal.open && (
@@ -1178,6 +1451,7 @@ function CLTable({ data, onCLClick }) {
             <Th>Position</Th>
             <Th>Supervisor</Th>
             <Th>Status</Th>
+            <Th>Score</Th>
             <Th>Submitted At</Th>
             <Th>Actions</Th>
           </tr>
@@ -1199,6 +1473,7 @@ function CLTable({ data, onCLClick }) {
                       : 'Draft - Not Submitted')
                   : displayStatus(item.status)}
               </Td>
+              <Td>{item.total_score != null ? item.total_score : '-'}</Td>
               <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
 
               <Td>
@@ -1347,8 +1622,8 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
 function FullRecentActionsModal({ open, recentActions, onActionClick, onClose }) {
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [searchTerm, setSearchTerm] = useState('');
-
-  if (!open) return null;
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Filter actions by date range and search term
   const filteredActions = recentActions.filter(a => {
@@ -1376,6 +1651,23 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
     
     return true;
   });
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredActions.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedActions = filteredActions.slice(startIndex, endIndex);
+
+  const filterKey = `${dateFilter.startDate}-${dateFilter.endDate}-${searchTerm}`;
+  const [lastFilterKey, setLastFilterKey] = useState(filterKey);
+  
+  // Reset page when filters change
+  if (lastFilterKey !== filterKey) {
+    setLastFilterKey(filterKey);
+    setCurrentPage(1);
+  }
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -1443,37 +1735,96 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
           {filteredActions.length === 0 ? (
             <p className="text-center text-gray-400 py-8">No recent actions found.</p>
           ) : (
-            <div className="bg-white shadow rounded overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Action</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Description</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredActions.map((a, idx) => (
-                    <tr
-                      key={`${a.id}-${idx}`}
-                      onClick={() => {
-                        onActionClick(a);
-                        if (!a.title || !a.title.toLowerCase().includes('deleted')) {
-                          onClose();
-                        
-                        }
-                      }}
-                      className="hover:bg-gray-50 cursor-pointer"
-                    >
-                      <td className="px-4 py-3 text-gray-800 font-medium">{a.title || 'Action'}</td>
-                      <td className="px-4 py-3 text-gray-600">{a.description || '-'}</td>
-                      <td className="px-4 py-3 text-gray-500">
-                        {a.created_at ? new Date(a.created_at).toLocaleString() : '-'}
-                      </td>
+            <div className="space-y-4">
+              <div className="bg-white shadow rounded overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Action</th>
+                      <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Description</th>
+                      <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Date</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {paginatedActions.map((a, idx) => (
+                      <tr
+                        key={`${a.id}-${idx}`}
+                        onClick={() => {
+                          onActionClick(a);
+                          if (!a.title || !a.title.toLowerCase().includes('deleted')) {
+                            onClose();
+                          }
+                        }}
+                        className="hover:bg-gray-50 cursor-pointer"
+                      >
+                        <td className="px-4 py-3 text-gray-800 font-medium">{a.title || 'Action'}</td>
+                        <td className="px-4 py-3 text-gray-600">{a.description || '-'}</td>
+                        <td className="px-4 py-3 text-gray-500">
+                          {a.created_at ? new Date(a.created_at).toLocaleString() : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">
+                      Showing {startIndex + 1}-{Math.min(endIndex, filteredActions.length)} of {filteredActions.length} actions
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-2 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                        
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className={`px-3 py-2 text-sm rounded ${
+                              currentPage === pageNum
+                                ? 'bg-blue-500 text-white'
+                                : 'border border-gray-300 bg-white hover:bg-gray-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-2 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

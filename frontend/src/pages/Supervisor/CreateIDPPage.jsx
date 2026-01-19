@@ -914,20 +914,6 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       return;
     }
 
-    // Validate: Education activities MUST have justification PDF (separate requirement)
-    const missingEducationJustification = [];
-    (idpData.items || []).forEach((it, idx) => {
-      const act = (it.developmentActivities || [])[0] || {};
-      if (act && act.type === 'Education' && !act.educationJustificationPdf) {
-        missingEducationJustification.push({ itemIndex: idx, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
-      }
-    });
-    if (missingEducationJustification.length) {
-      setValidationError('Education activities require both a completion proof PDF and a justification PDF. Please upload the missing justification PDFs before submitting.');
-      setShowValidationErrorModal(true);
-      return;
-    }
-
     // All validations passed, show confirmation modal
     setShowSubmitConfirmation(true);
   };
@@ -2050,8 +2036,80 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                               <p className="text-base text-gray-800"><strong className="text-gray-900">Type:</strong> {activity.type}</p>
                             </div>
 
-                            {/* Show PDF if available */}
-                            {activity.pdfPath && (
+                            {activity.type === 'Education' && (
+                              <div className="bg-white rounded-xl border border-gray-100 p-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-bold text-gray-800 mb-2">Development Activity</label>
+                                    <p className="bg-gray-50 rounded-lg px-4 py-3 text-base text-gray-800">{activity.activity || '—'}</p>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-bold text-gray-800 mb-2">Target Completion Date</label>
+                                    <p className="bg-gray-50 rounded-lg px-4 py-3 text-base text-gray-800">{activity.targetCompletionDate || '—'}</p>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-bold text-gray-800 mb-2">Actual Completion Date</label>
+                                    <p className="bg-gray-50 rounded-lg px-4 py-3 text-base text-gray-800">{activity.actualCompletionDate || '—'}</p>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-bold text-gray-800 mb-2">Completion Status</label>
+                                    <p className="bg-gray-50 rounded-lg px-4 py-3 text-base text-gray-800">{activity.completionStatus || '—'}</p>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-bold text-gray-800 mb-2">Score</label>
+                                    <p className="bg-gray-50 rounded-lg px-4 py-3 text-base text-gray-800">{activity.score || '—'}</p>
+                                  </div>
+
+                                  {activity.pdfPath && (
+                                    <div>
+                                      <label className="block text-sm font-bold text-gray-800 mb-2">Proof of Completion</label>
+                                      <a
+                                        href={`${apiBase}/${activity.pdfPath}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 font-semibold text-sm"
+                                      >
+                                        📄 View PDF
+                                      </a>
+                                    </div>
+                                  )}
+
+                                  <div className="lg:col-span-5 mt-4">
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full border-collapse text-sm">
+                                        <thead>
+                                          <tr className="bg-gray-100 border border-gray-200">
+                                            <th className="border border-gray-200 px-3 py-2 text-left font-bold text-gray-800 text-sm">Expected Results</th>
+                                            <th className="border border-gray-200 px-3 py-2 text-left font-bold text-gray-800 text-sm">Knowledge Sharing Method</th>
+                                            <th className="border border-gray-200 px-3 py-2 text-left font-bold text-gray-800 text-sm">Application Method</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          <tr className="border border-gray-200">
+                                            <td className="border border-gray-200 px-3 py-2">
+                                              <p className="text-gray-800 whitespace-pre-wrap">{activity.expectedResults || '—'}</p>
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2">
+                                              <p className="text-gray-800 whitespace-pre-wrap">{activity.sharingMethod || '—'}</p>
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2">
+                                              <p className="text-gray-800 whitespace-pre-wrap">{activity.applicationMethod || '—'}</p>
+                                            </td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Show PDF if available for other types */}
+                            {activity.type !== 'Education' && activity.pdfPath && (
                               <div className="bg-white rounded-lg p-5 border border-gray-100">
                                 <div className="text-sm font-bold text-gray-700 mb-3">Proof of Completion</div>
                                 <a
@@ -2639,7 +2697,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                   <tr className="bg-gray-200">
                                                     <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Area</th>
                                                     <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Status</th>
-                                                    <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Date & Time</th>
+                                                    <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Date & Time of Completion</th>
                                                     <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Duration</th>
                                                     <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Trainer Name</th>
                                                     <th className="border border-gray-300 px-3 py-2 text-left font-bold text-gray-800">Comments</th>

@@ -4,8 +4,8 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import Modal from '../../components/Modal';
 import { displayStatus } from '../../utils/statusHelper';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
 
 function HRReviewCLPage() {
   const { id } = useParams();
@@ -219,7 +219,7 @@ function HRReviewCLPage() {
     if (header.updated_at) infoLines.push(`Updated: ${formatDate(header.updated_at)} ${formatTime(header.updated_at)}`);
     infoLines.forEach((line, idx) => doc.text(line, 40, 60 + idx * 14));
 
-    autoTable(doc, {
+    doc.autoTable({
       startY: 60 + infoLines.length * 14 + 10,
       head: [[
         'Competency','MPLR/Required','Assigned','Weight %','Score','Justification','PDF'
@@ -244,7 +244,7 @@ function HRReviewCLPage() {
     doc.setFontSize(12);
     doc.text('Process History', 40, y);
     y += 6;
-    autoTable(doc, {
+    doc.autoTable({
       startY: y + 10,
       head: [['Date','Time','Actor','Role','Action','Remarks']],
       body: (auditTrail || []).map(event => [
@@ -266,7 +266,7 @@ function HRReviewCLPage() {
     doc.setFontSize(12);
     doc.text('Remarks', 40, y);
     y += 6;
-    autoTable(doc, {
+    doc.autoTable({
       startY: y + 10,
       head: [['Type','Text']],
       body: [
