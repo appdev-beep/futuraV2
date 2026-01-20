@@ -89,6 +89,7 @@ async function getById(id) {
 
     employee_name: header.employee_name,
     employee_id: header.employee_id,
+    employee_email: header.employee_email,
     supervisor_name: header.supervisor_name,
     department_name: header.department_name,
     position_title: header.position_title,
@@ -355,24 +356,34 @@ async function submit(id, supervisorRemarks = null) {
     module: 'CL'
   }).catch(err => console.error('Failed to create notification:', err));
 
-  // 9) Create notification for the next approver (Manager or AM)
-  const hasAM = !!clHeader.has_am;
-  const approverRole = hasAM ? 'AM' : 'Manager';
+  // 9) Create notification for the next approver (Manager, AM, or HR)
+  let approverRole, approverQuery;
   
-  // Find the approver in the department
-  const [approverRows] = await db.query(
-    `SELECT id, name FROM users 
-     WHERE department_id = ? AND role = ? 
-     LIMIT 1`,
-    [clHeader.department_id, approverRole]
-  );
+  if (nextStatus === 'PENDING_HR') {
+    // For HR approval, find HR users
+    approverRole = 'HR';
+    approverQuery = `SELECT id, name FROM users WHERE role = 'HR' LIMIT 1`;
+  } else {
+    // For Manager or AM approval
+    const hasAM = !!clHeader.has_am;
+    approverRole = hasAM ? 'AM' : 'Manager';
+    approverQuery = `SELECT id, name FROM users 
+                     WHERE department_id = ? AND role = ? 
+                     LIMIT 1`;
+  }
+  
+  // Find the approver
+  const approverParams = nextStatus === 'PENDING_HR' ? [] : [clHeader.department_id, approverRole];
+  const [approverRows] = await db.query(approverQuery, approverParams);
 
   if (approverRows.length > 0) {
     const approver = approverRows[0];
+    const remarksText = supervisorRemarks ? ` Remarks: ${supervisorRemarks}` : '';
     await createNotification({
       recipient_id: approver.id,
-      message: `CL #${id} for ${employeeName} ${isResubmission ? 'resubmitted' : 'submitted'} by ${supervisorName} is awaiting your approval`,
-      module: 'CL'
+      message: `CL #${id} for ${employeeName} ${isResubmission ? 'resubmitted' : 'submitted'} by ${supervisorName} is awaiting your approval.${remarksText}`,
+      module: 'CL',
+      url: `/hr#CL`
     }).catch(err => console.error('Failed to create notification for approver:', err));
   }
 
@@ -685,15 +696,18 @@ async function getManagerPending(managerId) {
       d.name        AS department_name,
       p.title       AS position_title,
       ch.status,
-      ch.created_at AS submitted_at
+      ch.created_at AS submitted_at,
+      ROUND(AVG(ci.score), 2) as competency_score
     FROM cl_headers ch
       JOIN users e       ON ch.employee_id  = e.id
       JOIN users m       ON e.department_id = m.department_id
       JOIN departments d ON e.department_id = d.id
       JOIN positions   p ON e.position_id   = p.id
+      LEFT JOIN cl_items ci ON ch.id = ci.cl_header_id
     WHERE
       m.id = ?
       AND ch.status IN ('PENDING_MANAGER', 'MANAGER_REVIEW')
+    GROUP BY ch.id, ch.employee_id, ch.supervisor_id, e.name, e.employee_id, d.name, p.title, ch.status, ch.created_at
     ORDER BY ch.created_at DESC
     `,
     [managerId]
@@ -847,7 +861,7 @@ async function managerReturn(id, approverId, remarks) {
       [id, approverId, remarks]
     );
 
-    // Move CL back to supervisor and save remarks
+    // Move CL back to supervisor and save remarks with DRAFT status
     await conn.query(
       `UPDATE cl_headers 
        SET status = 'DRAFT',
@@ -964,9 +978,9 @@ async function getEmployeePending(employeeId) {
 async function getAMSummary(amId) {
   const [rows] = await db.query(
     `SELECT
-       SUM(ch.status IN ('PENDING_AM','PENDING_MANAGER')) as clPending,
+       SUM(ch.status = 'PENDING_AM') as clPending,
        SUM(ch.status = 'APPROVED') as clApproved,
-       SUM(ch.status = 'REJECTED') as clReturned
+       SUM(ch.status = 'DRAFT') as clReturned
      FROM cl_headers ch
      JOIN departments d ON ch.department_id = d.id
      WHERE d.has_am = 1`,
@@ -988,15 +1002,21 @@ async function getAMPending(amId) {
          ch.employee_id,
          u.name as employee_name,
          u.employee_id as emp_code,
+         u.employee_id as employee_code,
          s.name as supervisor_name,
          d.name as department_name,
+         p.title as position_title,
          ch.status,
-         ch.created_at
+         ch.created_at as submitted_at,
+         ROUND(AVG(ci.score), 2) as competency_score
        FROM cl_headers ch
        JOIN users u ON ch.employee_id = u.id
        JOIN users s ON ch.supervisor_id = s.id
        JOIN departments d ON ch.department_id = d.id
-       WHERE ch.status IN ('PENDING_AM','PENDING_MANAGER') AND d.has_am = 1
+       JOIN positions p ON u.position_id = p.id
+       LEFT JOIN cl_items ci ON ch.id = ci.cl_header_id
+       WHERE ch.status = 'PENDING_AM'
+       GROUP BY ch.id, ch.employee_id, u.name, u.employee_id, s.name, d.name, p.title, ch.status, ch.created_at
        ORDER BY ch.created_at DESC`,
       []
     );
@@ -1139,6 +1159,13 @@ async function amReturn(id, approverId, remarks) {
       [approverId, id]
     );
 
+    // Insert audit log
+    await conn.query(
+      `INSERT INTO cl_manager_logs (cl_id, manager_id, action, remarks)
+       VALUES (?, ?, 'RETURNED', ?)`,
+      [id, approverId, remarks]
+    );
+
     // Update CL status back to DRAFT and mark where it should go on resubmit
     await conn.query(
       `UPDATE cl_headers 
@@ -1163,6 +1190,36 @@ async function amReturn(id, approverId, remarks) {
         remarks: remarks,
         requiresEmployeeAction: false
       }).catch(err => console.error('Failed to send email:', err));
+    }
+
+    // Notify supervisor
+    const [supRows] = await conn.query(
+      `SELECT supervisor_id FROM cl_headers WHERE id = ?`,
+      [id]
+    );
+    if (supRows.length > 0 && supRows[0].supervisor_id && clRows.length > 0) {
+      const { am_name } = clRows[0];
+      await createNotification({
+        recipient_id: supRows[0].supervisor_id,
+        message: `CL #${id} was returned by Assistant Manager ${am_name || 'Assistant Manager'}. Reason: ${remarks || 'No reason provided'}`,
+        module: 'CL',
+        url: `/supervisor#CL`
+      }).catch(err => console.error('Failed to create notification:', err));
+    }
+
+    // Log recent action
+    if (clRows.length > 0) {
+      const { employee_id, employee_name, am_name } = clRows[0];
+      await logRecentAction({
+        actor_id: approverId,
+        module: 'CL',
+        action_type: 'CL_RETURNED',
+        cl_id: id,
+        employee_id: employee_id,
+        title: `Returned form for ${employee_name}`,
+        description: `CL #${id}`,
+        url: `/cl/supervisor/review/${id}`
+      }).catch(err => console.error('Failed to log recent action:', err));
     }
 
     return { success: true, message: 'AM returned CL to Supervisor' };
@@ -1632,7 +1689,9 @@ async function getManagerAllCL(managerId) {
       -- Get only the LATEST log entry for this manager
       ml.action AS manager_decision,
       ml.remarks AS manager_remarks,
-      ml.created_at AS manager_decided_at
+      ml.created_at AS manager_decided_at,
+      u_mgr.name AS returned_by_name,
+      u_mgr.role AS returned_by_role
 
     FROM cl_headers ch
     JOIN users e ON ch.employee_id = e.id
@@ -1646,6 +1705,7 @@ async function getManagerAllCL(managerId) {
         SELECT MAX(id) FROM cl_manager_logs 
         WHERE cl_id = ch.id AND manager_id = ?
       )
+    LEFT JOIN users u_mgr ON u_mgr.id = ml.manager_id
 
     WHERE m.id = ?
       AND ml.id IS NOT NULL
@@ -1776,7 +1836,7 @@ async function getCLAuditTrail(clId) {
       CONCAT('MANAGER_', ml.action) as action_type,
       ml.manager_id as actor_id,
       u.name as actor_name,
-      'Manager' as actor_role,
+      u.role as actor_role,
       ml.remarks,
       ml.created_at as timestamp
     FROM cl_manager_logs ml
@@ -1789,7 +1849,7 @@ async function getCLAuditTrail(clId) {
       CONCAT('EMPLOYEE_', el.action) as action_type,
       el.employee_id as actor_id,
       u.name as actor_name,
-      'Employee' as actor_role,
+      u.role as actor_role,
       el.remarks,
       el.created_at as timestamp
     FROM cl_employee_logs el
@@ -1802,7 +1862,7 @@ async function getCLAuditTrail(clId) {
       CONCAT('HR_', hl.action) as action_type,
       hl.hr_id as actor_id,
       u.name as actor_name,
-      'HR' as actor_role,
+      u.role as actor_role,
       hl.remarks,
       hl.created_at as timestamp
     FROM cl_hr_logs hl
@@ -1859,6 +1919,242 @@ async function getManagerDepartmentCL(managerId) {
   }
 }
 
+// =====================
+// CSV EXPORT
+// =====================
+async function exportCL({ startDate, endDate, department, status }) {
+  console.log('CL Export params:', { startDate, endDate, department, status });
+  
+  let sql = `
+    SELECT 
+      ch.id as cl_id,
+      ch.status,
+      ch.created_at,
+      ch.updated_at,
+      e.employee_id,
+      e.name as employee_name,
+      e.email as employee_email,
+      d.name as department_name,
+      p.title as position_title,
+      s.name as supervisor_name,
+      m.name as manager_name,
+      hr.name as hr_name,
+      ch.supervisor_remarks,
+      ch.manager_remarks,
+      ch.hr_remarks,
+      ci.competency_id,
+      c.name as competency_name,
+      ci.mplr_level,
+      ci.assigned_level,
+      ci.weight,
+      ci.score,
+      ci.justification,
+      ROUND(
+        (SELECT AVG(score) FROM cl_items WHERE cl_header_id = ch.id), 2
+      ) as total_score
+    FROM cl_headers ch
+    JOIN users e ON ch.employee_id = e.id
+    LEFT JOIN users s ON ch.supervisor_id = s.id  
+    LEFT JOIN users m ON ch.manager_id = m.id
+    LEFT JOIN users hr ON ch.hr_id = hr.id
+    JOIN departments d ON ch.department_id = d.id
+    JOIN positions p ON e.position_id = p.id
+    LEFT JOIN cl_items ci ON ch.id = ci.cl_header_id
+    LEFT JOIN competencies c ON ci.competency_id = c.id
+    WHERE 1=1
+  `;
+  
+  const params = [];
+  
+  // Only add date filter if dates are provided
+  if (startDate && endDate) {
+    sql += ' AND DATE(ch.created_at) >= DATE(?) AND DATE(ch.created_at) <= DATE(?)';
+    params.push(startDate, endDate);
+  }
+  
+  if (department && department !== 'ALL') {
+    sql += ' AND d.name = ?';
+    params.push(department);
+  }
+  
+  if (status && status !== 'ALL') {
+    sql += ' AND ch.status = ?';
+    params.push(status);
+  }
+  
+  sql += ' ORDER BY ch.created_at DESC, ch.id, ci.id';
+  
+  console.log('CL Export SQL:', sql);
+  console.log('CL Export params:', params);
+  
+  const [rows] = await db.query(sql, params);
+  
+  console.log(`CL Export found ${rows.length} rows`);
+  
+  // If no data found, return CSV with headers and a note
+  if (rows.length === 0) {
+    const headers = [
+      'Section',
+      'CL ID',
+      'Status', 
+      'Employee ID',
+      'Employee Name',
+      'Department',
+      'Position',
+      'Supervisor',
+      'Manager',
+      'Competency Name',
+      'MPLR Level',
+      'Assigned Level',
+      'Weight (%)',
+      'Score',
+      'Total Score',
+      'Justification',
+      'Remarks',
+      'Created Date'
+    ];
+    
+    let csv = headers.join(',') + '\n';
+    csv += `"No CL records found for the specified criteria",${','.repeat(headers.length - 1)}\n`;
+    return csv;
+  }
+  
+  // Convert to organized CSV structure
+  const clMap = new Map();
+  
+  // Group rows by CL ID
+  for (const row of rows) {
+    if (!clMap.has(row.cl_id)) {
+      clMap.set(row.cl_id, {
+        header: {
+          cl_id: row.cl_id,
+          status: row.status,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          employee_id: row.employee_id,
+          employee_name: row.employee_name,
+          employee_email: row.employee_email,
+          department_name: row.department_name,
+          position_title: row.position_title,
+          supervisor_name: row.supervisor_name,
+          manager_name: row.manager_name,
+          hr_name: row.hr_name,
+          supervisor_remarks: row.supervisor_remarks,
+          manager_remarks: row.manager_remarks,
+          hr_remarks: row.hr_remarks,
+          total_score: row.total_score
+        },
+        competencies: []
+      });
+    }
+    
+    if (row.competency_id) {
+      clMap.get(row.cl_id).competencies.push({
+        competency_id: row.competency_id,
+        competency_name: row.competency_name,
+        mplr_level: row.mplr_level,
+        assigned_level: row.assigned_level,
+        weight: row.weight,
+        score: row.score,
+        justification: row.justification
+      });
+    }
+  }
+
+  // Generate table-structured CSV
+  const csvRows = [];
+  
+  const headers = [
+    'Section',
+    'CL ID',
+    'Status', 
+    'Employee ID',
+    'Employee Name',
+    'Department',
+    'Position',
+    'Supervisor',
+    'Manager',
+    'Competency Name',
+    'MPLR Level',
+    'Assigned Level',
+    'Weight (%)',
+    'Score',
+    'Total Score',
+    'Justification',
+    'Remarks',
+    'Created Date'
+  ];
+  
+  csvRows.push(headers);
+  
+  for (const [clId, clData] of clMap.entries()) {
+    const header = clData.header;
+    
+    // CL SUMMARY row
+    csvRows.push([
+      'CL SUMMARY',
+      header.cl_id,
+      header.status,
+      header.employee_id,
+      header.employee_name,
+      header.department_name,
+      header.position_title,
+      header.supervisor_name,
+      header.manager_name,
+      `${clData.competencies.length} Competencies`,
+      '',
+      '',
+      '',
+      '',
+      header.total_score,
+      '',
+      [header.supervisor_remarks, header.manager_remarks, header.hr_remarks].filter(Boolean).join(' | '),
+      header.created_at ? new Date(header.created_at).toISOString().split('T')[0] : ''
+    ]);
+
+    // COMPETENCY rows
+    for (let i = 0; i < clData.competencies.length; i++) {
+      const comp = clData.competencies[i];
+      
+      csvRows.push([
+        `COMPETENCY ${i + 1}`,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        comp.competency_name,
+        comp.mplr_level,
+        comp.assigned_level,
+        comp.weight,
+        comp.score,
+        '',
+        comp.justification,
+        '',
+        ''
+      ]);
+    }
+
+    // Empty separator row between CLs
+    csvRows.push(Array(headers.length).fill(''));
+  }
+  
+  // Convert to CSV string with proper escaping
+  return csvRows.map(row => 
+    row.map(field => {
+      const value = String(field || '');
+      // Escape quotes and wrap in quotes if contains commas, quotes, or newlines
+      if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    }).join(',')
+  ).join('\n');
+}
+
 module.exports = {
   getById,
   create,
@@ -1890,5 +2186,6 @@ module.exports = {
   employeeReturn,
   hrApprove,
   hrReturn,
-  getCLAuditTrail
+  getCLAuditTrail,
+  exportCL
 };

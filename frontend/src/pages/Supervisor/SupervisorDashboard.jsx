@@ -255,8 +255,17 @@ function SupervisorDashboard() {
   }, [user, recentFilter]);
 
   function logout() {
-    localStorage.clear();
-    window.location.href = '/login';
+    openModal({
+      title: 'Confirm Logout',
+      message: 'Are you sure you want to logout? Any unsaved changes will be lost.',
+      showCancel: true,
+      confirmText: 'Logout',
+      cancelText: 'Cancel',
+      onConfirm: () => {
+        localStorage.clear();
+        window.location.href = '/login';
+      },
+    });
   }
 
   function goTo(url) {

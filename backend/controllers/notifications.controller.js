@@ -31,9 +31,15 @@ async function getMyNotifications(req, res, next) {
       const clIdMatch = n.message?.match(/CL #(\d+)/);
       const clId = clIdMatch ? clIdMatch[1] : null;
       
-      // Determine URL based on user role and CL ID
+      // Extract IDP ID from message (format: "IDP #123 for...")
+      const idpIdMatch = n.message?.match(/IDP #(\d+)/);
+      const idpId = idpIdMatch ? idpIdMatch[1] : null;
+      
+      // Determine URL based on user role and notification type
       let url = '/';
+      
       if (clId) {
+        // CL notification URLs
         switch(userRole) {
           case 'Supervisor':
             url = `/cl/supervisor/review/${clId}`;
@@ -54,8 +60,30 @@ async function getMyNotifications(req, res, next) {
           default:
             url = `/${userRole.toLowerCase()}`;
         }
+      } else if (idpId) {
+        // IDP notification URLs
+        switch(userRole) {
+          case 'Supervisor':
+            url = `/idp/supervisor/review/${idpId}`;
+            break;
+          case 'Manager':
+            url = `/idp/manager/review/${idpId}`;
+            break;
+          case 'Employee':
+            url = `/idp/employee/review/${idpId}`;
+            break;
+          case 'AM':
+            url = `/idp/am/review/${idpId}`;
+            break;
+          case 'HR':
+          case 'Admin':
+            url = `/idp/hr/review/${idpId}`;
+            break;
+          default:
+            url = `/${userRole.toLowerCase()}`;
+        }
       } else {
-        // Fallback to dashboard if no CL ID found
+        // Fallback to dashboard if no ID found
         switch(userRole) {
           case 'Supervisor':
             url = '/supervisor';
@@ -126,4 +154,22 @@ async function markAsRead(req, res, next) {
   }
 }
 
-module.exports = { getMyNotifications, markAsRead };
+// PATCH /api/notifications/mark-all-read
+async function markAllAsRead(req, res, next) {
+  try {
+    const userId = req.user.id;
+
+    await db.query(
+      `UPDATE notifications
+       SET status = 'Read', read_at = NOW()
+       WHERE recipient_id = ? AND status = 'Unread'`,
+      [userId]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getMyNotifications, markAsRead, markAllAsRead };

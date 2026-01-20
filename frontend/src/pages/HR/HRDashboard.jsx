@@ -90,6 +90,16 @@ function HRDashboard() {
     currentPage: 1,
     itemsPerPage: 10
   });
+  const [modalState, setModalState] = useState({
+    open: false,
+    title: '',
+    message: '',
+    showCancel: false,
+    confirmText: 'OK',
+    cancelText: 'Cancel',
+    onConfirm: null,
+  });
+
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
     notification: null,
@@ -201,9 +211,45 @@ function HRDashboard() {
     window.location.href = url;
   }
 
+  function openModal(options) {
+    setModalState({
+      open: true,
+      title: options.title || '',
+      message: options.message || '',
+      showCancel: options.showCancel || false,
+      confirmText: options.confirmText || (options.showCancel ? 'Confirm' : 'OK'),
+      cancelText: options.cancelText || 'Cancel',
+      onConfirm: options.onConfirm || null,
+    });
+  }
+
+  function closeModal() {
+    setModalState((prev) => ({
+      ...prev,
+      open: false,
+      onConfirm: null,
+      showCancel: false,
+    }));
+  }
+
+  async function handleModalConfirm() {
+    const fn = modalState.onConfirm;
+    closeModal();
+    if (fn) await fn();
+  }
+
   function logout() {
-    localStorage.clear();
-    window.location.href = '/login';
+    openModal({
+      title: 'Confirm Logout',
+      message: 'Are you sure you want to logout? Any unsaved changes will be lost.',
+      showCancel: true,
+      confirmText: 'Logout',
+      cancelText: 'Cancel',
+      onConfirm: () => {
+        localStorage.clear();
+        window.location.href = '/login';
+      },
+    });
   }
 
   async function handleNotificationClick(n) {
@@ -1082,6 +1128,17 @@ function HRDashboard() {
         </div>
       </aside>
 
+      <Modal
+        open={modalState.open}
+        title={modalState.title}
+        message={modalState.message}
+        showCancel={modalState.showCancel}
+        confirmText={modalState.confirmText}
+        cancelText={modalState.cancelText}
+        onConfirm={handleModalConfirm}
+        onClose={closeModal}
+      />
+
       <NotificationModal
         open={notificationModalState.open}
         notification={notificationModalState.notification}
@@ -1555,6 +1612,50 @@ function Th({ children }) {
 
 function Td({ children }) {
   return <td className="px-4 py-2 text-gray-700">{children}</td>;
+}
+
+function Modal({
+  open,
+  title,
+  message,
+  showCancel,
+  confirmText = 'OK',
+  cancelText = 'Cancel',
+  onConfirm,
+  onClose,
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+        </div>
+        <div className="px-6 py-4">
+          <p className="text-sm text-gray-700 whitespace-pre-line">{message}</p>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+          {showCancel && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+            >
+              {cancelText}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function NotificationModal({ open, notification, onProceed, onClose }) {

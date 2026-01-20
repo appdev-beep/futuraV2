@@ -173,6 +173,13 @@ router.put(
   idpController.hrApproveCycleIDP
 );
 
+// GET /api/idp/hr/export (CSV export)
+router.get(
+  '/hr/export',
+  requireRole('HR', 'Admin'),
+  idpController.exportIDP
+);
+
 // PUT /api/idp/:id/hr/return (HR returns IDP to supervisor for completion)
 router.put(
   '/:id/hr/return',

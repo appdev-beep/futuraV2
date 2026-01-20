@@ -30,6 +30,16 @@ function EmployeeDashboard() {
   const [notifications, setNotifications] = useState([]);
   const [recentActions, setRecentActions] = useState([]);
   
+  const [modalState, setModalState] = useState({
+    open: false,
+    title: '',
+    message: '',
+    showCancel: false,
+    confirmText: 'OK',
+    cancelText: 'Cancel',
+    onConfirm: null,
+  });
+
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
     notification: null,
@@ -249,9 +259,45 @@ function EmployeeDashboard() {
     loadCompetencies();
   }, [user, pendingCL, clHistory]);
 
+  function openModal(options) {
+    setModalState({
+      open: true,
+      title: options.title || '',
+      message: options.message || '',
+      showCancel: options.showCancel || false,
+      confirmText: options.confirmText || (options.showCancel ? 'Confirm' : 'OK'),
+      cancelText: options.cancelText || 'Cancel',
+      onConfirm: options.onConfirm || null,
+    });
+  }
+
+  function closeModal() {
+    setModalState((prev) => ({
+      ...prev,
+      open: false,
+      onConfirm: null,
+      showCancel: false,
+    }));
+  }
+
+  async function handleModalConfirm() {
+    const fn = modalState.onConfirm;
+    closeModal();
+    if (fn) await fn();
+  }
+
   function logout() {
-    localStorage.clear();
-    window.location.href = '/login';
+    openModal({
+      title: 'Confirm Logout',
+      message: 'Are you sure you want to logout? Any unsaved changes will be lost.',
+      showCancel: true,
+      confirmText: 'Logout',
+      cancelText: 'Cancel',
+      onConfirm: () => {
+        localStorage.clear();
+        window.location.href = '/login';
+      },
+    });
   }
 
   const filteredNotifications = useMemo(() => {
@@ -1288,6 +1334,17 @@ function EmployeeDashboard() {
           </div>
         </div>
       </aside>
+
+      <Modal
+        open={modalState.open}
+        title={modalState.title}
+        message={modalState.message}
+        showCancel={modalState.showCancel}
+        confirmText={modalState.confirmText}
+        cancelText={modalState.cancelText}
+        onConfirm={handleModalConfirm}
+        onClose={closeModal}
+      />
 
       <NotificationModal
         open={notificationModalState.open}

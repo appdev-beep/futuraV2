@@ -180,19 +180,69 @@ async function getUserById(userId) {
 }
 
 async function deleteUser(userId) {
-  // Hard delete - permanently remove from database
-  const [result] = await db.query(
-    'DELETE FROM users WHERE id = ?',
-    [userId]
-  );
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
 
-  if (result.affectedRows === 0) {
-    const err = new Error('User not found');
-    err.statusCode = 404;
+    // Clean up all foreign key references before deleting the user
+    // Delete audit logs
+    await connection.query('DELETE FROM audit_logs WHERE user_id = ?', [userId]);
+
+    // Delete CL approvals where user is the approver
+    await connection.query('DELETE FROM cl_approvals WHERE approver_id = ?', [userId]);
+
+    // Delete CL employee logs where user is the employee
+    await connection.query('DELETE FROM cl_employee_logs WHERE employee_id = ?', [userId]);
+
+    // Delete CL manager logs where user is the manager
+    await connection.query('DELETE FROM cl_manager_logs WHERE manager_id = ?', [userId]);
+
+    // Delete CL HR logs where user is the HR
+    await connection.query('DELETE FROM cl_hr_logs WHERE hr_id = ?', [userId]);
+
+    // Delete CL submissions where user submitted
+    await connection.query('DELETE FROM cl_submissions WHERE submitted_by = ?', [userId]);
+
+    // Delete competency approvals where user is the approver
+    await connection.query('DELETE FROM competency_approvals WHERE approver_id = ?', [userId]);
+
+    // Delete IDP approvals where user is the approver
+    await connection.query('DELETE FROM idp_approvals WHERE approver_id = ?', [userId]);
+
+    // Delete CL headers where user is employee or manager (this will cascade to related records)
+    await connection.query('DELETE FROM cl_headers WHERE employee_id = ? OR manager_id = ?', [userId, userId]);
+
+    // Delete competency leveling where user is employee or manager
+    await connection.query('DELETE FROM competency_leveling WHERE employee_id = ? OR manager_id = ?', [userId, userId]);
+
+    // Delete IDP headers where user is employee or manager
+    await connection.query('DELETE FROM idp_headers WHERE employee_id = ? OR manager_id = ?', [userId, userId]);
+
+    // Delete notifications
+    await connection.query('DELETE FROM notifications WHERE user_id = ?', [userId]);
+
+    // Now delete the user
+    const [result] = await connection.query(
+      'DELETE FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      const err = new Error('User not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    await connection.commit();
+    return { message: 'User deleted successfully', userId };
+  } catch (err) {
+    await connection.rollback();
     throw err;
+  } finally {
+    connection.release();
   }
-
-  return { message: 'User deleted successfully', userId };
 }
 
 async function updateUser(userId, {

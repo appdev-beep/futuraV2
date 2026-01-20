@@ -1,3 +1,163 @@
+// src/services/idp.service.js
+const { db } = require('../config/db');
+const { logInfo } = require('../utils/logger');
+const { logRecentAction } = require('./recentActions.service');
+const { createNotification } = require('./notification.service');
+
+// Return IDP header + items
+async function getById(id) {
+  const [headers] = await db.query(
+    'SELECT * FROM idp_headers WHERE id = ?',
+    [id]
+  );
+  if (headers.length === 0) return null;
+
+  const header = headers[0];
+
+  const [items] = await db.query(
+    `SELECT ii.*, c.name AS competency_name, c.competency_area
+     FROM idp_items ii
+     JOIN competencies c ON ii.competency_id = c.id
+     WHERE ii.idp_header_id = ?`,
+    [id]
+  );
+
+  const normalizeDate = (v) => {
+    if (!v) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    const m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+    const d = new Date(v);
+    if (!isNaN(d.getTime())) {
+      const yy = d.getFullYear();
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const dd = String(d.getDate()).padStart(2,'0');
+      return `${yy}-${mm}-${dd}`;
+    }
+    return '';
+  };
+
+  // Normalize DB column differences and parse JSON so frontend always receives an object
+  const normalizedItems = await Promise.all((items || []).map(async (it) => {
+    const raw = it.development_activity || it.development_action || null;
+    let parsed = null;
+    if (raw) {
+      if (typeof raw === 'string') {
+        try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+      } else if (typeof raw === 'object') {
+        parsed = raw;
+      }
+    }
+
+    // Ensure common keys exist with friendly aliases
+    const activity = parsed || {};
+    const normalized = {
+      type: activity.type || activity.activityType || 'Education',
+      activity: activity.activity || activity.developmentActivity || '',
+      targetDate: normalizeDate(activity.targetDate || activity.targetCompletionDate || activity.target || ''),
+      actualDate: normalizeDate(activity.actualDate || activity.actualCompletionDate || ''),
+      status: activity.status || activity.completionStatus || '',
+      pdfPath: activity.pdf_path || activity.pdfPath || activity.pdf || '',
+      educationJustificationPdf: activity.educationJustificationPdf || activity.educationJustification || activity.education_justification_pdf || activity.education_pdf || '',
+      expectedResults: activity.expectedResults || activity.expected_results || '',
+      sharingMethod: activity.sharingMethod || activity.sharing_method || '',
+      applicationMethod: activity.applicationMethod || activity.application_method || '',
+      score: (typeof activity.score === 'number') ? activity.score : (activity.score ? Number(activity.score) : null),
+      __raw: parsed || raw
+    };
+
+    // Load extra tables and areas of exposure
+    const [extraTables] = await db.query(
+      `SELECT * FROM idp_extra_tables WHERE idp_item_id = ? ORDER BY id`,
+      [it.id]
+    );
+
+    const extraTablesWithAreas = await Promise.all((extraTables || []).map(async (et) => {
+      const [areas] = await db.query(
+        `SELECT * FROM idp_areas_of_exposure WHERE extra_table_id = ? ORDER BY id`,
+        [et.id]
+      );
+
+      return {
+        id: et.id,
+        quarter: et.quarter,
+        targetCompletionDate: normalizeDate(et.target_completion_date),
+        actualCompletionDate: normalizeDate(et.actual_completion_date),
+        developmentActivity: et.development_activity,
+        completionStatus: et.completion_status,
+        score: et.score || 1,
+        expectedResults: et.expected_results,
+        sharingMethod: et.sharing_method,
+        applicationMethod: et.application_method,
+        pdfPath: et.pdf_path,
+        educationJustificationPdf: et.education_justification_pdf,
+        exposureStartDate: normalizeDate(et.exposure_start_date),
+        learning: et.learning,
+        areasOfExposure: (areas || []).map(a => ({
+          id: a.id,
+          area: a.area,
+          status: a.status,
+          datetime: a.datetime,
+          durationHours: a.duration_hours,
+          trainerName: a.trainer_name,
+          comments: a.comments
+        }))
+      };
+    }));
+
+    return {
+      ...it,
+      development_activity: normalized,
+      extra_tables: extraTablesWithAreas
+    };
+  }));
+
+  return { header, items: normalizedItems };
+}
+
+// Create IDP header
+async function create(payload) {
+  // Get department info for employee
+  const [userRows] = await db.query(
+    `SELECT u.department_id, d.has_am FROM users u JOIN departments d ON u.department_id = d.id WHERE u.id = ?`,
+    [payload.employee_id]
+  );
+  const departmentId = userRows[0]?.department_id;
+  const hasAM = !!userRows[0]?.has_am;
+
+  // Get AM and Manager for department
+  let amId = null, managerId = null;
+  if (hasAM) {
+    const [amRows] = await db.query(
+      `SELECT id FROM users WHERE department_id = ? AND role = 'AM' LIMIT 1`,
+      [departmentId]
+    );
+    amId = amRows[0]?.id || null;
+  }
+  const [managerRows] = await db.query(
+    `SELECT id FROM users WHERE department_id = ? AND role = 'Manager' LIMIT 1`,
+    [departmentId]
+  );
+  managerId = managerRows[0]?.id || null;
+
+  const [result] = await db.query(
+    `INSERT INTO idp_headers
+      (cl_header_id, employee_id, supervisor_id, cycle_id, status, created_at, updated_at, manager_id, am_id)
+     VALUES (?, ?, ?, ?, 'DRAFT', NOW(), NOW(), ?, ?)` ,
+    [
+      payload.cl_header_id,
+      payload.employee_id,
+      payload.supervisor_id,
+      payload.cycle_id,
+      managerId,
+      amId
+    ]
+  );
+  const idpId = result.insertId;
+  logInfo('Created IDP header', { idpId });
+  return { id: idpId };
+}
+
 // Manager returns IDP to supervisor
 async function managerReturnIDP(idpId, managerId, remarks) {
   const conn = await db.getConnection();
@@ -290,165 +450,6 @@ async function deleteById(id) {
   } finally {
     conn.release();
   }
-}
-// src/services/idp.service.js
-const { db } = require('../config/db');
-const { logInfo } = require('../utils/logger');
-const { logRecentAction } = require('./recentActions.service');
-const { createNotification } = require('./notification.service');
-
-// Return IDP header + items
-async function getById(id) {
-  const [headers] = await db.query(
-    'SELECT * FROM idp_headers WHERE id = ?',
-    [id]
-  );
-  if (headers.length === 0) return null;
-
-  const header = headers[0];
-
-  const [items] = await db.query(
-    `SELECT ii.*, c.name AS competency_name, c.competency_area
-     FROM idp_items ii
-     JOIN competencies c ON ii.competency_id = c.id
-     WHERE ii.idp_header_id = ?`,
-    [id]
-  );
-
-  const normalizeDate = (v) => {
-    if (!v) return '';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-    const m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
-    const d = new Date(v);
-    if (!isNaN(d.getTime())) {
-      const yy = d.getFullYear();
-      const mm = String(d.getMonth()+1).padStart(2,'0');
-      const dd = String(d.getDate()).padStart(2,'0');
-      return `${yy}-${mm}-${dd}`;
-    }
-    return '';
-  };
-
-  // Normalize DB column differences and parse JSON so frontend always receives an object
-  const normalizedItems = await Promise.all((items || []).map(async (it) => {
-    const raw = it.development_activity || it.development_action || null;
-    let parsed = null;
-    if (raw) {
-      if (typeof raw === 'string') {
-        try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-      } else if (typeof raw === 'object') {
-        parsed = raw;
-      }
-    }
-
-    // Ensure common keys exist with friendly aliases
-    const activity = parsed || {};
-    const normalized = {
-      type: activity.type || activity.activityType || 'Education',
-      activity: activity.activity || activity.developmentActivity || '',
-      targetDate: normalizeDate(activity.targetDate || activity.targetCompletionDate || activity.target || ''),
-      actualDate: normalizeDate(activity.actualDate || activity.actualCompletionDate || ''),
-      status: activity.status || activity.completionStatus || '',
-      pdfPath: activity.pdf_path || activity.pdfPath || activity.pdf || '',
-      educationJustificationPdf: activity.educationJustificationPdf || activity.educationJustification || activity.education_justification_pdf || activity.education_pdf || '',
-      expectedResults: activity.expectedResults || activity.expected_results || '',
-      sharingMethod: activity.sharingMethod || activity.sharing_method || '',
-      applicationMethod: activity.applicationMethod || activity.application_method || '',
-      score: (typeof activity.score === 'number') ? activity.score : (activity.score ? Number(activity.score) : null),
-      __raw: parsed || raw
-    };
-
-    // Load extra tables and areas of exposure
-    const [extraTables] = await db.query(
-      `SELECT * FROM idp_extra_tables WHERE idp_item_id = ? ORDER BY id`,
-      [it.id]
-    );
-
-    const extraTablesWithAreas = await Promise.all((extraTables || []).map(async (et) => {
-      const [areas] = await db.query(
-        `SELECT * FROM idp_areas_of_exposure WHERE extra_table_id = ? ORDER BY id`,
-        [et.id]
-      );
-
-      return {
-        id: et.id,
-        quarter: et.quarter,
-        targetCompletionDate: normalizeDate(et.target_completion_date),
-        actualCompletionDate: normalizeDate(et.actual_completion_date),
-        developmentActivity: et.development_activity,
-        completionStatus: et.completion_status,
-        score: et.score || 1,
-        expectedResults: et.expected_results,
-        sharingMethod: et.sharing_method,
-        applicationMethod: et.application_method,
-        pdfPath: et.pdf_path,
-        educationJustificationPdf: et.education_justification_pdf,
-        exposureStartDate: normalizeDate(et.exposure_start_date),
-        learning: et.learning,
-        areasOfExposure: (areas || []).map(a => ({
-          id: a.id,
-          area: a.area,
-          status: a.status,
-          datetime: a.datetime,
-          durationHours: a.duration_hours,
-          trainerName: a.trainer_name,
-          comments: a.comments
-        }))
-      };
-    }));
-
-    return {
-      ...it,
-      development_activity: normalized,
-      extra_tables: extraTablesWithAreas
-    };
-  }));
-
-  return { header, items: normalizedItems };
-}
-
-// Create IDP header
-async function create(payload) {
-  // Get department info for employee
-  const [userRows] = await db.query(
-    `SELECT u.department_id, d.has_am FROM users u JOIN departments d ON u.department_id = d.id WHERE u.id = ?`,
-    [payload.employee_id]
-  );
-  const departmentId = userRows[0]?.department_id;
-  const hasAM = !!userRows[0]?.has_am;
-
-  // Get AM and Manager for department
-  let amId = null, managerId = null;
-  if (hasAM) {
-    const [amRows] = await db.query(
-      `SELECT id FROM users WHERE department_id = ? AND role = 'AM' LIMIT 1`,
-      [departmentId]
-    );
-    amId = amRows[0]?.id || null;
-  }
-  const [managerRows] = await db.query(
-    `SELECT id FROM users WHERE department_id = ? AND role = 'Manager' LIMIT 1`,
-    [departmentId]
-  );
-  managerId = managerRows[0]?.id || null;
-
-  const [result] = await db.query(
-    `INSERT INTO idp_headers
-      (cl_header_id, employee_id, supervisor_id, cycle_id, status, created_at, updated_at, manager_id, am_id)
-     VALUES (?, ?, ?, ?, 'DRAFT', NOW(), NOW(), ?, ?)` ,
-    [
-      payload.cl_header_id,
-      payload.employee_id,
-      payload.supervisor_id,
-      payload.cycle_id,
-      managerId,
-      amId
-    ]
-  );
-  const idpId = result.insertId;
-  logInfo('Created IDP header', { idpId });
-  return { id: idpId };
 }
 
 // Update or insert IDP items
@@ -1446,33 +1447,333 @@ async function resubmitToManager(id) {
   return await getById(id);
 }
 
-module.exports = {
-  getById,
-  create,
-  createWithItems,
-  update,
-  submit,
-  resubmitToHR,
-  resubmitToManager,
-  getEmployeesForIDPCreation,
-  getIDPsGroupedByStatus,
-  getIDPsGroupedByManager,
-  deleteById,
-  getIDPsPendingManager,
-  managerReturnIDP,
-  managerApprove,
-  getIDPsPendingAM,
-  amApprove,
-  amReturnIDP,
-  getIDPsForEmployee,
-  getHRIncoming,
-  employeeApprove,
-  employeeReturn,
-  hrApprove,
-  hrApproveForCompletion,
-  hrForceCycleComplete,
-  hrReturn,
-};
+// =====================
+// CSV EXPORT
+// =====================
+async function exportIDP({ startDate, endDate, department, status }) {
+  console.log('IDP Export Query Params:', { startDate, endDate, department, status });
+  
+  // Get comprehensive IDP data including all related tables
+  let sql = `
+    SELECT 
+      ih.id as idp_id,
+      ih.status,
+      ih.created_at,
+      ih.updated_at,
+      ih.review_period,
+      ih.next_review_date,
+      e.employee_id,
+      e.name as employee_name,
+      e.email as employee_email,
+      d.name as department_name,
+      p.title as position_title,
+      s.name as supervisor_name,
+      m.name as manager_name,
+      am.name as am_name,
+      ih.manager_remarks,
+      ih.am_remarks,
+      ii.id as item_id,
+      ii.competency_id,
+      c.name as competency_name,
+      c.competency_area,
+      ii.target_level,
+      ii.timeline_months,
+      ii.goal,
+      ii.action_plan,
+      ii.target_date,
+      ii.status as item_status,
+      ii.development_action
+    FROM idp_headers ih
+    JOIN users e ON ih.employee_id = e.id
+    LEFT JOIN users s ON ih.supervisor_id = s.id  
+    LEFT JOIN users m ON ih.manager_id = m.id
+    LEFT JOIN users am ON ih.am_id = am.id
+    JOIN departments d ON e.department_id = d.id
+    JOIN positions p ON e.position_id = p.id
+    LEFT JOIN idp_items ii ON ih.id = ii.idp_header_id
+    LEFT JOIN competencies c ON ii.competency_id = c.id
+    WHERE DATE(ih.created_at) >= ? AND DATE(ih.created_at) <= ?
+  `;
+  
+  const params = [startDate, endDate];
+  
+  if (department && department !== 'ALL') {
+    sql += ' AND d.name = ?';
+    params.push(department);
+  }
+  
+  if (status && status !== 'ALL') {
+    sql += ' AND ih.status = ?';
+    params.push(status);
+  }
+  
+  sql += ' ORDER BY ih.created_at DESC, ih.id, ii.id';
+  
+  console.log('Final SQL:', sql);
+  console.log('Final Params:', params);
+  
+  const [rows] = await db.query(sql, params);
+  console.log('Query returned', rows.length, 'rows');
+  
+  // If no data found, try a broader query
+  if (rows.length === 0) {
+    console.log('No data found with current filters, expanding search...');
+    let broadSql = sql.replace('WHERE DATE(ih.created_at) >= ? AND DATE(ih.created_at) <= ?', 'WHERE 1=1');
+    let broadParams = [];
+    
+    if (department && department !== 'ALL') {
+      broadSql += ' AND d.name = ?';
+      broadParams.push(department);
+    }
+    
+    if (status && status !== 'ALL') {
+      broadSql += ' AND ih.status = ?';
+      broadParams.push(status);
+    }
+    
+    broadSql += ' ORDER BY ih.created_at DESC, ih.id, ii.id LIMIT 100';
+    
+    const [broadRows] = await db.query(broadSql, broadParams);
+    console.log('Broad search returned', broadRows.length, 'rows');
+    
+    if (broadRows.length > 0) {
+      return generateComprehensiveIDPCSV(broadRows, `Note: No data found for ${startDate} to ${endDate}, showing recent IDPs instead`);
+    }
+  }
+  
+  return generateComprehensiveIDPCSV(rows);
+}
+
+async function generateComprehensiveIDPCSV(rows, note = null) {
+  if (rows.length === 0) {
+    return generateEmptyIDPCSV(note);
+  }
+
+  // Group rows by IDP and items to handle complex data structure
+  const idpMap = new Map();
+  
+  for (const row of rows) {
+    if (!idpMap.has(row.idp_id)) {
+      idpMap.set(row.idp_id, {
+        header: {
+          idp_id: row.idp_id,
+          status: row.status,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          review_period: row.review_period,
+          next_review_date: row.next_review_date,
+          employee_id: row.employee_id,
+          employee_name: row.employee_name,
+          employee_email: row.employee_email,
+          department_name: row.department_name,
+          position_title: row.position_title,
+          supervisor_name: row.supervisor_name,
+          manager_name: row.manager_name,
+          am_name: row.am_name,
+          manager_remarks: row.manager_remarks,
+          am_remarks: row.am_remarks
+        },
+        items: []
+      });
+    }
+    
+    if (row.item_id && row.competency_id) {
+      idpMap.get(row.idp_id).items.push({
+        item_id: row.item_id,
+        competency_id: row.competency_id,
+        competency_name: row.competency_name,
+        competency_area: row.competency_area,
+        target_level: row.target_level,
+        timeline_months: row.timeline_months,
+        goal: row.goal,
+        action_plan: row.action_plan,
+        target_date: row.target_date,
+        item_status: row.item_status,
+        development_action: row.development_action
+      });
+    }
+  }
+
+  // Generate table-structured CSV matching the exact format shown
+  const csvRows = [];
+  
+  // Headers exactly as shown in the table
+  const headers = [
+    'Section', 'IDP ID', 'Employee', 'Department', 'Status', 'Competency', 
+    'Target Level', 'Activity Type', 'Activity Details', 'Quarter', 
+    'Completion Status', 'Duration (hrs)', 'Trainer', 'Comments/Remarks', 'Created Date'
+  ];
+  
+  csvRows.push(headers);
+  
+  if (note) {
+    csvRows.push([note, ...Array(headers.length - 1).fill('')]);
+  }
+  
+  for (const [idpId, idpData] of idpMap.entries()) {
+    const header = idpData.header;
+    
+    // IDP SUMMARY row
+    csvRows.push([
+      'IDP SUMMARY',
+      header.idp_id,
+      `${header.employee_name} (${header.employee_id})`,
+      header.department_name || '',
+      header.status || '',
+      `${idpData.items.length} Competencies`,
+      '',
+      header.supervisor_name ? `Supervisor: ${header.supervisor_name}` : '',
+      [header.manager_remarks, header.am_remarks].filter(Boolean).join(' | '),
+      '',
+      '',
+      '',
+      '',
+      [header.manager_remarks, header.am_remarks].filter(Boolean).join(' | '),
+      header.created_at ? new Date(header.created_at).toISOString().split('T')[0] : ''
+    ]);
+
+    // Process each competency
+    for (let i = 0; i < idpData.items.length; i++) {
+      const item = idpData.items[i];
+      
+      // Parse development action
+      let developmentAction = null;
+      if (item.development_action) {
+        try {
+          developmentAction = typeof item.development_action === 'string' 
+            ? JSON.parse(item.development_action) 
+            : item.development_action;
+        } catch (e) {
+          console.error('Failed to parse development_action for item:', item.item_id);
+        }
+      }
+
+      // COMPETENCY row
+      csvRows.push([
+        `COMPETENCY ${i + 1}`,
+        '',
+        '',
+        '',
+        '',
+        item.competency_name || '',
+        item.target_level || '',
+        developmentAction?.type || '',
+        developmentAction?.activity || '',
+        '',
+        developmentAction?.status || developmentAction?.completionStatus || '',
+        '',
+        '',
+        [item.action_plan, item.goal].filter(Boolean).join(' | '),
+        ''
+      ]);
+
+      // Get and add extra tables (activities)
+      const [extraTables] = await db.query(
+        `SELECT * FROM idp_extra_tables WHERE idp_item_id = ? ORDER BY id`,
+        [item.item_id]
+      );
+
+      for (let j = 0; j < extraTables.length; j++) {
+        const extraTable = extraTables[j];
+        
+        // ACTIVITY row
+        csvRows.push([
+          `ACTIVITY ${j + 1}`,
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          'Experience/Exposure',
+          extraTable.development_activity || '',
+          extraTable.quarter || '',
+          extraTable.completion_status || '',
+          '',
+          '',
+          [
+            extraTable.expected_results && `Expected: ${extraTable.expected_results}`,
+            extraTable.learning && `Learning: ${extraTable.learning}`, 
+            extraTable.sharing_method && `Sharing: ${extraTable.sharing_method}`,
+            extraTable.application_method && `Application: ${extraTable.application_method}`
+          ].filter(Boolean).join(' | '),
+          ''
+        ]);
+
+        // Get and add areas of exposure
+        const [areasOfExposure] = await db.query(
+          `SELECT * FROM idp_areas_of_exposure WHERE extra_table_id = ? ORDER BY id`,
+          [extraTable.id]
+        );
+
+        // EXPOSURE rows
+        for (const area of areasOfExposure) {
+          csvRows.push([
+            'EXPOSURE',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            'Area of Exposure',
+            area.area || '',
+            '',
+            area.status || '',
+            area.duration_hours || '',
+            area.trainer_name || '',
+            area.comments || '',
+            area.datetime ? new Date(area.datetime).toISOString().split('T')[0] : ''
+          ]);
+        }
+      }
+    }
+
+    // Empty separator row between IDPs
+    csvRows.push(Array(headers.length).fill(''));
+  }
+  
+  // Convert to CSV string with proper escaping
+  return csvRows.map(row => 
+    row.map(field => {
+      const value = String(field || '');
+      // Escape quotes and wrap in quotes if contains commas, quotes, or newlines
+      if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    }).join(',')
+  ).join('\n');
+}
+
+function generateEmptyIDPCSV(note = null) {
+  const headers = [
+    'IDP ID', 'Status', 'Created Date', 'Updated Date', 'Review Period', 'Next Review Date',
+    'Employee ID', 'Employee Name', 'Employee Email', 'Department', 'Position',
+    'Supervisor', 'Manager', 'Assistant Manager', 'Manager Remarks', 'AM Remarks',
+    'Item ID', 'Competency ID', 'Competency Name', 'Competency Area', 'Target Level', 
+    'Timeline (Months)', 'Goal', 'Action Plan', 'Target Date', 'Item Status',
+    'Activity Type', 'Activity Name', 'Activity Target Date', 'Activity Actual Date', 
+    'Activity Status', 'Activity Score', 'Expected Results', 'Sharing Method', 
+    'Application Method', 'PDF Path', 'Education Justification PDF',
+    'Extra Table ID', 'Quarter', 'Extra Development Activity', 'Extra Target Completion', 
+    'Extra Actual Completion', 'Extra Completion Status', 'Extra Score', 'Extra Expected Results',
+    'Extra Sharing Method', 'Extra Application Method', 'Extra PDF Path', 'Extra Education PDF',
+    'Exposure Start Date', 'Learning',
+    'Area ID', 'Exposure Area', 'Exposure Status', 'Exposure DateTime', 'Duration Hours', 
+    'Trainer Name', 'Area Comments'
+  ];
+  
+  let csv = headers.join(',') + '\n';
+  
+  if (note) {
+    csv += `"${note}",${','.repeat(headers.length - 1)}\n`;
+  } else {
+    csv += '"No data found",' + ','.repeat(headers.length - 1) + '\n';
+  }
+  
+  return csv;
+}
 
 // HR: explicitly mark IDP as FOR_COMPLETION (HR chooses to send back for completion)
 async function hrApproveForCompletion(idpId, hrId) {
@@ -1734,7 +2035,6 @@ async function createWithItems(payload) {
     });
 
     return { id: idpId };
-
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -1742,3 +2042,32 @@ async function createWithItems(payload) {
     conn.release();
   }
 }
+
+module.exports = {
+  getById,
+  create,
+  createWithItems,
+  update,
+  submit,
+  resubmitToHR,
+  resubmitToManager,
+  getEmployeesForIDPCreation,
+  getIDPsGroupedByStatus,
+  getIDPsGroupedByManager,
+  deleteById,
+  getIDPsPendingManager,
+  managerReturnIDP,
+  managerApprove,
+  getIDPsPendingAM,
+  amApprove,
+  amReturnIDP,
+  getIDPsForEmployee,
+  getHRIncoming,
+  employeeApprove,
+  employeeReturn,
+  hrApprove,
+  hrApproveForCompletion,
+  hrForceCycleComplete,
+  hrReturn,
+  exportIDP,
+};

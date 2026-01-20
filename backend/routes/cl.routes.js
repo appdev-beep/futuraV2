@@ -170,6 +170,13 @@ router.get(
   clController.getHRAllCL   // make sure this exists in cl.controller
 );
 
+// GET /api/cl/hr/export (CSV export)
+router.get(
+  '/hr/export',
+  requireRole('HR', 'Admin'),
+  clController.exportCL
+);
+
 // GET /api/cl/hr/incoming (all CLs from all departments)
 router.get(
   '/hr/incoming',

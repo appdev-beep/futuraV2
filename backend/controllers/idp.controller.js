@@ -383,6 +383,34 @@ async function hrReturnIDP(req, res, next) {
   }
 }
 
+// =====================================
+// CSV EXPORT
+// =====================================
+async function exportIDP(req, res, next) {
+  try {
+    const { startDate, endDate, department, status } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: 'Start date and end date are required' });
+    }
+    
+    const csvData = await idpService.exportIDP({
+      startDate,
+      endDate,
+      department: department || null,
+      status: status || null
+    });
+    
+    // Set CSV headers
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="IDP_Export_${department || 'All'}_${startDate}_${endDate}.csv"`);
+    
+    res.send(csvData);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getById,
   create,
@@ -409,6 +437,7 @@ module.exports = {
   getHRIncomingIDPs,
   resubmitToHR,
   resubmitToManager,
+  exportIDP,
 };
 
 // POST /api/idp/create
