@@ -16,6 +16,9 @@ import {
   PencilSquareIcon,
   UsersIcon,
   BookOpenIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import '../../index.css';
 import '../../App.css'; 
@@ -84,8 +87,13 @@ function HRDashboard() {
   const [activeIDPSection, setActiveIDPSection] = useState('ALL');
   const [selectedDepartment, setSelectedDepartment] = useState('ALL');
   const [departmentSearch, setDepartmentSearch] = useState('');
+  const [isDepartmentSearchFocused, setIsDepartmentSearchFocused] = useState(false);
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
   const [showFullNotifications, setShowFullNotifications] = useState(false);
+  const [showClAction, setShowClAction] = useState(false);
+  const [showClInReview, setShowClInReview] = useState(false);
+  const [showIdpAction, setShowIdpAction] = useState(false);
+  const [showIdpInReview, setShowIdpInReview] = useState(false);
   const [recentActionsPagination, setRecentActionsPagination] = useState({
     currentPage: 1,
     itemsPerPage: 10
@@ -587,6 +595,32 @@ function HRDashboard() {
     return counts;
   }, [allIncomingCL, selectedDepartment, CL_STATUS_SECTIONS]);
 
+  // Grouped counts for CL
+  const clActionRequiredCount = useMemo(() => {
+    const actionStatuses = ['DRAFT', 'RETURNED', 'PENDING_HR'];
+    return actionStatuses.reduce((sum, status) => sum + (sectionCounts[status] || 0), 0);
+  }, [sectionCounts]);
+
+  const clInReviewCount = useMemo(() => {
+    const reviewStatuses = ['PENDING_SUPERVISOR', 'PENDING_MANAGER', 'PENDING_AM', 'PENDING_EMPLOYEE'];
+    return reviewStatuses.reduce((sum, status) => sum + (sectionCounts[status] || 0), 0);
+  }, [sectionCounts]);
+
+  // Grouped counts for IDP
+  const idpActionRequiredCount = useMemo(() => {
+    const actionStatuses = ['DRAFT', 'RETURNED', 'FOR_COMPLETION', 'PENDING_HR'];
+    return actionStatuses.reduce((sum, status) => sum + (
+      allIncomingIDP.filter(i => i.status === status && (selectedDepartment === 'ALL' || !selectedDepartment || i.department_name === selectedDepartment)).length
+    ), 0);
+  }, [allIncomingIDP, selectedDepartment]);
+
+  const idpInReviewCount = useMemo(() => {
+    const reviewStatuses = ['PENDING_MANAGER', 'PENDING_AM', 'PENDING_EMPLOYEE'];
+    return reviewStatuses.reduce((sum, status) => sum + (
+      allIncomingIDP.filter(i => i.status === status && (selectedDepartment === 'ALL' || !selectedDepartment || i.department_name === selectedDepartment)).length
+    ), 0);
+  }, [allIncomingIDP, selectedDepartment]);
+
   const activeLabel = useMemo(() => {
     if (activeModule === 'CL') {
       if (activeSection === 'ALL') return 'All Competency Levelings';
@@ -617,50 +651,80 @@ function HRDashboard() {
   return (
     <div className="flex h-screen bg-white">
       {/* LEFT SIDEBAR */}
-      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-800">FUTURA</h2>
+      <aside className="w-56 bg-blue-900 border-r border-blue-800 flex flex-col overflow-y-auto" style={{scrollbarWidth: 'none', msOverflowStyle: 'none'}}>
+        <div className="p-4 border-b border-blue-800">
+          <h2 className="text-xl font-semibold text-white">FUTURA</h2>
           
           <div className="mt-3">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Filter by Department</label>
-            <div className="space-y-2">
+            <label className="block text-xs font-medium text-blue-200 mb-1">Filter by Department</label>
+            <div>
               <input
                 type="text"
                 value={departmentSearch}
                 onChange={(e) => setDepartmentSearch(e.target.value)}
+                onFocus={() => setIsDepartmentSearchFocused(true)}
+                onBlur={() => setTimeout(() => setIsDepartmentSearchFocused(false), 150)}
                 placeholder="Search departments..."
-                className="w-full px-3 py-2 border border-gray-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-blue-700 bg-blue-800 text-white placeholder-blue-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-
-              <select
-                value={selectedDepartment}
-                onChange={(e) => setSelectedDepartment(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="ALL">All Departments ({allIncomingCL.length} CLs, {allIncomingIDP.length} IDPs)</option>
-                {filteredDepartments.map(dept => {
-                  const clCount = allIncomingCL.filter(item => item.department_name === dept).length;
-                  const idpCount = allIncomingIDP.filter(item => item.department_name === dept).length;
-                  return (
-                    <option key={dept} value={dept}>
-                      {dept} ({clCount} CLs, {idpCount} IDPs)
-                    </option>
-                  );
-                })}
-              </select>
+              
+              {/* Show dropdown when focused or when typing */}
+              {(isDepartmentSearchFocused || departmentSearch) && (
+                <div className="mt-1 bg-blue-700 border border-blue-600 rounded max-h-32 overflow-y-auto" style={{scrollbarWidth: 'none', msOverflowStyle: 'none'}}>
+                  <div 
+                    className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-blue-600 ${selectedDepartment === 'ALL' ? 'bg-blue-600' : ''}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setSelectedDepartment('ALL');
+                      setDepartmentSearch('');
+                      setIsDepartmentSearchFocused(false);
+                    }}
+                  >
+                    <span className="text-white">All Departments ({allIncomingCL.length} CLs, {allIncomingIDP.length} IDPs)</span>
+                  </div>
+                  {(departmentSearch ? filteredDepartments : departments).map(dept => {
+                    const clCount = allIncomingCL.filter(item => item.department_name === dept).length;
+                    const idpCount = allIncomingIDP.filter(item => item.department_name === dept).length;
+                    return (
+                      <div
+                        key={dept}
+                        className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-blue-600 ${selectedDepartment === dept ? 'bg-blue-600' : ''}`}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setSelectedDepartment(dept);
+                          setDepartmentSearch('');
+                          setIsDepartmentSearchFocused(false);
+                        }}
+                      >
+                        <span className="text-white">{dept} ({clCount} CLs, {idpCount} IDPs)</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              
+              {/* Show current selection when not searching and not focused */}
+              {!departmentSearch && !isDepartmentSearchFocused && (
+                <div className="mt-2 px-3 py-2 bg-blue-700 rounded text-xs text-white">
+                  Current: {selectedDepartment === 'ALL' ? 
+                    `All Departments (${allIncomingCL.length} CLs, ${allIncomingIDP.length} IDPs)` : 
+                    `${selectedDepartment} (${allIncomingCL.filter(item => item.department_name === selectedDepartment).length} CLs, ${allIncomingIDP.filter(item => item.department_name === selectedDepartment).length} IDPs)`
+                  }
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        <nav className="p-4 space-y-4 overflow-y-auto">
+        <nav className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-8rem)]" style={{scrollbarWidth: 'none', msOverflowStyle: 'none'}}>
           {/* Employee Management */}
           <div className="space-y-1">
             <button
               onClick={() => navigate('/hr/employees')}
               className="w-full flex items-center gap-3 px-3 py-2 rounded
-                         text-gray-700 hover:bg-gray-100 transition"
+                         text-blue-100 hover:bg-blue-800 transition"
             >
-              <UsersIcon className="w-5 h-5 text-green-600" />
+              <UsersIcon className="w-5 h-5 text-green-400" />
               <span>Employee Management</span>
             </button>
           </div>
@@ -670,15 +734,15 @@ function HRDashboard() {
             <button
               onClick={() => { setActiveModule('CL'); setActiveSection('ALL'); }}
               className="w-full flex items-center gap-3 px-3 py-2 rounded
-                         text-gray-700 hover:bg-gray-100 transition"
+                         text-blue-100 hover:bg-blue-800 transition"
             >
-              <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-600" />
+              <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-400" />
               <span>Competency Leveling</span>
             </button>
 
             {/* CL Sections */}
             <div className="pr-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-200 mb-2 px-3">
                 CL Sections
               </p>
 
@@ -686,19 +750,96 @@ function HRDashboard() {
                 type="button"
                 onClick={() => { setActiveModule('CL'); setActiveSection('ALL'); }}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                  ${activeSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  ${activeSection === 'ALL' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
               >
                 <span className="flex items-center gap-2">
                   <Squares2X2Icon className="w-4 h-4" />
                   All
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
                   {sectionCounts.ALL || 0}
                 </span>
               </button>
 
+              {/* Grouped: Action Required */}
               <div className="mt-1 space-y-1">
-                {CL_STATUS_SECTIONS.map(({ key, label, icon }) => {
+                <button
+                  type="button"
+                  onClick={() => setShowClAction((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showClAction ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {(showClAction ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
+                    <ExclamationTriangleIcon className="w-4 h-4" />
+                    Action Required
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{clActionRequiredCount}</span>
+                </button>
+                {showClAction && (
+                  <div className="ml-6 space-y-1">
+                    {CL_STATUS_SECTIONS.filter(s => ['DRAFT', 'RETURNED', 'PENDING_HR'].includes(s.key)).map(({ key, label, icon }) => {
+                      const Icon = icon;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { setActiveModule('CL'); setActiveSection(key); }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                            ${activeSection === key ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Icon className="w-4 h-4" />
+                            {label}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
+                            {sectionCounts[key] || 0}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Grouped: In Review */}
+                <button
+                  type="button"
+                  onClick={() => setShowClInReview((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showClInReview ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {(showClInReview ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
+                    <ClockIcon className="w-4 h-4" />
+                    In Review
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{clInReviewCount}</span>
+                </button>
+                {showClInReview && (
+                  <div className="ml-6 space-y-1">
+                    {CL_STATUS_SECTIONS.filter(s => ['PENDING_SUPERVISOR', 'PENDING_MANAGER', 'PENDING_AM', 'PENDING_EMPLOYEE'].includes(s.key)).map(({ key, label, icon }) => {
+                      const Icon = icon;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { setActiveModule('CL'); setActiveSection(key); }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                            ${activeSection === key ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Icon className="w-4 h-4" />
+                            {label}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
+                            {sectionCounts[key] || 0}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Other individual status sections that don't fit in groups */}
+                {CL_STATUS_SECTIONS.filter(s => !['DRAFT', 'RETURNED', 'PENDING_HR', 'PENDING_SUPERVISOR', 'PENDING_MANAGER', 'PENDING_AM', 'PENDING_EMPLOYEE'].includes(s.key)).map(({ key, label, icon }) => {
                   const Icon = icon;
                   return (
                     <button
@@ -706,13 +847,13 @@ function HRDashboard() {
                       type="button"
                       onClick={() => { setActiveModule('CL'); setActiveSection(key); }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                        ${activeSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                        ${activeSection === key ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
                     >
                       <span className="flex items-center gap-2">
                         <Icon className="w-4 h-4" />
                         {label}
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">
                         {sectionCounts[key] || 0}
                       </span>
                     </button>
@@ -727,30 +868,106 @@ function HRDashboard() {
             <button
               onClick={() => { setActiveModule('IDP'); setActiveIDPSection('ALL'); }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded
-                         ${activeModule === 'IDP' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'} transition`}
+                         ${activeModule === 'IDP' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'} transition`}
             >
-              <BookOpenIcon className="w-5 h-5 text-green-600" />
+              <BookOpenIcon className="w-5 h-5 text-white" />
               <span>IDP Leveling</span>
             </button>
 
-            <div className="mt-2 pl-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2 px-0">
+            <div className="pr-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-200 mb-2 px-3">
                 IDP Sections
               </p>
               <button
                 type="button"
                 onClick={() => { setActiveModule('IDP'); setActiveIDPSection('ALL'); }}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                  ${activeIDPSection === 'ALL' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  ${activeIDPSection === 'ALL' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
               >
                 <span className="flex items-center gap-2">
                   <Squares2X2Icon className="w-4 h-4" />
                   All
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{allIncomingIDP.length}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{allIncomingIDP.length}</span>
               </button>
+              
               <div className="mt-1 space-y-1">
-                {IDP_STATUS_SECTIONS.map(({ key, label, icon }) => {
+                {/* Action Required */}
+                <button
+                  type="button"
+                  onClick={() => setShowIdpAction((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showIdpAction ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {(showIdpAction ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
+                    <ExclamationTriangleIcon className="w-4 h-4" />
+                    Action Required
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpActionRequiredCount}</span>
+                </button>
+                {showIdpAction && (
+                  <div className="ml-6 space-y-1">
+                    {IDP_STATUS_SECTIONS.filter(s => ['DRAFT', 'RETURNED', 'FOR_COMPLETION', 'PENDING_HR'].includes(s.key)).map(({ key, label, icon }) => {
+                      const Icon = icon;
+                      const count = allIncomingIDP.filter(i => i.status === key && (selectedDepartment === 'ALL' || !selectedDepartment || i.department_name === selectedDepartment)).length;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { setActiveModule('IDP'); setActiveIDPSection(key); }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                            ${activeIDPSection === key ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Icon className="w-4 h-4" />
+                            {label}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{count || 0}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* In Review */}
+                <button
+                  type="button"
+                  onClick={() => setShowIdpInReview((v) => !v)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${showIdpInReview ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {(showIdpInReview ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />)}
+                    <ClockIcon className="w-4 h-4" />
+                    In Review
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpInReviewCount}</span>
+                </button>
+                {showIdpInReview && (
+                  <div className="ml-6 space-y-1">
+                    {IDP_STATUS_SECTIONS.filter(s => ['PENDING_MANAGER', 'PENDING_AM', 'PENDING_EMPLOYEE'].includes(s.key)).map(({ key, label, icon }) => {
+                      const Icon = icon;
+                      const count = allIncomingIDP.filter(i => i.status === key && (selectedDepartment === 'ALL' || !selectedDepartment || i.department_name === selectedDepartment)).length;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { setActiveModule('IDP'); setActiveIDPSection(key); }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
+                            ${activeIDPSection === key ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Icon className="w-4 h-4" />
+                            {label}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{count || 0}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Other individual status sections that don't fit in groups */}
+                {IDP_STATUS_SECTIONS.filter(s => !['DRAFT', 'RETURNED', 'FOR_COMPLETION', 'PENDING_HR', 'PENDING_MANAGER', 'PENDING_AM', 'PENDING_EMPLOYEE'].includes(s.key)).map(({ key, label, icon }) => {
                   const Icon = icon;
                   const count = allIncomingIDP.filter(i => i.status === key && (selectedDepartment === 'ALL' || !selectedDepartment || i.department_name === selectedDepartment)).length;
                   return (
@@ -759,13 +976,13 @@ function HRDashboard() {
                       type="button"
                       onClick={() => { setActiveModule('IDP'); setActiveIDPSection(key); }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition
-                        ${activeIDPSection === key ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                        ${activeIDPSection === key ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
                     >
                       <span className="flex items-center gap-2">
                         <Icon className="w-4 h-4" />
                         {label}
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{count || 0}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{count || 0}</span>
                     </button>
                   );
                 })}
@@ -1466,7 +1683,7 @@ function HRDashboard() {
                   }}
                   className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition"
                 >
-                  Go to Review
+                  Go to Review Form
                 </button>
               )}
             </div>
@@ -1525,8 +1742,10 @@ function CLTable({ data, onCLClick }) {
               <Td>{item.supervisor_name || '-'}</Td>
               <Td>
                 {item.status === 'DRAFT' 
-                  ? (item.awaiting_approval_from 
-                      ? `Returned from ${item.awaiting_approval_from.replace('PENDING_', '').replace(/_/g, ' ')}` 
+                  ? (item.submitted_at 
+                      ? (item.awaiting_approval_from 
+                          ? `Returned from ${item.awaiting_approval_from.replace('PENDING_', '').replace(/_/g, ' ')}` 
+                          : 'Returned to supervisor')
                       : 'Draft - Not Submitted')
                   : displayStatus(item.status)}
               </Td>
@@ -1536,10 +1755,13 @@ function CLTable({ data, onCLClick }) {
               <Td>
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={(e) => { e.stopPropagation(); onCLClick(item.id); }}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      window.location.href = `/cl/hr/review/${item.id}`;
+                    }}
                     className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
                   >
-                    View
+                    Review
                   </button>
                 </div>
               </Td>

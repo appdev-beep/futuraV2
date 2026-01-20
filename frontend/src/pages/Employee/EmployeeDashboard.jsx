@@ -18,7 +18,6 @@ import {
 } from '@heroicons/react/24/outline';
 import '../../index.css';
 import '../../App.css'; 
-import Modal from '../../components/Modal';
 import { displayStatus } from '../../utils/statusHelper';
 
 function EmployeeDashboard() {
@@ -1721,6 +1720,50 @@ function ProfileModal({ open, userData, loading, onClose }) {
               {/* Past competencies moved to sidebar */}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Modal({
+  open,
+  title,
+  message,
+  showCancel,
+  confirmText = 'OK',
+  cancelText = 'Cancel',
+  onConfirm,
+  onClose,
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+        </div>
+        <div className="px-6 py-4">
+          <p className="text-sm text-gray-700 whitespace-pre-line">{message}</p>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+          {showCancel && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+            >
+              {cancelText}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {confirmText}
+          </button>
         </div>
       </div>
     </div>

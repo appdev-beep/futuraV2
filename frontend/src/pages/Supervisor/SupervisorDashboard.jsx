@@ -1,8 +1,7 @@
 // src/pages/Supervisor/SupervisorDashboard.jsx
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../../api/client';
 import { useNavigate } from 'react-router-dom';
-import { displayStatus } from '../../constants/statusConstants';
 import {
   ClipboardDocumentCheckIcon,
   BookOpenIcon,
@@ -238,7 +237,7 @@ function SupervisorDashboard() {
 
 
   // Recent actions
-  async function loadRecentActions() {
+  const loadRecentActions = useCallback(async () => {
     if (!user) return;
     
     try {
@@ -248,11 +247,11 @@ function SupervisorDashboard() {
     } catch (err) {
       console.error('Failed to load recent actions', err);
     }
-  }
+  }, [user, recentFilter]);
 
   useEffect(() => {
     loadRecentActions();
-  }, [user, recentFilter]);
+  }, [loadRecentActions]);
 
   function logout() {
     openModal({

@@ -486,7 +486,7 @@ function EmployeeReviewCLPage() {
 
       {/* Confirmation Modal */}
       {confirmModal.open && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-white bg-opacity-20 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-2xl">
             <h3 className="text-lg font-semibold mb-4 text-slate-800">
               {confirmModal.action === 'approve' ? 'Confirm Approval' : 'Confirm Return'}
@@ -520,7 +520,7 @@ function EmployeeReviewCLPage() {
 
       {/* Message Modal */}
       {messageModal.open && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-white bg-opacity-20 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-2xl">
             <h3 className={`text-lg font-semibold mb-4 ${
               messageModal.isError ? 'text-red-600' : 'text-green-600'

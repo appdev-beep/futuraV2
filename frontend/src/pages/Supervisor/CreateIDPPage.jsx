@@ -501,7 +501,11 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           } else setSupervisor({});
 
           // Load CL score for the employee
-          if (idpRes.header?.employee_id) {
+          // First, try to use the latest_cl_score from the IDP header
+          if (idpRes.header?.latest_cl_score) {
+            setLatestCLScore(idpRes.header.latest_cl_score);
+          } else if (idpRes.header?.employee_id) {
+            // Fallback to manual CL score lookup if not in header
             try {
               const history = await apiRequest(`/api/cl/employee/${idpRes.header.employee_id}/history`);
               const approved = (history || []).find((h) => String(h.status).toUpperCase() === 'APPROVED');
@@ -1635,8 +1639,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             </div>
           </div>
 
-          {/* Manager Remarks Display OR Helpful Notes */}
-          {idpHeader?.manager_remarks && !editMode && !['PENDING_MANAGER', 'PENDING_AM', 'PENDING_HR', 'PENDING_EMPLOYEE'].includes(idpHeader?.status) ? (
+          {/* Manager Remarks Display OR Action Buttons */}
+          {idpHeader?.manager_remarks && !editMode && !['PENDING_MANAGER', 'PENDING_AM', 'PENDING_HR', 'PENDING_EMPLOYEE', 'FOR_COMPLETION'].includes(idpHeader?.status) ? (
             <div className={`bg-blue-50 rounded-xl shadow-sm ${viewOnly ? 'border-0' : 'border border-blue-200'} p-5`}>
               <h3 className="text-lg font-semibold text-blue-900 mb-3">Manager Remarks & Feedback</h3>
               <div className={`bg-white rounded-lg p-4 ${viewOnly ? 'border-0' : 'border border-blue-100'} mb-4`}>
@@ -1688,51 +1692,53 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               />
               
               {/* Action Buttons */}
-              <div className="flex justify-end gap-3 mb-4">
-                <button
-                  onClick={handleReturnIDP}
-                  className="px-6 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap"
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? 'Processing...' : 'Return to Supervisor'}
-                </button>
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:justify-end gap-3">
+                  <button
+                    onClick={handleReturnIDP}
+                    className="px-6 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap order-2 sm:order-1"
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? 'Processing...' : 'Return to Supervisor'}
+                  </button>
+                  
+                  <button
+                    onClick={idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' ? handleApproveCycleCompletion : handleApproveIDP}
+                    className={`px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 disabled:opacity-50 whitespace-nowrap transition order-1 sm:order-2 ${
+                      (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR') 
+                        ? (areAllActivitiesComplete 
+                            ? 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500/50' 
+                            : 'bg-gray-300 text-gray-500 cursor-not-allowed')
+                        : 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500/50'
+                    }`}
+                    disabled={actionLoading || (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' && !areAllActivitiesComplete)}
+                  >
+                    {actionLoading ? 'Processing...' : (() => {
+                      const role = getUserRole();
+                      const status = idpHeader?.status;
+                      if (status === 'FOR_COMPLETION' && role === 'HR') {
+                        return areAllActivitiesComplete ? 'Approve Cycle Completion' : 'Cannot Approve - Incomplete Activities';
+                      }
+                      if (allActivitiesCompleted) {
+                        return 'Cycle Completed';
+                      }
+                      if (role === 'HR') {
+                        return 'For Completion';
+                      }
+                      if (role === 'Employee') return 'Acknowledge IDP';
+                      return 'Approve IDP';
+                    })()}
+                  </button>
+                </div>
                 
                 <button
-                  onClick={idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' ? handleApproveCycleCompletion : handleApproveIDP}
-                  className={`px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 disabled:opacity-50 whitespace-nowrap transition ${
-                    (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR') 
-                      ? (areAllActivitiesComplete 
-                          ? 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500/50' 
-                          : 'bg-gray-300 text-gray-500 cursor-not-allowed')
-                      : 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500/50'
-                  }`}
-                  disabled={actionLoading || (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' && !areAllActivitiesComplete)}
+                  onClick={() => setShowScoringGuide(true)}
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-black/10"
                 >
-                  {actionLoading ? 'Processing...' : (() => {
-                    const role = getUserRole();
-                    const status = idpHeader?.status;
-                    if (status === 'FOR_COMPLETION' && role === 'HR') {
-                      return areAllActivitiesComplete ? 'Approve Cycle Completion' : 'Cannot Approve - Incomplete Activities';
-                    }
-                    if (allActivitiesCompleted) {
-                      return 'Cycle Completed';
-                    }
-                    if (role === 'HR') {
-                      return 'For Completion';
-                    }
-                    if (role === 'Employee') return 'Acknowledge IDP';
-                    return 'Approve IDP';
-                  })()}
+                  <InformationCircleIcon className="h-5 w-5" />
+                  View Scoring Guide
                 </button>
               </div>
-              
-              <button
-                onClick={() => setShowScoringGuide(true)}
-                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-black/10"
-              >
-                <InformationCircleIcon className="h-5 w-5" />
-                View Scoring Guide
-              </button>
             </div>
           ) : viewOnly && userRole !== 'Supervisor' && idpHeader?.status === 'FOR_COMPLETION' ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
@@ -1748,6 +1754,19 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               
               {getUserRole() === 'HR' ? (
                 <div className="space-y-4">
+                  {/* Show Manager Remarks if they exist */}
+                  {idpHeader?.manager_remarks && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                      <h4 className="text-sm font-semibold text-blue-900 mb-2">Manager Remarks & Feedback</h4>
+                      <p className="text-blue-800 text-sm whitespace-pre-wrap">{idpHeader.manager_remarks}</p>
+                      {idpHeader?.updated_at && (
+                        <div className="text-xs text-blue-600 mt-2">
+                          <span className="font-semibold">Added on:</span> {new Date(idpHeader.updated_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
                   <div className="mb-4">
                     <p className="text-gray-700 text-sm mb-4">
                       <strong>Status:</strong> Review the IDP activities completion before approving cycle completion.
@@ -1766,19 +1785,29 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                       />
                     </div>
                     
-                    <button
-                      onClick={handleApproveCycleCompletion}
-                      disabled={!areAllActivitiesComplete || actionLoading}
-                      className={`w-full px-4 py-2 rounded-lg font-semibold text-sm transition ${
-                        areAllActivitiesComplete 
-                          ? 'bg-green-600 text-white hover:bg-green-700 focus:ring-2 focus:ring-green-500' 
-                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      }`}
-                    >
-                      {actionLoading ? 'Processing...' : 
-                       areAllActivitiesComplete ? 'Approve Cycle Completion' : 
-                       'Cannot Approve - Incomplete Activities'}
-                    </button>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleReturnIDP}
+                        disabled={actionLoading}
+                        className="flex-1 px-4 py-2 rounded-lg font-semibold text-sm bg-red-600 text-white hover:bg-red-700 focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+                      >
+                        {actionLoading ? 'Processing...' : 'Return to Supervisor'}
+                      </button>
+                      
+                      <button
+                        onClick={handleApproveCycleCompletion}
+                        disabled={!areAllActivitiesComplete || actionLoading}
+                        className={`flex-1 px-4 py-2 rounded-lg font-semibold text-sm transition ${
+                          areAllActivitiesComplete 
+                            ? 'bg-green-600 text-white hover:bg-green-700 focus:ring-2 focus:ring-green-500' 
+                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        {actionLoading ? 'Processing...' : 
+                         areAllActivitiesComplete ? 'Approve Cycle Completion' : 
+                         'Cannot Approve - Incomplete Activities'}
+                      </button>
+                    </div>
                     
                     {!areAllActivitiesComplete && (
                       <p className="text-red-600 text-xs mt-2">
@@ -1899,7 +1928,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             </div>
           </div>
 
-          <div className={`p-5 ${viewOnly && idpHeader?.status !== 'RETURNED' ? 'pointer-events-none opacity-75' : ''}`}>
+          <div className={`p-5 ${viewOnly && idpHeader?.status !== 'RETURNED' ? 'pointer-events-none' : ''}`}>
             {idpData.items.length === 0 ? (
               <div className={`text-center py-10 bg-gray-50 rounded-xl ${viewOnly ? 'border-0' : 'border border-gray-100'}`}>
                 <p className="text-gray-800 font-semibold">No approved competencies found for this employee.</p>
@@ -1947,10 +1976,10 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                     <div
                       id={`item-${itemIndex}`}
                       key={item.competencyId}
-                      className={`rounded-xl ${viewOnly ? 'border-0' : 'border border-gray-100'} bg-gray-50 overflow-hidden`}
+                      className={`rounded-xl ${viewOnly ? 'border-0 shadow-lg' : 'border-2 border-gradient-to-r from-blue-200 to-purple-200 shadow-lg hover:shadow-xl transition-all duration-300'} bg-gradient-to-br from-gray-50 to-white overflow-hidden transform hover:scale-[1.01] transition-transform duration-200`}
                     >
                       {/* Card header */}
-                      <div className={`px-4 py-4 bg-white ${viewOnly ? 'border-0' : 'border-b border-gray-100'}`}>
+                      <div className={`px-4 py-4 bg-gradient-to-r from-blue-50 via-white to-purple-50 ${viewOnly ? 'border-0' : 'border-b-2 border-gray-200'}`}>
                         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -2019,7 +2048,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                         </div>
                       </div>
 
-                      <div className="p-4">
+                      <div className="p-4 bg-gradient-to-b from-transparent to-gray-50/50">
                         {viewOnly && (
                           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
                             📖 You are viewing this IDP in read-only mode. You cannot make changes.
@@ -2159,193 +2188,180 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                               </div>
                             ) : activity.type === 'Education' ? (
                               <div className="bg-white rounded-xl border border-gray-100 p-4">
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                                  <div>
-                                    <Field label="Development Activity">
-                                      <input
-                                        type="text"
-                                        value={activity.activity}
-                                        onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.activity`, e.target.value)}
-                                        placeholder="Describe the development activity..."
-                                        className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
-                                      />
-                                    </Field>
-                                  </div>
 
-                                  <Field label="Target Completion Date">
-                                  <input
-                                    type="date"
-                                    value={activity.targetCompletionDate || ''}
-                                    onChange={(e) =>
-                                      updateIdpData(`items.${itemIndex}.developmentActivities.0.targetCompletionDate`, e.target.value)
-                                    }
-                                    className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
-                                  />
-                                </Field>
-
-                                <Field label="Actual Completion Date">
-                                  <input
-                                    type="date"
-                                    value={activity.actualCompletionDate}
-                                    onChange={(e) =>
-                                      updateIdpData(`items.${itemIndex}.developmentActivities.0.actualCompletionDate`, e.target.value)
-                                    }
-                                    disabled={!isCompletedStatus(activity.completionStatus)}
-                                    required={isCompletedStatus(activity.completionStatus)}
-                                    className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
-                                  />
-                                </Field>
-
-                                <Field label="Completion Status">
-                                  <select
-                                    value={activity.completionStatus}
-                                    onChange={(e) =>
-                                      updateIdpData(`items.${itemIndex}.developmentActivities.0.completionStatus`, e.target.value)
-                                    }
-                                    className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
-                                  >
-                                    {COMPLETION_STATUS_OPTIONS.map((status) => (
-                                      <option key={status} value={status}>
-                                        {status}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </Field>
-
-                                <Field label="Score">
-                                  <select
-                                    value={activity.score}
-                                    onChange={(e) =>
-                                      updateIdpData(`items.${itemIndex}.developmentActivities.0.score`, parseInt(e.target.value))
-                                    }
-                                    className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
-                                  >
-                                    {[1, 2, 3, 4, 5].map((score) => (
-                                      <option key={score} value={score}>
-                                        {score}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </Field>
-
-                                {((activity.pdfPath) || isCompletedStatus(activity.completionStatus)) && (
-                                  <div>
-                                    <label className="block text-sm font-bold text-gray-800 mb-2">Proof of Completion</label>
-                                    <div className="flex items-center gap-2 w-full">
-                                      <select
-                                        value={activity.pdfPath || ''}
-                                        onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, e.target.value)}
-                                        className="flex-1 bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium border border-gray-300 truncate"
-                                        disabled={viewOnly || userRole !== 'Supervisor'}
-                                      >
-                                        <option value="">-- No file --</option>
-                                        {activity.pdfPath && (
-                                          <option value={activity.pdfPath}>{activity.pdfPath.split('/').pop()}</option>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full border-collapse border border-gray-300">
+                                    <thead>
+                                      <tr className="bg-gray-100">
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-sm font-bold text-gray-800">Development Activity</th>
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-sm font-bold text-gray-800">Target Date</th>
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-sm font-bold text-gray-800">Actual Date</th>
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-sm font-bold text-gray-800">Status</th>
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-sm font-bold text-gray-800">Score</th>
+                                        {((activity.pdfPath) || isCompletedStatus(activity.completionStatus)) && (
+                                          <th className="border border-gray-300 px-3 py-2 text-left text-sm font-bold text-gray-800">Proof</th>
                                         )}
-                                      </select>
-
-                                      {!viewOnly && userRole === 'Supervisor' && (
-                                        <label
-                                          className={`inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded text-sm shrink-0 cursor-pointer`}
-                                        >
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-sm font-bold text-gray-800">Expected Results</th>
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-sm font-bold text-gray-800">Knowledge Sharing Method</th>
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-sm font-bold text-gray-800">Application Method</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      <tr className="hover:bg-gray-50">
+                                        <td className="border border-gray-300 px-3 py-2 min-w-[180px]">
                                           <input
-                                            type="file"
-                                            accept="application/pdf"
-                                            style={{ display: 'none' }}
-                                            onChange={async (e) => {
-                                              console.log('Activity completion status:', activity.completionStatus);
-                                              console.log('isCompletedStatus result:', isCompletedStatus(activity.completionStatus));
-                                              // Temporarily allowing upload regardless of completion status
-                                              const f = e.target.files && e.target.files[0];
-                                              if (!f) return;
-
-                                              const form = new FormData();
-                                              form.append('pdf', f);
-
-                                              try {
-                                                const res = await fetch(`${apiBase}/api/idp/upload`, {
-                                                  method: 'POST',
-                                                  headers: { Authorization: `Bearer ${token}` },
-                                                  body: form,
-                                                });
-                                                const data = await res.json();
-                                                if (!res.ok) throw new Error(data.message || 'Upload failed');
-                                                updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, data.pdf_path);
-                                                alert('PDF uploaded');
-                                              } catch (err) {
-                                                console.error('Upload failed', err);
-                                                alert('Upload failed: ' + (err.message || ''));
-                                              }
-                                            }}
+                                            type="text"
+                                            value={activity.activity}
+                                            onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.activity`, e.target.value)}
+                                            placeholder="Describe the activity..."
+                                            className="w-full bg-white rounded px-2 py-1 text-sm text-gray-800 font-medium outline-none focus:ring-1 focus:ring-blue-500 border border-gray-200"
                                           />
-                                          Upload
-                                        </label>
-                                      )}
-
-                                      {activity.pdfPath && (
-                                        <a
-                                          href={`${apiBase}/${activity.pdfPath}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-sm text-blue-600 hover:underline truncate shrink-0"
-                                        >
-                                          View
-                                        </a>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                <div className="lg:col-span-5 mt-6">
-                                  <div className="overflow-x-auto">
-                                    <table className="w-full border-collapse text-sm">
-                                      <thead>
-                                        <tr className="bg-gray-100 border border-gray-200">
-                                          <th className="border border-gray-200 px-3 py-2 text-left font-bold text-gray-800 text-sm">Expected Results</th>
-                                          <th className="border border-gray-200 px-3 py-2 text-left font-bold text-gray-800 text-sm">Knowledge Sharing Method</th>
-                                          <th className="border border-gray-200 px-3 py-2 text-left font-bold text-gray-800 text-sm">Application Method</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        <tr className="border border-gray-200">
-                                          <td className="border border-gray-200 px-3 py-2">
-                                            <textarea
-                                              value={activity.expectedResults}
-                                              onChange={(e) =>
-                                                updateIdpData(`items.${itemIndex}.developmentActivities.0.expectedResults`, e.target.value)
-                                              }
-                                              placeholder="What new or enhanced skill or knowledge will you learn from this IDP?"
-                                              rows={2}
-                                              className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
-                                            />
+                                        </td>
+                                        <td className="border border-gray-300 px-3 py-2 min-w-[130px]">
+                                          <input
+                                            type="date"
+                                            value={activity.targetCompletionDate || ''}
+                                            onChange={(e) =>
+                                              updateIdpData(`items.${itemIndex}.developmentActivities.0.targetCompletionDate`, e.target.value)
+                                            }
+                                            className="w-full bg-white rounded px-2 py-1 text-sm text-gray-800 font-medium outline-none focus:ring-1 focus:ring-blue-500 border border-gray-200"
+                                          />
+                                        </td>
+                                        <td className="border border-gray-300 px-3 py-2 min-w-[130px]">
+                                          <input
+                                            type="date"
+                                            value={activity.actualCompletionDate}
+                                            onChange={(e) =>
+                                              updateIdpData(`items.${itemIndex}.developmentActivities.0.actualCompletionDate`, e.target.value)
+                                            }
+                                            disabled={!isCompletedStatus(activity.completionStatus)}
+                                            required={isCompletedStatus(activity.completionStatus)}
+                                            className="w-full bg-white rounded px-2 py-1 text-sm text-gray-800 font-medium outline-none focus:ring-1 focus:ring-blue-500 border border-gray-200 disabled:bg-gray-100"
+                                          />
+                                        </td>
+                                        <td className="border border-gray-300 px-3 py-2 min-w-[140px]">
+                                          <select
+                                            value={activity.completionStatus}
+                                            onChange={(e) =>
+                                              updateIdpData(`items.${itemIndex}.developmentActivities.0.completionStatus`, e.target.value)
+                                            }
+                                            className="w-full bg-white rounded px-2 py-1 text-sm text-gray-800 font-medium outline-none focus:ring-1 focus:ring-blue-500 border border-gray-200"
+                                          >
+                                            {COMPLETION_STATUS_OPTIONS.map((status) => (
+                                              <option key={status} value={status}>
+                                                {status}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </td>
+                                        <td className="border border-gray-300 px-3 py-2 min-w-[70px]">
+                                          <select
+                                            value={activity.score}
+                                            onChange={(e) =>
+                                              updateIdpData(`items.${itemIndex}.developmentActivities.0.score`, parseInt(e.target.value))
+                                            }
+                                            className="w-full bg-white rounded px-2 py-1 text-sm text-gray-800 font-medium outline-none focus:ring-1 focus:ring-blue-500 border border-gray-200"
+                                          >
+                                            {[1, 2, 3, 4, 5].map((score) => (
+                                              <option key={score} value={score}>
+                                                {score}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </td>
+                                        {((activity.pdfPath) || isCompletedStatus(activity.completionStatus)) && (
+                                          <td className="border border-gray-300 px-3 py-2 min-w-[120px]">
+                                            <div className="flex flex-col gap-1">
+                                              <select
+                                                value={activity.pdfPath || ''}
+                                                onChange={(e) => updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, e.target.value)}
+                                                className="w-full bg-white rounded px-2 py-1 text-xs text-gray-800 border border-gray-200"
+                                                disabled={viewOnly || userRole !== 'Supervisor'}
+                                              >
+                                                <option value="">-- No file --</option>
+                                                {activity.pdfPath && (
+                                                  <option value={activity.pdfPath}>{activity.pdfPath.split('/').pop()}</option>
+                                                )}
+                                              </select>
+                                              <div className="flex gap-1">
+                                                {!viewOnly && userRole === 'Supervisor' && (
+                                                  <label className="flex-1 text-center px-1 py-1 bg-gray-100 border rounded text-xs cursor-pointer">
+                                                    <input
+                                                      type="file"
+                                                      accept="application/pdf"
+                                                      style={{ display: 'none' }}
+                                                      onChange={async (e) => {
+                                                        const file = e.target.files[0];
+                                                        if (!file) return;
+                                                        const formData = new FormData();
+                                                        formData.append('file', file);
+                                                        formData.append('competencyId', item.competencyId);
+                                                        try {
+                                                          setUploading({ [`${itemIndex}-0`]: true });
+                                                          const response = await uploadIDPFile(formData);
+                                                          if (response.success) {
+                                                            updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, response.filePath);
+                                                          }
+                                                        } catch (error) {
+                                                          console.error('Upload failed:', error);
+                                                        } finally {
+                                                          setUploading({ [`${itemIndex}-0`]: false });
+                                                        }
+                                                      }}
+                                                    />
+                                                    Upload
+                                                  </label>
+                                                )}
+                                                {activity.pdfPath && (
+                                                  <a
+                                                    href={`${apiBase}/${activity.pdfPath}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex-1 text-center px-1 py-1 text-xs text-blue-600 border rounded"
+                                                  >
+                                                    View
+                                                  </a>
+                                                )}
+                                              </div>
+                                            </div>
                                           </td>
-                                          <td className="border border-gray-200 px-3 py-2">
-                                            <textarea
-                                              value={activity.sharingMethod}
-                                              onChange={(e) =>
-                                                updateIdpData(`items.${itemIndex}.developmentActivities.0.sharingMethod`, e.target.value)
-                                              }
-                                              placeholder="How will you share these enhanced skills or knowledge with your TLs, peers, or direct reports?"
-                                              rows={2}
-                                              className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
-                                            />
-                                          </td>
-                                          <td className="border border-gray-200 px-3 py-2">
-                                            <textarea
-                                              value={activity.applicationMethod}
-                                              onChange={(e) =>
-                                                updateIdpData(`items.${itemIndex}.developmentActivities.0.applicationMethod`, e.target.value)
-                                              }
-                                              placeholder="How will you apply the skills or knowledge that you learned to improve your work performance?"
-                                              rows={2}
-                                              className="w-full bg-white rounded-lg px-4 py-3 text-base text-gray-800 font-medium outline-none focus:ring-2 focus:ring-black/10 border border-gray-300"
-                                            />
-                                          </td>
-                                        </tr>
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
+                                        )}
+                                        <td className="border border-gray-300 px-3 py-2 min-w-[200px]">
+                                          <textarea
+                                            value={activity.expectedResults}
+                                            onChange={(e) =>
+                                              updateIdpData(`items.${itemIndex}.developmentActivities.0.expectedResults`, e.target.value)
+                                            }
+                                            placeholder="What will you learn from this IDP?"
+                                            rows={2}
+                                            className="w-full bg-white rounded px-2 py-1 text-sm text-gray-800 font-medium outline-none focus:ring-1 focus:ring-blue-500 border border-gray-200 resize-none"
+                                          />
+                                        </td>
+                                        <td className="border border-gray-300 px-3 py-2 min-w-[200px]">
+                                          <textarea
+                                            value={activity.sharingMethod}
+                                            onChange={(e) =>
+                                              updateIdpData(`items.${itemIndex}.developmentActivities.0.sharingMethod`, e.target.value)
+                                            }
+                                            placeholder="How will you share these skills?"
+                                            rows={2}
+                                            className="w-full bg-white rounded px-2 py-1 text-sm text-gray-800 font-medium outline-none focus:ring-1 focus:ring-blue-500 border border-gray-200 resize-none"
+                                          />
+                                        </td>
+                                        <td className="border border-gray-300 px-3 py-2 min-w-[200px]">
+                                          <textarea
+                                            value={activity.applicationMethod}
+                                            onChange={(e) =>
+                                              updateIdpData(`items.${itemIndex}.developmentActivities.0.applicationMethod`, e.target.value)
+                                            }
+                                            placeholder="How will you apply these skills?"
+                                            rows={2}
+                                            className="w-full bg-white rounded px-2 py-1 text-sm text-gray-800 font-medium outline-none focus:ring-1 focus:ring-blue-500 border border-gray-200 resize-none"
+                                          />
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
                                 </div>
                               </div>
                             ) : isExpOrExposure ? (

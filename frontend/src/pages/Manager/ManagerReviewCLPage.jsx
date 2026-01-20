@@ -286,7 +286,7 @@ function ManagerReviewCLPage() {
     );
   }
 
-  // 👇 include supervisor_remarks and manager_remarks from backend
+  // 👇 include supervisor_remarks, am_remarks and manager_remarks from backend
   const { 
     id: clId, 
     status, 
@@ -298,6 +298,7 @@ function ManagerReviewCLPage() {
     department_name,
     supervisor_name,
     supervisor_remarks, 
+    am_remarks,
     manager_remarks, 
     updated_at 
   } = cl;
@@ -389,12 +390,14 @@ function ManagerReviewCLPage() {
               </div>
             </div>
 
-            {/* SUPERVISOR REMARKS (READ-ONLY) */}
-            {supervisor_remarks && (
+            {/* ASSISTANT MANAGER / SUPERVISOR REMARKS (READ-ONLY) */}
+            {(am_remarks || supervisor_remarks) && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold mb-1 text-yellow-800">Supervisor Remarks</h3>
+                <h3 className="text-sm font-semibold mb-1 text-yellow-800">
+                  {am_remarks ? 'Assistant Manager Remarks' : 'Supervisor Remarks'}
+                </h3>
                 <p className="text-sm text-yellow-900 whitespace-pre-wrap">
-                  {supervisor_remarks}
+                  {am_remarks || supervisor_remarks}
                 </p>
               </div>
             )}

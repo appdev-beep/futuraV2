@@ -421,77 +421,6 @@ function SupervisorReviewCLPage() {
               </div>
             </div>
 
-            {/* REMARKS HISTORY (READ-ONLY) */}
-            {(supervisor_remarks || manager_remarks || employee_remarks || hr_remarks) && (
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold mb-2 text-slate-700">Remarks History</h3>
-
-                {supervisor_remarks && (
-                  <div className="mb-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <h4 className="text-xs font-semibold text-yellow-800">Supervisor Remarks</h4>
-                      {updated_at && (
-                        <span className="text-[10px] text-slate-500">
-                          {new Date(updated_at).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-800 whitespace-pre-wrap">
-                      {supervisor_remarks}
-                    </p>
-                  </div>
-                )}
-
-                {manager_remarks && (
-                  <div className="mb-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <h4 className="text-xs font-semibold text-blue-800">Manager Remarks</h4>
-                      {updated_at && (
-                        <span className="text-[10px] text-slate-500">
-                          {new Date(updated_at).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-800 whitespace-pre-wrap">
-                      {manager_remarks}
-                    </p>
-                  </div>
-                )}
-
-                {employee_remarks && (
-                  <div className="mb-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <h4 className="text-xs font-semibold text-green-800">Employee Remarks</h4>
-                      {updated_at && (
-                        <span className="text-[10px] text-slate-500">
-                          {new Date(updated_at).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-800 whitespace-pre-wrap">
-                      {employee_remarks}
-                    </p>
-                  </div>
-                )}
-
-                {hr_remarks && (
-                  <div className="mb-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <h4 className="text-xs font-semibold text-purple-800">HR Remarks</h4>
-                      {updated_at && (
-                        <span className="text-[10px] text-slate-500">
-                          {new Date(updated_at).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-800 whitespace-pre-wrap">
-                      {hr_remarks}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* AUDIT TRAIL / PROCESS HISTORY */}
             {auditTrail.length > 0 && (
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
@@ -633,17 +562,74 @@ function SupervisorReviewCLPage() {
                       ) : (item.justification || '—')}
                     </td>
                     <td className="px-2 py-1">
-                      {item.pdf_path ? (
-                        <a
-                          href={`${import.meta.env.VITE_API_BASE_URL}/${item.pdf_path}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-blue-600 hover:text-blue-800 underline"
-                        >
-                          View
-                        </a>
+                      {status === 'DRAFT' ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            onChange={async (e) => {
+                              const file = e.target.files[0];
+                              if (!file) return;
+
+                              try {
+                                const formData = new FormData();
+                                formData.append('file', file);
+
+                                const response = await fetch(`${API_BASE_URL}/api/cl/upload`, {
+                                  method: 'POST',
+                                  headers: {
+                                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                                  },
+                                  body: formData
+                                });
+
+                                if (!response.ok) {
+                                  throw new Error('Upload failed');
+                                }
+
+                                const data = await response.json();
+                                const updated = [...items];
+                                updated[idx].pdf_path = data.filePath;
+                                setCl({ ...cl, items: updated });
+                                alert('PDF uploaded successfully!');
+                              } catch (error) {
+                                console.error('Upload error:', error);
+                                alert('Failed to upload PDF: ' + error.message);
+                              }
+                            }}
+                            className="hidden"
+                            id={`pdf-${item.id}`}
+                          />
+                          <label
+                            htmlFor={`pdf-${item.id}`}
+                            className="cursor-pointer px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded"
+                          >
+                            {item.pdf_path ? 'Replace' : 'Add PDF'}
+                          </label>
+                          {item.pdf_path && (
+                            <a
+                              href={`${import.meta.env.VITE_API_BASE_URL}/${item.pdf_path}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline text-xs"
+                            >
+                              View
+                            </a>
+                          )}
+                        </div>
                       ) : (
-                        <span className="text-slate-400 text-xs">No file</span>
+                        item.pdf_path ? (
+                          <a
+                            href={`${import.meta.env.VITE_API_BASE_URL}/${item.pdf_path}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 text-xs">No file</span>
+                        )
                       )}
                     </td>
                   </tr>

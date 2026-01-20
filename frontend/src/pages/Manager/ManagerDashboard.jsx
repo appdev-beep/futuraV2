@@ -503,12 +503,12 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   async function handleModalConfirm() {
     const fn = modalState.onConfirm;
     closeModal();
-    if (fn) await fn();
+    if (fn) {
+      await fn();
+    }
   }
 
   function logout() {
-    console.log('Logout button clicked - isAMDashboard:', isAMDashboard);
-    console.log('Modal state before opening:', modalState);
     openModal({
       title: 'Confirm Logout',
       message: 'Are you sure you want to logout? Any unsaved changes will be lost.',
@@ -516,7 +516,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       confirmText: 'Logout',
       cancelText: 'Cancel',
       onConfirm: () => {
-        console.log('Logout confirmed');
         localStorage.clear();
         window.location.href = '/login';
       },
@@ -755,6 +754,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const idpSectionCounts = useMemo(() => {
     return {
       pending_manager: filteredIDPsByStatus.pending_manager.length,
+      pending_employee: filteredIDPsByStatus.approved.length, // Maps to PENDING_EMPLOYEE status
       pending_hr: filteredIDPsByStatus.pending_hr.length,
       for_completion: filteredIDPsByStatus.for_completion.length,
       approved: filteredIDPsByStatus.approved.length,
@@ -945,6 +945,16 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                 </button>
                 {showIdpInReview && (
                   <div className="ml-6 space-y-1">
+                    {isAMDashboard && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveSection('idp_pending_manager')}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_pending_manager' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                      >
+                        <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />For Approval by Manager</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_manager || 0}</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setActiveSection('idp_pending_employee')}
@@ -1446,6 +1456,17 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         onNotificationClick={handleNotificationClick}
         onMarkAllRead={handleMarkAllAsRead}
         onClose={() => setShowFullNotifications(false)}
+      />
+
+      <Modal
+        open={modalState.open}
+        title={modalState.title}
+        message={modalState.message}
+        showCancel={modalState.showCancel}
+        confirmText={modalState.confirmText}
+        cancelText={modalState.cancelText}
+        onConfirm={handleModalConfirm}
+        onClose={closeModal}
       />
     </div>
   );
@@ -2745,17 +2766,6 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
 
 
       </div>
-
-      <Modal
-        open={modalState.open}
-        title={modalState.title}
-        message={modalState.message}
-        showCancel={modalState.showCancel}
-        confirmText={modalState.confirmText}
-        cancelText={modalState.cancelText}
-        onConfirm={handleModalConfirm}
-        onClose={closeModal}
-      />
     </div>
   );
 }

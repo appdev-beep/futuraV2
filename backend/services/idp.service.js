@@ -1453,6 +1453,14 @@ async function resubmitToManager(id) {
 async function exportIDP({ startDate, endDate, department, status }) {
   console.log('IDP Export Query Params:', { startDate, endDate, department, status });
   
+  // First, let's check if there are any IDPs at all
+  const [totalCount] = await db.query('SELECT COUNT(*) as count FROM idp_headers');
+  console.log('Total IDPs in database:', totalCount[0]?.count || 0);
+  
+  if (totalCount[0]?.count === 0) {
+    return generateEmptyIDPCSV('No IDPs found in database');
+  }
+  
   // Get comprehensive IDP data including all related tables
   let sql = `
     SELECT 
@@ -1492,10 +1500,16 @@ async function exportIDP({ startDate, endDate, department, status }) {
     JOIN positions p ON e.position_id = p.id
     LEFT JOIN idp_items ii ON ih.id = ii.idp_header_id
     LEFT JOIN competencies c ON ii.competency_id = c.id
-    WHERE DATE(ih.created_at) >= ? AND DATE(ih.created_at) <= ?
+    WHERE 1=1
   `;
   
-  const params = [startDate, endDate];
+  const params = [];
+  
+  // Only add date filter if dates are provided and valid
+  if (startDate && endDate) {
+    sql += ' AND DATE(ih.created_at) >= DATE(?) AND DATE(ih.created_at) <= DATE(?)';
+    params.push(startDate, endDate);
+  }
   
   if (department && department !== 'ALL') {
     sql += ' AND d.name = ?';
@@ -1515,10 +1529,50 @@ async function exportIDP({ startDate, endDate, department, status }) {
   const [rows] = await db.query(sql, params);
   console.log('Query returned', rows.length, 'rows');
   
-  // If no data found, try a broader query
-  if (rows.length === 0) {
-    console.log('No data found with current filters, expanding search...');
-    let broadSql = sql.replace('WHERE DATE(ih.created_at) >= ? AND DATE(ih.created_at) <= ?', 'WHERE 1=1');
+  // If no data found with filters, try without date filter
+  if (rows.length === 0 && startDate && endDate) {
+    console.log('No data found with date filters, trying without date restriction...');
+    
+    let broadSql = `
+      SELECT 
+        ih.id as idp_id,
+        ih.status,
+        ih.created_at,
+        ih.updated_at,
+        ih.review_period,
+        ih.next_review_date,
+        e.employee_id,
+        e.name as employee_name,
+        e.email as employee_email,
+        d.name as department_name,
+        p.title as position_title,
+        s.name as supervisor_name,
+        m.name as manager_name,
+        am.name as am_name,
+        ih.manager_remarks,
+        ih.am_remarks,
+        ii.id as item_id,
+        ii.competency_id,
+        c.name as competency_name,
+        c.competency_area,
+        ii.target_level,
+        ii.timeline_months,
+        ii.goal,
+        ii.action_plan,
+        ii.target_date,
+        ii.status as item_status,
+        ii.development_action
+      FROM idp_headers ih
+      JOIN users e ON ih.employee_id = e.id
+      LEFT JOIN users s ON ih.supervisor_id = s.id  
+      LEFT JOIN users m ON ih.manager_id = m.id
+      LEFT JOIN users am ON ih.am_id = am.id
+      JOIN departments d ON e.department_id = d.id
+      JOIN positions p ON e.position_id = p.id
+      LEFT JOIN idp_items ii ON ih.id = ii.idp_header_id
+      LEFT JOIN competencies c ON ii.competency_id = c.id
+      WHERE 1=1
+    `;
     let broadParams = [];
     
     if (department && department !== 'ALL') {

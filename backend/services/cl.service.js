@@ -1092,10 +1092,10 @@ async function amApprove(id, approverId, remarks) {
   try {
     await conn.beginTransaction();
 
-    // Get CL and employee details
+    // Get CL and employee details including manager
     const [clRows] = await conn.query(
       `SELECT ch.employee_id, e.name as employee_name, e.employee_id as employee_code,
-              u.name as am_name
+              e.manager_id, u.name as am_name
        FROM cl_headers ch
        JOIN users e ON ch.employee_id = e.id
        JOIN users u ON u.id = ?
@@ -1113,9 +1113,11 @@ async function amApprove(id, approverId, remarks) {
 
     await conn.commit();
 
-    // Send email notification to employee
+    // Send notifications and log action
     if (clRows.length > 0) {
-      const { employee_id, employee_name, employee_code, am_name } = clRows[0];
+      const { employee_id, employee_name, employee_code, manager_id, am_name } = clRows[0];
+      
+      // Send email notification to employee
       await sendCLNotificationEmail({
         clId: id,
         employeeId: employee_id,
@@ -1127,6 +1129,27 @@ async function amApprove(id, approverId, remarks) {
         remarks: remarks,
         requiresEmployeeAction: true
       }).catch(err => console.error('Failed to send email:', err));
+
+      // Notify manager that CL is pending their review
+      if (manager_id) {
+        await createNotification({
+          recipient_id: manager_id,
+          message: `CL #${id} for ${employee_name} has been approved by AM and requires your review.`,
+          module: 'CL',
+        }).catch(err => console.error('Failed to create manager notification:', err));
+      }
+
+      // Log the action
+      await logRecentAction({
+        actor_id: approverId,
+        module: 'CL',
+        action_type: 'CL_APPROVED_BY_AM',
+        cl_id: id,
+        employee_id: employee_id,
+        title: `AM approved CL for ${employee_name}`,
+        description: remarks || 'No remarks provided',
+        url: `/cl/manager/review/${id}`,
+      }).catch(err => console.error('Failed to log recent action:', err));
     }
 
     return { success: true, message: 'AM approved CL, moved to Employee' };
