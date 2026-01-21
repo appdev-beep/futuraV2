@@ -117,28 +117,24 @@ async function getById(id) {
 
 // Create IDP header
 async function create(payload) {
-  // Get department info for employee
+  // Get employee's individual assignments (manager_id, am_id)
   const [userRows] = await db.query(
-    `SELECT u.department_id, d.has_am FROM users u JOIN departments d ON u.department_id = d.id WHERE u.id = ?`,
+    `SELECT u.department_id, u.manager_id, u.am_id, d.has_am 
+     FROM users u 
+     JOIN departments d ON u.department_id = d.id 
+     WHERE u.id = ?`,
     [payload.employee_id]
   );
-  const departmentId = userRows[0]?.department_id;
-  const hasAM = !!userRows[0]?.has_am;
-
-  // Get AM and Manager for department
-  let amId = null, managerId = null;
-  if (hasAM) {
-    const [amRows] = await db.query(
-      `SELECT id FROM users WHERE department_id = ? AND role = 'AM' LIMIT 1`,
-      [departmentId]
-    );
-    amId = amRows[0]?.id || null;
+  
+  if (!userRows.length) {
+    throw new Error('Employee not found');
   }
-  const [managerRows] = await db.query(
-    `SELECT id FROM users WHERE department_id = ? AND role = 'Manager' LIMIT 1`,
-    [departmentId]
-  );
-  managerId = managerRows[0]?.id || null;
+  
+  const employee = userRows[0];
+  
+  // Use individual assignments directly
+  const managerId = employee.manager_id || null;
+  const amId = employee.am_id || null;
 
   const [result] = await db.query(
     `INSERT INTO idp_headers
@@ -590,20 +586,12 @@ async function update(id, payload, actorId = null, actorRole = null) {
         const [actorRows] = await db.query('SELECT name FROM users WHERE id = ?', [actorId]);
         const actorName = actorRows[0]?.name || 'Supervisor';
 
-        // Employee name
+        // Employee info with assigned manager/AM
         const employeeId = headerAfter.employee_id;
-        const [empRows] = await db.query('SELECT name, department_id FROM users WHERE id = ?', [employeeId]);
+        const [empRows] = await db.query('SELECT name, manager_id, am_id FROM users WHERE id = ?', [employeeId]);
         const employeeName = empRows[0]?.name || 'Employee';
-        const departmentId = empRows[0]?.department_id || null;
-
-        // Find AM and Manager for the employee's department
-        let amId = null, managerId = null;
-        if (departmentId) {
-          const [amRows] = await db.query("SELECT id FROM users WHERE department_id = ? AND role = 'AM' LIMIT 1", [departmentId]);
-          amId = amRows[0]?.id || null;
-          const [managerRows] = await db.query("SELECT id FROM users WHERE department_id = ? AND role = 'Manager' LIMIT 1", [departmentId]);
-          managerId = managerRows[0]?.id || null;
-        }
+        const managerId = empRows[0]?.manager_id || null;
+        const amId = empRows[0]?.am_id || null;
 
         // HR
         const [hrRows] = await db.query("SELECT id FROM users WHERE role = 'HR' LIMIT 1");
@@ -662,16 +650,15 @@ async function update(id, payload, actorId = null, actorRole = null) {
   }
 }
 
-// Submit IDP: route to AM if department has AM, else to Manager
+// Submit IDP: route to individually assigned AM if exists, else to individually assigned Manager
 async function submit(id) {
   console.log(`[IDP SUBMIT DEBUG] Starting submit for IDP ${id}`);
   
-  // 1. Get the IDP header, department info, and employee assignments
+  // 1. Get the IDP header with employee assignments
   const [headerRows] = await db.query(
-    `SELECT ih.*, u.department_id, u.manager_id, u.am_id, d.has_am
+    `SELECT ih.*, u.department_id, u.manager_id, u.am_id
      FROM idp_headers ih
      JOIN users u ON ih.employee_id = u.id
-     JOIN departments d ON u.department_id = d.id
      WHERE ih.id = ?`,
     [id]
   );
@@ -680,37 +667,18 @@ async function submit(id) {
   
   console.log(`[IDP SUBMIT DEBUG] Current status: ${header.status}`);
   
-  // Determine AM and Manager IDs based on individual assignments first, then fallback to department
-  let amId = header.am_id; // Use individually assigned AM first
-  let managerId = header.manager_id; // Use individually assigned Manager first
-  
-  // If no individual assignments, fallback to department-based lookup
-  if (!amId && header.has_am) {
-    const [amRows] = await db.query(
-      `SELECT id FROM users WHERE department_id = ? AND role = 'AM' AND is_active = 1 LIMIT 1`,
-      [header.department_id]
-    );
-    amId = amRows[0]?.id || null;
-  }
-  
-  if (!managerId) {
-    const [managerRows] = await db.query(
-      `SELECT id FROM users WHERE department_id = ? AND role = 'Manager' AND is_active = 1 LIMIT 1`,
-      [header.department_id]
-    );
-    managerId = managerRows[0]?.id || null;
-  }
+  // Use only individual assignments - no department fallback
+  const amId = header.am_id || null;
+  const managerId = header.manager_id || null;
 
-  // Determine next status based on individual assignments
+  // Determine next status based on individual assignments only
   let nextStatus;
-  if (header.am_id) {
+  if (amId) {
     nextStatus = 'PENDING_AM'; // Route to individually assigned AM
-  } else if (header.manager_id) {
+  } else if (managerId) {
     nextStatus = 'PENDING_MANAGER'; // Route to individually assigned Manager
   } else {
-    // Fallback to department-based routing
-    const hasAM = !!header.has_am;
-    nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
+    throw new Error('No manager or AM assigned to this employee');
   }
   
   // If status is FOR_COMPLETION, supervisor is just updating activities, keep the same status
@@ -852,7 +820,8 @@ async function submit(id) {
           approverId = null;
         }
       } else {
-        approverId = hasAM ? amId : managerId;
+        // Use amId if exists, otherwise use managerId
+        approverId = amId || managerId;
       }
 
       if (approverId) {

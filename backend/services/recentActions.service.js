@@ -35,37 +35,25 @@ async function getRecentActions(actorId, limit = 20, module = null) {
 
   // Filter based on role and employee assignment
   if (user.role === 'Manager') {
-    // Manager sees only:
-    // 1. Their own actions
-    // 2. Actions related to employees assigned to them (regardless of who performed the action)
+    // Manager sees only their own actions - not actions by other roles
     sql = `
       SELECT ra.id, ra.module, ra.title, ra.description, ra.url, ra.created_at, 
              u.name as actor_name, u.role as actor_role
       FROM recent_actions ra
       JOIN users u ON ra.actor_id = u.id
-      LEFT JOIN users e ON ra.employee_id = e.id
-      WHERE (
-        ra.actor_id = ? 
-        OR (ra.employee_id IS NOT NULL AND e.manager_id = ?)
-      )
+      WHERE ra.actor_id = ?
     `;
-    params = [actorId, actorId];
+    params = [actorId];
   } else if (user.role === 'AM') {
-    // AM sees only:
-    // 1. Their own actions  
-    // 2. Actions related to employees assigned to them (regardless of who performed the action)
+    // AM sees only their own actions - not actions by other roles
     sql = `
       SELECT ra.id, ra.module, ra.title, ra.description, ra.url, ra.created_at, 
              u.name as actor_name, u.role as actor_role
       FROM recent_actions ra
       JOIN users u ON ra.actor_id = u.id
-      LEFT JOIN users e ON ra.employee_id = e.id
-      WHERE (
-        ra.actor_id = ?
-        OR (ra.employee_id IS NOT NULL AND e.am_id = ?)
-      )
+      WHERE ra.actor_id = ?
     `;
-    params = [actorId, actorId];
+    params = [actorId];
   } else if (user.role === 'HR') {
     // HR sees all actions (keep existing logic)
     sql = `

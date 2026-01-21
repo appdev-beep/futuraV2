@@ -1213,6 +1213,13 @@ async function amApprove(id, approverId, remarks) {
         requiresEmployeeAction: true
       }).catch(err => console.error('Failed to send email:', err));
 
+      // Send in-app notification to employee
+      await createNotification({
+        recipient_id: employee_id,
+        message: `CL #${id} has been approved by Assistant Manager ${am_name || 'AM'}. Please review and approve.`,
+        module: 'CL',
+      }).catch(err => console.error('Failed to create employee notification:', err));
+
       // Notify manager that CL is pending their review
       if (manager_id) {
         await createNotification({

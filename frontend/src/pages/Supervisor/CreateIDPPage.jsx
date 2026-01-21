@@ -1,6 +1,7 @@
 // src/pages/Supervisor/CreateIDPPage.jsx
 // @ts-nocheck
 /* eslint-disable */
+import React from 'react';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
@@ -233,6 +234,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
   const [missingAttachments, setMissingAttachments] = useState([]);
   const [showMissingModal, setShowMissingModal] = useState(false);
+  
+  const [uploading, setUploading] = useState({});
 
   const [missingActualDates, setMissingActualDates] = useState([]);
   const [showMissingDateModal, setShowMissingDateModal] = useState(false);
@@ -271,6 +274,27 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     }
     return '';
   }
+
+  // Upload function for IDP files
+  const uploadIDPFile = async (formData) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch('http://localhost:4000/api/idp/upload', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Upload failed');
+    }
+    
+    const data = await response.json();
+    return {
+      success: true,
+      filePath: data.pdf_path,
+    };
+  };
 
   // Return true only for explicit completed statuses (avoid matching "In Progress (...) Completed")
   const isCompletedStatus = useCallback((s) => {
@@ -324,8 +348,12 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     if (!id) return;
     
     try {
-      const historyData = await apiRequest(`/api/recent-actions/idp/${id}`);
-      setProcessHistory(historyData || []);
+      const historyData = await apiRequest(`/api/recent-actions?module=IDP`);
+      // Filter for this specific IDP
+      const filteredHistory = (historyData || []).filter(action => 
+        action.description && action.description.includes(`IDP #${id}`)
+      );
+      setProcessHistory(filteredHistory || []);
     } catch (err) {
       console.error('Failed to load process history:', err);
       // Don't show error to user, just log it
@@ -2294,10 +2322,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                         const file = e.target.files[0];
                                                         if (!file) return;
                                                         const formData = new FormData();
-                                                        formData.append('file', file);
-                                                        formData.append('competencyId', item.competencyId);
+                                                        formData.append('pdf', file);
                                                         try {
-                                                          setUploading({ [`${itemIndex}-0`]: true });
+                                                          setUploading(prev => ({ ...prev, [`${itemIndex}-0`]: true }));
                                                           const response = await uploadIDPFile(formData);
                                                           if (response.success) {
                                                             updateIdpData(`items.${itemIndex}.developmentActivities.0.pdfPath`, response.filePath);
@@ -2305,7 +2332,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                         } catch (error) {
                                                           console.error('Upload failed:', error);
                                                         } finally {
-                                                          setUploading({ [`${itemIndex}-0`]: false });
+                                                          setUploading(prev => ({ ...prev, [`${itemIndex}-0`]: false }));
                                                         }
                                                       }}
                                                     />
@@ -2454,7 +2481,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 </thead>
                                 <tbody>
                                   {item.extraTables.map((t, ti) => (
-                                    <>
+                                    <React.Fragment key={`${itemIndex}-table-${ti}`}>
                                       {ti > 0 && (
                                         <tr key={`${ti}-row0`} className="bg-gray-700 text-white">
                                           <td colSpan="7" className="border border-gray-300 px-4 py-3">
@@ -2928,7 +2955,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                           </div>
                                         </td>
                                       </tr>
-                                    </>
+                                    </React.Fragment>
                                   ))}
                                 </tbody>
                               </table>
