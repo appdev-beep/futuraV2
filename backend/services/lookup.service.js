@@ -102,9 +102,81 @@ async function getAppraisalCycles() {
   return rows;
 }
 
+/**
+ * Get supervisors by department for dropdowns
+ * Returns: [{ id, name, email }]
+ */
+async function getSupervisorsByDepartment(departmentId) {
+  const [rows] = await db.query(
+    `
+    SELECT
+      id,
+      name,
+      email
+    FROM users
+    WHERE department_id = ? 
+      AND role = 'Supervisor'
+      AND is_active = 1
+    ORDER BY name ASC
+    `,
+    [departmentId]
+  );
+
+  return rows;
+}
+
+/**
+ * Get managers by department for dropdowns
+ * Returns: [{ id, name, email }]
+ */
+async function getManagersByDepartment(departmentId) {
+  const [rows] = await db.query(
+    `
+    SELECT
+      id,
+      name,
+      email
+    FROM users
+    WHERE department_id = ? 
+      AND role = 'Manager'
+      AND is_active = 1
+    ORDER BY name ASC
+    `,
+    [departmentId]
+  );
+
+  return rows;
+}
+
+/**
+ * Get assistant managers by department for dropdowns
+ * Returns: [{ id, name, email }]
+ */
+async function getAMsByDepartment(departmentId) {
+  const [rows] = await db.query(
+    `
+    SELECT
+      id,
+      name,
+      email
+    FROM users
+    WHERE department_id = ? 
+      AND role = 'AM'
+      AND is_active = 1
+    ORDER BY name ASC
+    `,
+    [departmentId]
+  );
+
+  return rows;
+}
+
 module.exports = {
   getDepartments,
   getPositions,
   getCompetencies,
-  getAppraisalCycles
+  getAppraisalCycles,
+  getSupervisorsByDepartment,
+  getManagersByDepartment,
+  getAMsByDepartment
 };

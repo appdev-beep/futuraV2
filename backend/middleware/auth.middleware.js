@@ -1,5 +1,6 @@
 // src/middleware/auth.middleware.js
 const jwt = require('jsonwebtoken');
+const { db } = require('../config/db');
 
 // Read JWT and attach req.user
 function requireAuth(req, res, next) {
@@ -60,4 +61,153 @@ function requireRole(...allowedRoles) {
   };
 }
 
-module.exports = { requireAuth, requireRole };
+// Check if user can approve CL for specific employee
+async function canApproveCLForEmployee(userId, employeeId) {
+  try {
+    const [empRows] = await db.query(
+      `SELECT manager_id, am_id, supervisor_id, department_id FROM users WHERE id = ?`,
+      [employeeId]
+    );
+    
+    if (!empRows.length) return false;
+    
+    const emp = empRows[0];
+    const [userRows] = await db.query(
+      `SELECT role, department_id FROM users WHERE id = ?`,
+      [userId]
+    );
+    
+    if (!userRows.length) return false;
+    
+    const user = userRows[0];
+    
+    // Individual assignments take priority
+    if (emp.manager_id === userId || emp.am_id === userId || emp.supervisor_id === userId) {
+      return true;
+    }
+    
+    // Fallback to department-based roles
+    if (user.department_id === emp.department_id) {
+      return ['Manager', 'AM', 'Supervisor', 'HR'].includes(user.role);
+    }
+    
+    // HR can approve any CL
+    return user.role === 'HR';
+  } catch (err) {
+    console.error('Error checking CL approval permission:', err);
+    return false;
+  }
+}
+
+// Check if user can approve IDP for specific employee
+async function canApproveIDPForEmployee(userId, employeeId) {
+  try {
+    const [empRows] = await db.query(
+      `SELECT manager_id, am_id, supervisor_id, department_id FROM users WHERE id = ?`,
+      [employeeId]
+    );
+    
+    if (!empRows.length) return false;
+    
+    const emp = empRows[0];
+    const [userRows] = await db.query(
+      `SELECT role, department_id FROM users WHERE id = ?`,
+      [userId]
+    );
+    
+    if (!userRows.length) return false;
+    
+    const user = userRows[0];
+    
+    // Individual assignments take priority
+    if (emp.manager_id === userId || emp.am_id === userId || emp.supervisor_id === userId) {
+      return true;
+    }
+    
+    // Fallback to department-based roles
+    if (user.department_id === emp.department_id) {
+      return ['Manager', 'AM', 'Supervisor', 'HR'].includes(user.role);
+    }
+    
+    // HR can approve any IDP
+    return user.role === 'HR';
+  } catch (err) {
+    console.error('Error checking IDP approval permission:', err);
+    return false;
+  }
+}
+
+// Middleware for CL approval authorization
+function requireCLApprovalPermission(req, res, next) {
+  return async (req, res, next) => {
+    try {
+      const clId = req.params.id;
+      
+      // Get employee ID from CL
+      const [clRows] = await db.query(
+        `SELECT employee_id FROM cl_headers WHERE id = ?`,
+        [clId]
+      );
+      
+      if (!clRows.length) {
+        return res.status(404).json({ message: 'CL not found' });
+      }
+      
+      const employeeId = clRows[0].employee_id;
+      const canApprove = await canApproveCLForEmployee(req.user.id, employeeId);
+      
+      if (!canApprove) {
+        return res.status(403).json({ 
+          message: 'You do not have permission to approve this CL' 
+        });
+      }
+      
+      next();
+    } catch (err) {
+      console.error('CL approval permission check failed:', err);
+      return res.status(500).json({ message: 'Permission check failed' });
+    }
+  };
+}
+
+// Middleware for IDP approval authorization
+function requireIDPApprovalPermission(req, res, next) {
+  return async (req, res, next) => {
+    try {
+      const idpId = req.params.id;
+      
+      // Get employee ID from IDP
+      const [idpRows] = await db.query(
+        `SELECT employee_id FROM idp_headers WHERE id = ?`,
+        [idpId]
+      );
+      
+      if (!idpRows.length) {
+        return res.status(404).json({ message: 'IDP not found' });
+      }
+      
+      const employeeId = idpRows[0].employee_id;
+      const canApprove = await canApproveIDPForEmployee(req.user.id, employeeId);
+      
+      if (!canApprove) {
+        return res.status(403).json({ 
+          message: 'You do not have permission to approve this IDP' 
+        });
+      }
+      
+      next();
+    } catch (err) {
+      console.error('IDP approval permission check failed:', err);
+      return res.status(500).json({ message: 'Permission check failed' });
+    }
+  };
+}
+
+module.exports = { 
+  requireAuth, 
+  requireRole, 
+  canApproveCLForEmployee,
+  canApproveIDPForEmployee,
+  requireCLApprovalPermission,
+  requireIDPApprovalPermission
+};

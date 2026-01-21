@@ -33,7 +33,8 @@ const bcrypt = require('bcryptjs');
     const positionId = posRows[0].id;
     const departmentId = deptRows[0].id;
 
-    const [result] = await conn.query(
+    // Create HR user
+    const [hrResult] = await conn.query(
       `INSERT INTO users (
          employee_id,
          name,
@@ -48,17 +49,17 @@ const bcrypt = require('bcryptjs');
        )
        VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())`,
       [
-        'EMP-ADMIN-001',
-        'System Administrator',
-        'admin@futura.local', // change email if needed
+        'EMP-HR-001',
+        'HR Manager',
+        'hr@futura.local',
         positionId,
         departmentId,
-        'Admin',
+        'HR',
         passwordHash
       ]
     );
 
-    console.log('✅ Admin user created with id:', result.insertId);
+    console.log('✅ HR user created with id:', hrResult.insertId);
   } catch (err) {
     console.error('❌ Failed to seed admin user:', err.message);
   } finally {

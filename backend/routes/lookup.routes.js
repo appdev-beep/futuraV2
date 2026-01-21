@@ -21,4 +21,13 @@ router.get('/competencies', lookupController.getCompetencies);
 // GET /api/lookup/cycles
 router.get('/cycles', lookupController.getAppraisalCycles);
 
+// GET /api/lookup/supervisors/:departmentId
+router.get('/supervisors/:departmentId', lookupController.getSupervisorsByDepartment);
+
+// GET /api/lookup/managers/:departmentId
+router.get('/managers/:departmentId', lookupController.getManagersByDepartment);
+
+// GET /api/lookup/ams/:departmentId
+router.get('/ams/:departmentId', lookupController.getAMsByDepartment);
+
 module.exports = router;

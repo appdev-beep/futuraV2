@@ -249,9 +249,12 @@ async function submit(id, supervisorRemarks = null) {
         ch.status,
         ch.awaiting_approval_from,
         ch.supervisor_remarks,
-        d.has_am
+        d.has_am,
+        u.manager_id,
+        u.am_id
      FROM cl_headers ch
      JOIN departments d ON d.id = ch.department_id
+     JOIN users u ON u.id = ch.employee_id
      WHERE ch.id = ?`,
     [id]
   );
@@ -274,14 +277,24 @@ async function submit(id, supervisorRemarks = null) {
   );
   const employeeName = empRows[0]?.name || 'Employee';
 
-  // 2) Determine next status
+  // 2) Determine next status based on individual assignments
   let nextStatus;
 
   if (clHeader.awaiting_approval_from) {
+    // For resubmission, route back to whoever returned it
     nextStatus = clHeader.awaiting_approval_from;
   } else {
-    const hasAM = !!clHeader.has_am;
-    nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
+    // For first submission, check individual assignments
+    // Priority: 1. Assistant Manager (if assigned), 2. Manager (if assigned), 3. HR
+    if (clHeader.am_id) {
+      nextStatus = 'PENDING_AM';
+    } else if (clHeader.manager_id) {
+      nextStatus = 'PENDING_MANAGER';
+    } else {
+      // Fallback to department-based routing if no individual assignments
+      const hasAM = !!clHeader.has_am;
+      nextStatus = hasAM ? 'PENDING_AM' : 'PENDING_MANAGER';
+    }
   }
 
   // 3) No longer auto-generate PDF - use uploaded PDFs instead
@@ -356,31 +369,74 @@ async function submit(id, supervisorRemarks = null) {
     module: 'CL'
   }).catch(err => console.error('Failed to create notification:', err));
 
-  // 9) Create notification for the next approver (Manager, AM, or HR)
-  let approverRole, approverQuery;
+  // 9) Create notification for the next approver (specific Manager, AM, or HR)
+  let approverId = null;
+  let approverName = '';
   
   if (nextStatus === 'PENDING_HR') {
-    // For HR approval, find HR users
-    approverRole = 'HR';
-    approverQuery = `SELECT id, name FROM users WHERE role = 'HR' LIMIT 1`;
-  } else {
-    // For Manager or AM approval
-    const hasAM = !!clHeader.has_am;
-    approverRole = hasAM ? 'AM' : 'Manager';
-    approverQuery = `SELECT id, name FROM users 
-                     WHERE department_id = ? AND role = ? 
-                     LIMIT 1`;
+    // For HR approval, find any HR user
+    const [hrRows] = await db.query(
+      `SELECT id, name FROM users WHERE role = 'HR' AND is_active = 1 LIMIT 1`
+    );
+    if (hrRows.length > 0) {
+      approverId = hrRows[0].id;
+      approverName = hrRows[0].name;
+    }
+  } else if (nextStatus === 'PENDING_AM') {
+    // For AM approval, use assigned AM first, then fallback to department AM
+    if (clHeader.am_id) {
+      const [amRows] = await db.query(
+        `SELECT id, name FROM users WHERE id = ? AND is_active = 1`,
+        [clHeader.am_id]
+      );
+      if (amRows.length > 0) {
+        approverId = amRows[0].id;
+        approverName = amRows[0].name;
+      }
+    } else {
+      // Fallback to department AM
+      const [amRows] = await db.query(
+        `SELECT id, name FROM users 
+         WHERE department_id = ? AND role = 'AM' AND is_active = 1 
+         LIMIT 1`,
+        [clHeader.department_id]
+      );
+      if (amRows.length > 0) {
+        approverId = amRows[0].id;
+        approverName = amRows[0].name;
+      }
+    }
+  } else if (nextStatus === 'PENDING_MANAGER') {
+    // For Manager approval, use assigned manager first, then fallback to department manager
+    if (clHeader.manager_id) {
+      const [managerRows] = await db.query(
+        `SELECT id, name FROM users WHERE id = ? AND is_active = 1`,
+        [clHeader.manager_id]
+      );
+      if (managerRows.length > 0) {
+        approverId = managerRows[0].id;
+        approverName = managerRows[0].name;
+      }
+    } else {
+      // Fallback to department manager
+      const [managerRows] = await db.query(
+        `SELECT id, name FROM users 
+         WHERE department_id = ? AND role = 'Manager' AND is_active = 1 
+         LIMIT 1`,
+        [clHeader.department_id]
+      );
+      if (managerRows.length > 0) {
+        approverId = managerRows[0].id;
+        approverName = managerRows[0].name;
+      }
+    }
   }
   
-  // Find the approver
-  const approverParams = nextStatus === 'PENDING_HR' ? [] : [clHeader.department_id, approverRole];
-  const [approverRows] = await db.query(approverQuery, approverParams);
-
-  if (approverRows.length > 0) {
-    const approver = approverRows[0];
+  // Send notification to the specific approver
+  if (approverId) {
     const remarksText = supervisorRemarks ? ` Remarks: ${supervisorRemarks}` : '';
     await createNotification({
-      recipient_id: approver.id,
+      recipient_id: approverId,
       message: `CL #${id} for ${employeeName} ${isResubmission ? 'resubmitted' : 'submitted'} by ${supervisorName} is awaiting your approval.${remarksText}`,
       module: 'CL',
       url: `/hr#CL`
@@ -1816,21 +1872,61 @@ async function getHRAllCL(hrId) {
   }
 }
 
-// Find a user by role in same department (simple approach)
-async function findApproverByRole(department_id, role) {
-  // adjust query to your DB layer
-  return db.users.findFirst({
-    where: { department_id, role, is_active: true },
-  });
+// Find a user by role in same department or by individual assignment
+async function findApproverByRole(department_id, role, employee_id = null) {
+  // If we have employee_id, try to find individually assigned approver first
+  if (employee_id) {
+    const [empRows] = await db.query(
+      `SELECT manager_id, am_id FROM users WHERE id = ?`,
+      [employee_id]
+    );
+    
+    if (empRows.length > 0) {
+      const emp = empRows[0];
+      
+      if (role === 'Manager' && emp.manager_id) {
+        const [managerRows] = await db.query(
+          `SELECT * FROM users WHERE id = ? AND is_active = 1`,
+          [emp.manager_id]
+        );
+        if (managerRows.length > 0) return managerRows[0];
+      }
+      
+      if (role === 'AM' && emp.am_id) {
+        const [amRows] = await db.query(
+          `SELECT * FROM users WHERE id = ? AND is_active = 1`,
+          [emp.am_id]
+        );
+        if (amRows.length > 0) return amRows[0];
+      }
+    }
+  }
+  
+  // Fallback to department-based lookup
+  const [rows] = await db.query(
+    `SELECT * FROM users WHERE department_id = ? AND role = ? AND is_active = 1 LIMIT 1`,
+    [department_id, role]
+  );
+  
+  return rows.length > 0 ? rows[0] : null;
 }
 
 async function getRecipientForStatus(clHeader) {
   const { status, department_id, employee_id, supervisor_id } = clHeader;
 
   if (status === "PENDING_EMPLOYEE") return { recipient_id: employee_id, role: "Employee" };
-  if (status === "PENDING_AM") return { recipient_id: (await findApproverByRole(department_id, "AM"))?.id, role: "AM" };
-  if (status === "PENDING_MANAGER") return { recipient_id: (await findApproverByRole(department_id, "Manager"))?.id, role: "Manager" };
-  if (status === "PENDING_HR") return { recipient_id: (await findApproverByRole(department_id, "HR"))?.id, role: "HR" };
+  if (status === "PENDING_AM") {
+    const approver = await findApproverByRole(department_id, "AM", employee_id);
+    return { recipient_id: approver?.id, role: "AM" };
+  }
+  if (status === "PENDING_MANAGER") {
+    const approver = await findApproverByRole(department_id, "Manager", employee_id);
+    return { recipient_id: approver?.id, role: "Manager" };
+  }
+  if (status === "PENDING_HR") {
+    const approver = await findApproverByRole(department_id, "HR");
+    return { recipient_id: approver?.id, role: "HR" };
+  }
 
   return null;
 }

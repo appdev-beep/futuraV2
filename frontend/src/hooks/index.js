@@ -1,7 +1,7 @@
 // src/hooks/index.js
 // Barrel export for all hooks
 
-export { useAuth } from '../contexts/AuthContext';
+export { useAuth } from './useAuth';
 export { useModal } from './useModal';
 export { useNotifications } from './useNotifications';
 export { useRecentActions } from './useRecentActions';

@@ -1757,7 +1757,7 @@ function CLTable({ data, onCLClick }) {
                   <button
                     onClick={(e) => { 
                       e.stopPropagation(); 
-                      window.location.href = `/cl/hr/review/${item.id}`;
+                      onCLClick(item.id);
                     }}
                     className="px-3 py-1 rounded text-white text-xs bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
                   >

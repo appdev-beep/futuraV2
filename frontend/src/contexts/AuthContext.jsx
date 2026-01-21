@@ -2,29 +2,10 @@
 // Centralized authentication context for the application.
 // Provides user state, login, logout, and role-checking functionality.
 
-import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import { createContext, useContext, useState, useMemo, useCallback } from 'react';
+import { ROLE_HIERARCHY, ROLE_REDIRECTS } from '../constants/authConstants.js';
 
 const AuthContext = createContext(null);
-
-// Role hierarchy for permission checks
-const ROLE_HIERARCHY = {
-  Admin: 5,
-  HR: 4,
-  Manager: 3,
-  AM: 2,
-  Supervisor: 1,
-  Employee: 0,
-};
-
-// Role-based redirect paths
-const ROLE_REDIRECTS = {
-  Admin: '/admin',
-  HR: '/hr',
-  Manager: '/manager',
-  AM: '/am',
-  Supervisor: '/supervisor',
-  Employee: '/employee',
-};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
@@ -45,7 +26,7 @@ export function AuthProvider({ children }) {
     return localStorage.getItem('token') || null;
   });
   
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
 
   // No useEffect needed - state is initialized from localStorage synchronously
 
@@ -118,15 +99,6 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-// Custom hook to use auth context
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
 }
 
 export default AuthContext;

@@ -21,7 +21,9 @@ async function create(req, res, next) {
       department_id,
       role,
       password,
-      supervisor_id
+      supervisor_id,
+      manager_id,
+      am_id
     } = req.body;
 
     if (!employee_id || !email || !position_id || !department_id || !role || !password) {
@@ -46,7 +48,9 @@ async function create(req, res, next) {
       department_id,
       role,
       password,
-      supervisor_id: supervisor_id || null
+      supervisor_id: supervisor_id || null,
+      manager_id: manager_id || null,
+      am_id: am_id || null
     });
 
     res.status(201).json(user);

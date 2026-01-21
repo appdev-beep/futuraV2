@@ -41,9 +41,45 @@ async function getAppraisalCycles(req, res, next) {
   }
 }
 
+// GET /api/lookup/supervisors/:departmentId
+async function getSupervisorsByDepartment(req, res, next) {
+  try {
+    const { departmentId } = req.params;
+    const rows = await lookupService.getSupervisorsByDepartment(departmentId);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/lookup/managers/:departmentId
+async function getManagersByDepartment(req, res, next) {
+  try {
+    const { departmentId } = req.params;
+    const rows = await lookupService.getManagersByDepartment(departmentId);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/lookup/ams/:departmentId
+async function getAMsByDepartment(req, res, next) {
+  try {
+    const { departmentId } = req.params;
+    const rows = await lookupService.getAMsByDepartment(departmentId);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getDepartments,
   getPositions,
   getCompetencies,
-  getAppraisalCycles
+  getAppraisalCycles,
+  getSupervisorsByDepartment,
+  getManagersByDepartment,
+  getAMsByDepartment
 };

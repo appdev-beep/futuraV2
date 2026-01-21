@@ -1714,6 +1714,14 @@ function ProfileModal({ open, userData, loading, onClose }) {
                     <div className="text-slate-600">Supervisor:</div>
                     <div className="font-medium text-right">{userData?.supervisor_name || '-'}</div>
                   </div>
+                  <div className="flex justify-between">
+                    <div className="text-slate-600">Manager:</div>
+                    <div className="font-medium text-right">{userData?.manager_name || '-'}</div>
+                  </div>
+                  <div className="flex justify-between">
+                    <div className="text-slate-600">Assistant Manager:</div>
+                    <div className="font-medium text-right">{userData?.am_name || '-'}</div>
+                  </div>
                 </div>
               </div>
 

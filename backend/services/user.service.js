@@ -11,7 +11,9 @@ async function createUser({
   department_id,
   role,
   password,
-  supervisor_id
+  supervisor_id,
+  manager_id,
+  am_id
 }) {
   if (!ALLOWED_ROLES.includes(role)) {
     const err = new Error('Invalid role');
@@ -40,10 +42,11 @@ async function createUser({
         `
         UPDATE users
         SET employee_id = ?, name = ?, position_id = ?, department_id = ?, 
-            role = ?, password = ?, supervisor_id = ?, is_active = 1, updated_at = NOW()
+            role = ?, password = ?, supervisor_id = ?, manager_id = ?, am_id = ?, 
+            is_active = 1, updated_at = NOW()
         WHERE id = ?
         `,
-        [employee_id, name, position_id, department_id, role, passwordHash, supervisor_id || null, existingUser.id]
+        [employee_id, name, position_id, department_id, role, passwordHash, supervisor_id || null, manager_id || null, am_id || null, existingUser.id]
       );
 
       const userId = existingUser.id;
@@ -82,10 +85,10 @@ async function createUser({
   const [result] = await db.query(
     `
     INSERT INTO users
-      (employee_id, name, email, position_id, department_id, role, password, supervisor_id, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
+      (employee_id, name, email, position_id, department_id, role, password, supervisor_id, manager_id, am_id, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
     `,
-    [employee_id, name, email, position_id, department_id, role, passwordHash, supervisor_id || null]
+    [employee_id, name, email, position_id, department_id, role, passwordHash, supervisor_id || null, manager_id || null, am_id || null]
   );
 
   const userId = result.insertId;
@@ -130,15 +133,21 @@ async function listUsers() {
       u.role,
       u.is_active,
       u.supervisor_id,
+      u.manager_id,
+      u.am_id,
       d.name  AS department_name,
       p.title AS position_title,
       s.name  AS supervisor_name,
+      m.name  AS manager_name,
+      am.name AS am_name,
       u.created_at,
       u.updated_at
     FROM users u
     LEFT JOIN departments d ON u.department_id = d.id
     LEFT JOIN positions   p ON u.position_id = p.id
     LEFT JOIN users       s ON u.supervisor_id = s.id
+    LEFT JOIN users       m ON u.manager_id = m.id
+    LEFT JOIN users       am ON u.am_id = am.id
     WHERE u.is_active = 1
     ORDER BY u.created_at DESC
     `
@@ -147,7 +156,7 @@ async function listUsers() {
 }
 
 async function getUserById(userId) {
-  // Fetch user with department, position, and supervisor names
+  // Fetch user with department, position, supervisor, manager, and AM names
   const [rows] = await db.query(
     `
     SELECT
@@ -160,15 +169,21 @@ async function getUserById(userId) {
       u.role,
       u.is_active,
       u.supervisor_id,
+      u.manager_id,
+      u.am_id,
       d.name  AS department_name,
       p.title AS position_title,
       s.name  AS supervisor_name,
+      m.name  AS manager_name,
+      am.name AS am_name,
       u.created_at,
       u.updated_at
     FROM users u
     LEFT JOIN departments d ON u.department_id = d.id
     LEFT JOIN positions   p ON u.position_id = p.id
     LEFT JOIN users       s ON u.supervisor_id = s.id
+    LEFT JOIN users       m ON u.manager_id = m.id
+    LEFT JOIN users       am ON u.am_id = am.id
     WHERE u.id = ?
     `,
     [userId]

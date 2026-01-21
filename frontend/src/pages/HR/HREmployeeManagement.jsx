@@ -12,10 +12,14 @@ function HREmployeeManagement() {
   const [role, setRole] = useState('Employee');
   const [password, setPassword] = useState('');
   const [supervisorId, setSupervisorId] = useState('');
+  const [managerId, setManagerId] = useState('');
+  const [amId, setAmId] = useState('');
 
   const [departments, setDepartments] = useState([]);
   const [positions, setPositions] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
+  const [managers, setManagers] = useState([]);
+  const [ams, setAms] = useState([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -70,14 +74,12 @@ function HREmployeeManagement() {
   useEffect(() => {
     async function loadLookups() {
       try {
-        const [deps, pos, allUsers] = await Promise.all([
+        const [deps, pos] = await Promise.all([
           apiRequest('/api/lookup/departments', { method: 'GET' }),
-          apiRequest('/api/lookup/positions', { method: 'GET' }),
-          apiRequest('/api/users', { method: 'GET' })
+          apiRequest('/api/lookup/positions', { method: 'GET' })
         ]);
         setDepartments(deps);
         setPositions(pos);
-        setSupervisors(allUsers.filter(u => u.role === 'Supervisor'));
       } catch (err) {
         console.error(err);
         setError('Failed to load lookups. Check your backend /lookup routes.');
@@ -88,22 +90,40 @@ function HREmployeeManagement() {
     fetchUsers();
   }, []);
 
-  // When department changes, reset selected position
+  // When department changes, reset selected position and hierarchy
   function handleDepartmentChange(e) {
     const value = e.target.value;
     setDepartmentId(value);
     setPositionId('');
     setSupervisorId('');
+    setManagerId('');
+    setAmId('');
+    
+    // Load department-specific users
+    if (value) {
+      loadDepartmentUsers(value);
+    }
   }
+
+  // Load department-specific users
+  const loadDepartmentUsers = async (departmentId) => {
+    try {
+      const [supervisorsData, managersData, amsData] = await Promise.all([
+        apiRequest(`/api/lookup/supervisors/${departmentId}`, { method: 'GET' }),
+        apiRequest(`/api/lookup/managers/${departmentId}`, { method: 'GET' }),
+        apiRequest(`/api/lookup/ams/${departmentId}`, { method: 'GET' })
+      ]);
+      setSupervisors(supervisorsData);
+      setManagers(managersData);
+      setAms(amsData);
+    } catch (err) {
+      console.error('Failed to load department users:', err);
+    }
+  };
 
   // Filter positions based on selected department
   const filteredPositions = departmentId
     ? positions.filter((p) => String(p.department_id) === String(departmentId))
-    : [];
-
-  // Filter supervisors based on selected department
-  const filteredSupervisors = departmentId
-    ? supervisors.filter((s) => String(s.department_id) === String(departmentId))
     : [];
 
   function handleLogout() {
@@ -125,7 +145,9 @@ function HREmployeeManagement() {
         position_id: Number(positionId),
         department_id: Number(departmentId),
         role,
-        supervisor_id: supervisorId ? Number(supervisorId) : null
+        supervisor_id: supervisorId ? Number(supervisorId) : null,
+        manager_id: managerId ? Number(managerId) : null,
+        am_id: amId ? Number(amId) : null
       };
 
       if (editingUser) {
@@ -169,6 +191,8 @@ function HREmployeeManagement() {
       setRole('Employee');
       setPassword('');
       setSupervisorId('');
+      setManagerId('');
+      setAmId('');
 
       // Refresh users list
       await fetchUsers();
@@ -188,7 +212,15 @@ function HREmployeeManagement() {
     setPositionId(String(user.position_id));
     setRole(user.role);
     setSupervisorId(user.supervisor_id ? String(user.supervisor_id) : '');
+    setManagerId(user.manager_id ? String(user.manager_id) : '');
+    setAmId(user.am_id ? String(user.am_id) : '');
     setPassword('');
+    
+    // Load department users when editing
+    if (user.department_id) {
+      loadDepartmentUsers(user.department_id);
+    }
+    
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -202,6 +234,8 @@ function HREmployeeManagement() {
     setRole('Employee');
     setPassword('');
     setSupervisorId('');
+    setManagerId('');
+    setAmId('');
   }
 
   // Handle delete user
@@ -400,31 +434,75 @@ function HREmployeeManagement() {
               </select>
             </div>
 
-            {role === 'Employee' && (
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                  Supervisor
-                </label>
-                <select
-                  value={supervisorId}
-                  onChange={(e) => setSupervisorId(e.target.value)}
-                  required={role === 'Employee'}
-                  disabled={!departmentId}
-                  className="block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
-                >
-                  <option value="">
-                    {departmentId
-                      ? '-- Select Supervisor --'
-                      : 'Select department first'}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-700">
+                Supervisor
+              </label>
+              <select
+                value={supervisorId}
+                onChange={(e) => setSupervisorId(e.target.value)}
+                required={role === 'Employee'}
+                disabled={!departmentId}
+                className="block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+              >
+                <option value="">
+                  {departmentId
+                    ? '-- Select Supervisor --'
+                    : 'Select department first'}
+                </option>
+                {supervisors.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.email})
                   </option>
-                  {filteredSupervisors.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.employee_id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-700">
+                Manager
+              </label>
+              <select
+                value={managerId}
+                onChange={(e) => setManagerId(e.target.value)}
+                disabled={!departmentId}
+                className="block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+              >
+                <option value="">
+                  {departmentId
+                    ? '-- Select Manager (Optional) --'
+                    : 'Select department first'}
+                </option>
+                {managers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-700">
+                Assistant Manager
+              </label>
+              <select
+                value={amId}
+                onChange={(e) => setAmId(e.target.value)}
+                disabled={!departmentId}
+                className="block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+              >
+                <option value="">
+                  {departmentId
+                    ? '-- Select Assistant Manager (Optional) --'
+                    : 'Select department first'}
+                </option>
+                {ams.map((am) => (
+                  <option key={am.id} value={am.id}>
+                    {am.name} ({am.email})
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="space-y-2 md:col-span-2">
               <label className="block text-sm font-semibold text-gray-700">
@@ -489,6 +567,8 @@ function HREmployeeManagement() {
                             <th className="px-4 py-3 text-left font-medium text-gray-700">Position</th>
                             <th className="px-4 py-3 text-left font-medium text-gray-700">Role</th>
                             <th className="px-4 py-3 text-left font-medium text-gray-700">Supervisor</th>
+                            <th className="px-4 py-3 text-left font-medium text-gray-700">Manager</th>
+                            <th className="px-4 py-3 text-left font-medium text-gray-700">Assistant Manager</th>
                             <th className="px-4 py-3 text-left font-medium text-gray-700">Actions</th>
                           </tr>
                         </thead>
@@ -518,6 +598,12 @@ function HREmployeeManagement() {
                                 ) : (
                                   <span className="text-gray-700">{u.supervisor_name || '-'}</span>
                                 )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="text-gray-700">{u.manager_name || '-'}</span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="text-gray-700">{u.am_name || '-'}</span>
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex gap-2">
@@ -564,6 +650,8 @@ function HREmployeeManagement() {
                             <th className="px-4 py-3 text-left font-medium text-gray-700">Position</th>
                             <th className="px-4 py-3 text-left font-medium text-gray-700">Role</th>
                             <th className="px-4 py-3 text-left font-medium text-gray-700">Supervisor</th>
+                            <th className="px-4 py-3 text-left font-medium text-gray-700">Manager</th>
+                            <th className="px-4 py-3 text-left font-medium text-gray-700">Assistant Manager</th>
                             <th className="px-4 py-3 text-left font-medium text-gray-700">Actions</th>
                           </tr>
                         </thead>
@@ -593,6 +681,12 @@ function HREmployeeManagement() {
                                 ) : (
                                   <span className="text-gray-700">{u.supervisor_name || '-'}</span>
                                 )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="text-gray-700">{u.manager_name || '-'}</span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="text-gray-700">{u.am_name || '-'}</span>
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex gap-2">
