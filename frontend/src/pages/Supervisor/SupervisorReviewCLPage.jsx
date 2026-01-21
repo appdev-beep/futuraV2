@@ -70,6 +70,9 @@ function SupervisorReviewCLPage() {
         ]);
         
         setCl(clData);
+        console.log('SupervisorReviewCL - Loaded CL data:', clData);
+        console.log('Manager name:', clData.manager_name);
+        console.log('AM name:', clData.am_name);
         setAuditTrail(trail || []);
 
         // if there are existing supervisor remarks, you can optionally prefill
@@ -209,6 +212,9 @@ function SupervisorReviewCLPage() {
     employee_email,
     department_name,
     position_title,
+    supervisor_name,
+    manager_name,
+    am_name,
     supervisor_remarks,
     manager_remarks,
     employee_remarks,
@@ -403,12 +409,24 @@ function SupervisorReviewCLPage() {
                   <span className="ml-2 font-medium text-slate-800">{employee_name}</span>
                 </div>
                 <div>
+                  <span className="text-slate-600">Supervisor:</span>
+                  <span className="ml-2 font-medium text-slate-800">{supervisor_name || 'N/A'}</span>
+                </div>
+                <div>
                   <span className="text-slate-600">Employee ID:</span>
                   <span className="ml-2 font-medium text-slate-800">{employee_id}</span>
                 </div>
                 <div>
+                  <span className="text-slate-600">Manager:</span>
+                  <span className="ml-2 font-medium text-slate-800">{manager_name || 'N/A'}</span>
+                </div>
+                <div>
                   <span className="text-slate-600">Email:</span>
                   <span className="ml-2 font-medium text-slate-800">{employee_email}</span>
+                </div>
+                <div>
+                  <span className="text-slate-600">Assistant Manager:</span>
+                  <span className="ml-2 font-medium text-slate-800">{am_name || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="text-slate-600">Position:</span>

@@ -1,4 +1,6 @@
 const { createUser, listUsers, deleteUser, getUserById, updateUser } = require('../services/user.service');
+const { sendWelcomeEmail } = require('../services/email.service');
+const { db } = require('../config/db');
 
 // GET /api/users
 async function getAll(req, res, next) {
@@ -52,6 +54,48 @@ async function create(req, res, next) {
       manager_id: manager_id || null,
       am_id: am_id || null
     });
+
+    // Send welcome email to the new employee with login credentials
+    try {
+      // Get department, position, supervisor, manager, and AM names for the email
+      const [lookupRows] = await db.query(`
+        SELECT 
+          d.name as department_name,
+          p.title as position_title,
+          s.name as supervisor_name,
+          m.name as manager_name,
+          am.name as am_name
+        FROM users u
+        LEFT JOIN departments d ON u.department_id = d.id
+        LEFT JOIN positions p ON u.position_id = p.id
+        LEFT JOIN users s ON u.supervisor_id = s.id
+        LEFT JOIN users m ON u.manager_id = m.id
+        LEFT JOIN users am ON u.am_id = am.id
+        WHERE u.id = ?
+      `, [user.id]);
+
+      const lookupData = lookupRows[0] || {};
+
+      // Send welcome email (don't wait for it to complete)
+      sendWelcomeEmail({
+        employeeId: employee_id,
+        name: name || email.split('@')[0], // Fallback to email prefix if no name
+        email,
+        password, // Send the plain password before it gets hashed
+        departmentName: lookupData.department_name,
+        positionTitle: lookupData.position_title,
+        supervisorName: lookupData.supervisor_name,
+        managerName: lookupData.manager_name,
+        amName: lookupData.am_name,
+        role
+      }).catch(err => {
+        console.error('Failed to send welcome email:', err);
+        // Don't fail the request if email fails
+      });
+    } catch (emailError) {
+      console.error('Error preparing welcome email:', emailError);
+      // Continue with response even if email preparation fails
+    }
 
     res.status(201).json(user);
   } catch (err) {

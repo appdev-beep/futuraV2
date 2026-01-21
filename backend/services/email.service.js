@@ -367,9 +367,102 @@ async function sendCLNotificationEmail({
   }
 }
 
+// =====================================================
+// SEND WELCOME EMAIL TO NEW EMPLOYEE WITH LOGIN CREDENTIALS
+// =====================================================
+async function sendWelcomeEmail({ 
+  employeeId,
+  name,
+  email,
+  password,
+  departmentName,
+  positionTitle,
+  supervisorName,
+  managerName,
+  amName,
+  role
+}) {
+  try {
+    console.log(`[EMAIL] Sending welcome email to new employee: ${name} (${email})`);
+    
+    const currentDateTime = new Date().toLocaleString('en-US', { 
+      dateStyle: 'full', 
+      timeStyle: 'short' 
+    });
+
+    const subject = `Welcome to Futura - Your Account Has Been Created`;
+    
+    const htmlContent = `
+      <h2 style="color: #1e40af; text-align: center;">Welcome to Futura!</h2>
+      <p>Hello <strong>${name}</strong>,</p>
+      <p>Your employee account has been successfully created by HR. Below are your account details and login credentials:</p>
+      
+      <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin: 20px 0;">
+        <h3 style="margin-top: 0; color: #495057;">Account Information</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #495057;">Employee ID:</td><td style="padding: 8px 0;">${employeeId}</td></tr>
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #495057;">Full Name:</td><td style="padding: 8px 0;">${name}</td></tr>
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #495057;">Email Address:</td><td style="padding: 8px 0;">${email}</td></tr>
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #495057;">Department:</td><td style="padding: 8px 0;">${departmentName || 'Not assigned'}</td></tr>
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #495057;">Position:</td><td style="padding: 8px 0;">${positionTitle || 'Not assigned'}</td></tr>
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #495057;">Role:</td><td style="padding: 8px 0;">${role}</td></tr>
+          ${supervisorName ? `<tr><td style="padding: 8px 0; font-weight: bold; color: #495057;">Supervisor:</td><td style="padding: 8px 0;">${supervisorName}</td></tr>` : ''}
+          ${managerName ? `<tr><td style="padding: 8px 0; font-weight: bold; color: #495057;">Manager:</td><td style="padding: 8px 0;">${managerName}</td></tr>` : ''}
+          ${amName ? `<tr><td style="padding: 8px 0; font-weight: bold; color: #495057;">Assistant Manager:</td><td style="padding: 8px 0;">${amName}</td></tr>` : ''}
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #495057;">Account Created:</td><td style="padding: 8px 0;">${currentDateTime}</td></tr>
+        </table>
+      </div>
+
+      <div style="background-color: #e7f3ff; border: 1px solid #b6d7ff; border-radius: 8px; padding: 20px; margin: 20px 0;">
+        <h3 style="margin-top: 0; color: #0066cc;">🔐 Login Credentials</h3>
+        <p style="margin: 10px 0;"><strong>Username:</strong> ${email}</p>
+        <p style="margin: 10px 0;"><strong>Password:</strong> <code style="background-color: #f8f9fa; padding: 4px 8px; border-radius: 4px; font-family: monospace;">${password}</code></p>
+        <p style="margin: 10px 0; color: #666;"><em>Please change your password after your first login for security.</em></p>
+      </div>
+
+      <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin: 20px 0;">
+        <h4 style="margin-top: 0; color: #856404;">📋 Next Steps:</h4>
+        <ol style="margin: 10px 0; padding-left: 20px;">
+          <li>Log in to the system using your credentials above</li>
+          <li>Complete your profile information if needed</li>
+          <li>Familiarize yourself with the Competency Leveling (CL) and Individual Development Plan (IDP) systems</li>
+          <li>Contact your supervisor or HR if you need assistance</li>
+        </ol>
+      </div>
+
+      <p>If you have any questions or need assistance, please don't hesitate to contact the HR department or your supervisor.</p>
+      
+      <p>Welcome to the team!</p>
+      
+      <hr/>
+      <p style="font-size: 12px; color: #666;">This is an automated notification from Futura HR System. Please do not reply to this email.</p>
+    `;
+    
+    const textContent = `Welcome to Futura!\n\nHello ${name},\n\nYour employee account has been successfully created by HR. Below are your account details and login credentials:\n\nAccount Information:\n- Employee ID: ${employeeId}\n- Full Name: ${name}\n- Email Address: ${email}\n- Department: ${departmentName || 'Not assigned'}\n- Position: ${positionTitle || 'Not assigned'}\n- Role: ${role}\n${supervisorName ? `- Supervisor: ${supervisorName}\n` : ''}${managerName ? `- Manager: ${managerName}\n` : ''}${amName ? `- Assistant Manager: ${amName}\n` : ''}- Account Created: ${currentDateTime}\n\nLogin Credentials:\n- Username: ${email}\n- Password: ${password}\n\nPlease change your password after your first login for security.\n\nNext Steps:\n1. Log in to the system using your credentials above\n2. Complete your profile information if needed\n3. Familiarize yourself with the Competency Leveling (CL) and Individual Development Plan (IDP) systems\n4. Contact your supervisor or HR if you need assistance\n\nIf you have any questions or need assistance, please don't hesitate to contact the HR department or your supervisor.\n\nWelcome to the team!`;
+
+    const result = await sendEmail({
+      to: email,
+      subject,
+      text: textContent,
+      html: htmlContent
+    });
+
+    if (result) {
+      console.log(`[EMAIL] Successfully sent welcome email to ${email}`);
+    } else {
+      console.log(`[EMAIL] Failed to send welcome email to ${email}, but continuing...`);
+    }
+
+  } catch (error) {
+    console.error('Failed to send welcome email:', error);
+    // Don't throw - email failure shouldn't break the main flow
+  }
+}
+
 module.exports = {
   sendEmail,
   sendCLNotificationEmail,
+  sendWelcomeEmail,
   getUserEmail,
   getSupervisorEmail,
   getHREmails

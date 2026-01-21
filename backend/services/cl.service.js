@@ -13,27 +13,38 @@ const { createNotification } = require('./notification.service');
 // GET CL BY ID
 // =====================
 async function getById(id) {
+  console.log('🔍 getById called with id:', id);
   const [headerRows] = await db.query(
     `SELECT 
        ch.*,
        e.name as employee_name,
        e.employee_id,
        e.email as employee_email,
+       e.manager_id,
+       e.am_id,
        s.name as supervisor_name,
+       m.name as manager_name,
+       am.name as am_name,
        d.name as department_name,
        p.title as position_title
      FROM cl_headers ch
      JOIN users e ON ch.employee_id = e.id
      LEFT JOIN users s ON ch.supervisor_id = s.id
+     LEFT JOIN users m ON e.manager_id = m.id
+     LEFT JOIN users am ON e.am_id = am.id
      JOIN departments d ON ch.department_id = d.id
      JOIN positions p ON e.position_id = p.id
      WHERE ch.id = ?`,
     [id]
   );
 
+  console.log('📋 Header query result:', headerRows);
+
   if (!headerRows.length) return null;
 
   const header = headerRows[0];
+  console.log('👤 Manager name from query:', header.manager_name);
+  console.log('👤 AM name from query:', header.am_name);
 
   const [items] = await db.query(
     `SELECT 
@@ -91,6 +102,8 @@ async function getById(id) {
     employee_id: header.employee_id,
     employee_email: header.employee_email,
     supervisor_name: header.supervisor_name,
+    manager_name: header.manager_name,
+    am_name: header.am_name,
     department_name: header.department_name,
     position_title: header.position_title,
     cycle_id: header.cycle_id,
@@ -126,14 +139,14 @@ async function create(payload) {
     const clId = result.insertId;
 
     // Load employee position
-    const [empRows] = await conn.query(
+    const [positionRows] = await conn.query(
       `SELECT position_id FROM users WHERE id = ?`,
       [payload.employee_id]
     );
 
-    if (!empRows.length) throw new Error('Employee not found');
+    if (!positionRows.length) throw new Error('Employee not found');
 
-    const positionId = empRows[0].position_id;
+    const positionId = positionRows[0].position_id;
 
     // Load competencies mapped to the position
     const [compRows] = await conn.query(
@@ -715,20 +728,19 @@ async function getManagerSummary(managerId) {
        JOIN users e2 ON ch2.employee_id = e2.id
        WHERE cml.manager_id = ? AND cml.action = 'APPROVED'
        AND cml.id = (SELECT MAX(id) FROM cl_manager_logs WHERE cl_id = ch2.id AND manager_id = ?)
-       AND e2.department_id = (SELECT department_id FROM users WHERE id = ? LIMIT 1)
+       AND e2.manager_id = ?
       ) AS clApproved,
       (SELECT COUNT(*) FROM cl_manager_logs cml 
        JOIN cl_headers ch2 ON cml.cl_id = ch2.id
        JOIN users e2 ON ch2.employee_id = e2.id
        WHERE cml.manager_id = ? AND cml.action = 'RETURNED' AND ch2.status = 'DRAFT'
        AND cml.id = (SELECT MAX(id) FROM cl_manager_logs WHERE cl_id = ch2.id AND manager_id = ?)
-       AND e2.department_id = (SELECT department_id FROM users WHERE id = ? LIMIT 1)
+       AND e2.manager_id = ?
       ) AS clReturned
     FROM cl_headers ch
       JOIN users e ON ch.employee_id = e.id
-      JOIN users m ON e.department_id = m.department_id
     WHERE
-      m.id = ?
+      e.manager_id = ?
     `,
     [managerId, managerId, managerId, managerId, managerId, managerId, managerId]
   );
@@ -756,12 +768,11 @@ async function getManagerPending(managerId) {
       ROUND(AVG(ci.score), 2) as competency_score
     FROM cl_headers ch
       JOIN users e       ON ch.employee_id  = e.id
-      JOIN users m       ON e.department_id = m.department_id
       JOIN departments d ON e.department_id = d.id
       JOIN positions   p ON e.position_id   = p.id
       LEFT JOIN cl_items ci ON ch.id = ci.cl_header_id
     WHERE
-      m.id = ?
+      e.manager_id = ?
       AND ch.status IN ('PENDING_MANAGER', 'MANAGER_REVIEW')
     GROUP BY ch.id, ch.employee_id, ch.supervisor_id, e.name, e.employee_id, d.name, p.title, ch.status, ch.created_at
     ORDER BY ch.created_at DESC
@@ -784,11 +795,20 @@ async function getCompetenciesForEmployee(employeeId) {
         u.email,
         u.position_id,
         u.department_id,
+        u.supervisor_id,
+        u.manager_id,
+        u.am_id,
         p.title AS position_title,
-        d.name  AS department_name
+        d.name  AS department_name,
+        s.name  AS supervisor_name,
+        m.name  AS manager_name,
+        am.name AS am_name
      FROM users u
      JOIN positions   p ON u.position_id   = p.id
      JOIN departments d ON u.department_id = d.id
+     LEFT JOIN users  s ON u.supervisor_id = s.id
+     LEFT JOIN users  m ON u.manager_id = m.id
+     LEFT JOIN users  am ON u.am_id = am.id
      WHERE u.id = ?`,
     [employeeId]
   );
@@ -1038,9 +1058,9 @@ async function getAMSummary(amId) {
        SUM(ch.status = 'APPROVED') as clApproved,
        SUM(ch.status = 'DRAFT') as clReturned
      FROM cl_headers ch
-     JOIN departments d ON ch.department_id = d.id
-     WHERE d.has_am = 1`,
-    []
+     JOIN users u ON ch.employee_id = u.id
+     WHERE u.am_id = ?`,
+    [amId]
   );
 
   return {
@@ -1071,10 +1091,10 @@ async function getAMPending(amId) {
        JOIN departments d ON ch.department_id = d.id
        JOIN positions p ON u.position_id = p.id
        LEFT JOIN cl_items ci ON ch.id = ci.cl_header_id
-       WHERE ch.status = 'PENDING_AM'
+       WHERE ch.status = 'PENDING_AM' AND u.am_id = ?
        GROUP BY ch.id, ch.employee_id, u.name, u.employee_id, s.name, d.name, p.title, ch.status, ch.created_at
        ORDER BY ch.created_at DESC`,
-      []
+      [amId]
     );
 
     return rows || [];

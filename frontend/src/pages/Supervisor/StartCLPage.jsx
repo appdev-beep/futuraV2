@@ -735,18 +735,36 @@ function StartCLPage() {
                 {/* Employee Info */}
                 {employeeInfo && (
                   <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                    <h3 className="text-sm font-semibold mb-1 text-slate-700">
+                    <h3 className="text-sm font-semibold mb-3 text-slate-700">
                       Employee Information
                     </h3>
-                    <p className="text-sm text-slate-700">
-                      <strong>Name:</strong> {employeeInfo.name}
-                    </p>
-                    <p className="text-sm text-slate-700">
-                      <strong>Position:</strong> {employeeInfo.position_title || "N/A"}
-                    </p>
-                    <p className="text-sm text-slate-700">
-                      <strong>Department:</strong> {employeeInfo.department_name || "N/A"}
-                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Left Column - Basic Info */}
+                      <div className="space-y-2">
+                        <p className="text-sm text-slate-700">
+                          <strong>Name:</strong> {employeeInfo.name}
+                        </p>
+                        <p className="text-sm text-slate-700">
+                          <strong>Position:</strong> {employeeInfo.position_title || "N/A"}
+                        </p>
+                        <p className="text-sm text-slate-700">
+                          <strong>Department:</strong> {employeeInfo.department_name || "N/A"}
+                        </p>
+                      </div>
+                      
+                      {/* Right Column - Hierarchy Info */}
+                      <div className="space-y-2">
+                        <p className="text-sm text-slate-700">
+                          <strong>Supervisor:</strong> {employeeInfo.supervisor_name || "N/A"}
+                        </p>
+                        <p className="text-sm text-slate-700">
+                          <strong>Manager:</strong> {employeeInfo.manager_name || "N/A"}
+                        </p>
+                        <p className="text-sm text-slate-700">
+                          <strong>Assistant Manager:</strong> {employeeInfo.am_name || "N/A"}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 )}
 
