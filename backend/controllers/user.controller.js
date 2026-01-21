@@ -1,5 +1,5 @@
-const { createUser, listUsers, deleteUser, getUserById, updateUser } = require('../services/user.service');
-const { sendWelcomeEmail } = require('../services/email.service');
+const { createUser, listUsers, deleteUser, getUserById, updateUser, changeUserPassword } = require('../services/user.service');
+const { sendWelcomeEmail, sendPasswordChangeEmail } = require('../services/email.service');
 const { db } = require('../config/db');
 
 // GET /api/users
@@ -195,10 +195,68 @@ async function update(req, res, next) {
   }
 }
 
+// POST /api/users/change-password
+async function changePassword(req, res, next) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.id;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        message: 'Current password and new password are required'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: 'New password must be at least 6 characters long'
+      });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({
+        message: 'New password must be different from current password'
+      });
+    }
+
+    const result = await changeUserPassword(userId, currentPassword, newPassword);
+
+    // Send password change notification email
+    try {
+      // Get user details for email notification
+      const [userRows] = await db.query(
+        'SELECT name, email, employee_id FROM users WHERE id = ?',
+        [userId]
+      );
+
+      if (userRows.length > 0) {
+        const user = userRows[0];
+        // Send notification email (don't wait for it to complete)
+        sendPasswordChangeEmail({
+          name: user.name || user.email.split('@')[0], // Fallback to email prefix if no name
+          email: user.email,
+          employeeId: user.employee_id
+        }).catch(err => {
+          console.error('Failed to send password change notification email:', err);
+          // Don't fail the request if email fails
+        });
+      }
+    } catch (emailError) {
+      console.error('Error preparing password change notification email:', emailError);
+      // Continue with response even if email preparation fails
+    }
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getAll,
   create,
   deleteById,
   getById,
-  update
+  update,
+  changePassword
 };

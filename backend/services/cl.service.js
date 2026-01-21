@@ -1179,6 +1179,13 @@ async function amApprove(id, approverId, remarks) {
       [approverId, id]
     );
 
+    // Insert audit log
+    await conn.query(
+      `INSERT INTO cl_manager_logs (cl_id, manager_id, action, remarks)
+       VALUES (?, ?, 'APPROVED', ?)`,
+      [id, approverId, remarks || null]
+    );
+
     // Update CL status to PENDING_MANAGER
     await conn.query(
       `UPDATE cl_headers 
@@ -1972,7 +1979,10 @@ async function getCLAuditTrail(clId) {
     UNION ALL
     
     SELECT 
-      CONCAT('MANAGER_', ml.action) as action_type,
+      CASE 
+        WHEN u.role = 'AM' THEN CONCAT('AM_', ml.action)
+        ELSE CONCAT('MANAGER_', ml.action)
+      END as action_type,
       ml.manager_id as actor_id,
       u.name as actor_name,
       u.role as actor_role,
@@ -2017,6 +2027,47 @@ async function getCLAuditTrail(clId) {
 }
 
 // =====================
+// AM DEPARTMENT TRACKING 
+// Returns ALL ongoing CLs for employees assigned to this AM for tracking purposes
+// =====================
+async function getAMDepartmentCL(amId) {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT 
+        ch.id,
+        ch.employee_id,
+        ch.supervisor_id,
+        e.name        AS employee_name,
+        e.employee_id AS employee_code,
+        s.name        AS supervisor_name,
+        d.name        AS department_name,
+        p.title       AS position_title,
+        ch.status,
+        ch.awaiting_approval_from,
+        ch.created_at,
+        ch.updated_at
+      FROM cl_headers ch
+        JOIN users e       ON ch.employee_id   = e.id
+        LEFT JOIN users s  ON ch.supervisor_id = s.id
+        JOIN departments d ON e.department_id  = d.id
+        JOIN positions   p ON e.position_id    = p.id
+      WHERE
+        e.am_id = ?
+        AND ch.status != 'DRAFT'
+      ORDER BY ch.updated_at DESC
+      `,
+      [amId]
+    );
+
+    return rows || [];
+  } catch (err) {
+    logInfo('Error getting AM department CLs', { amId, error: err.message });
+    return [];
+  }
+}
+
+// =====================
 // MANAGER DEPARTMENT TRACKING
 // Returns ALL ongoing CLs in the manager's department for tracking purposes
 // =====================
@@ -2039,12 +2090,11 @@ async function getManagerDepartmentCL(managerId) {
         ch.updated_at
       FROM cl_headers ch
         JOIN users e       ON ch.employee_id   = e.id
-        JOIN users m       ON e.department_id  = m.department_id
         LEFT JOIN users s  ON ch.supervisor_id = s.id
         JOIN departments d ON e.department_id  = d.id
         JOIN positions   p ON e.position_id    = p.id
       WHERE
-        m.id = ?
+        e.manager_id = ?
         AND ch.status != 'DRAFT'
       ORDER BY ch.updated_at DESC
       `,
@@ -2307,6 +2357,7 @@ module.exports = {
   getManagerSummary,
   getManagerPending,
   getManagerDepartmentCL,
+  getAMDepartmentCL,
   getEmployeePending,
   getAMSummary,
   getAMPending,

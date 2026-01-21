@@ -449,10 +449,14 @@ function SupervisorReviewCLPage() {
                     let actionLabel = event.action_type;
                     if (event.action_type === 'CREATED') {
                       actionLabel = 'CREATED';
+                    } else if (event.action_type.includes('AM_RETURNED')) {
+                      actionLabel = 'RETURNED BY ASSISTANT MANAGER';
+                    } else if (event.action_type.includes('AM_APPROVED')) {
+                      actionLabel = 'APPROVED BY ASSISTANT MANAGER';
                     } else if (event.action_type.includes('MANAGER_RETURNED')) {
-                      actionLabel = `RETURNED BY ${event.actor_role === 'AM' ? 'ASSISTANT MANAGER' : 'MANAGER'}`;
+                      actionLabel = 'RETURNED BY MANAGER';
                     } else if (event.action_type.includes('MANAGER_APPROVED')) {
-                      actionLabel = `APPROVED BY ${event.actor_role === 'AM' ? 'ASSISTANT MANAGER' : 'MANAGER'}`;
+                      actionLabel = 'APPROVED BY MANAGER';
                     } else {
                       actionLabel = event.action_type.replace(/_/g, ' ');
                     }

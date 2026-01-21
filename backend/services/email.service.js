@@ -459,10 +459,92 @@ async function sendWelcomeEmail({
   }
 }
 
+// =====================================================
+// SEND PASSWORD CHANGE NOTIFICATION EMAIL
+// =====================================================
+async function sendPasswordChangeEmail({ 
+  name,
+  email,
+  employeeId
+}) {
+  try {
+    console.log(`[EMAIL] Sending password change notification to: ${name} (${email})`);
+    
+    const currentDateTime = new Date().toLocaleString('en-US', { 
+      dateStyle: 'full', 
+      timeStyle: 'short' 
+    });
+
+    const subject = `Password Changed Successfully - Futura Account Security Alert`;
+    
+    const htmlContent = `
+      <h2 style="color: #1e40af;">Password Changed Successfully</h2>
+      <p>Hello <strong>${name}</strong>,</p>
+      <p>Your password has been successfully changed for your Futura account.</p>
+      
+      <div style="background-color: #dbeafe; border: 1px solid #93c5fd; border-radius: 8px; padding: 20px; margin: 20px 0;">
+        <h3 style="margin-top: 0; color: #1e40af;">📋 Change Details</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #374151;">Employee ID:</td><td style="padding: 8px 0;">${employeeId}</td></tr>
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #374151;">Email Address:</td><td style="padding: 8px 0;">${email}</td></tr>
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #374151;">Change Time:</td><td style="padding: 8px 0;">${currentDateTime}</td></tr>
+          <tr><td style="padding: 8px 0; font-weight: bold; color: #374151;">IP Address:</td><td style="padding: 8px 0;">System change via employee portal</td></tr>
+        </table>
+      </div>
+
+      <div style="background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 15px; margin: 20px 0;">
+        <h4 style="margin-top: 0; color: #166534;">✅ What this means:</h4>
+        <ul style="margin: 10px 0; padding-left: 20px; color: #374151;">
+          <li>Your password change was successful</li>
+          <li>Your account is secure</li>
+          <li>You can continue using the system with your new password</li>
+        </ul>
+      </div>
+
+      <div style="background-color: #fef3c7; border: 1px solid #fbbf24; border-radius: 8px; padding: 15px; margin: 20px 0;">
+        <h4 style="margin-top: 0; color: #92400e;">🔒 Security Reminder:</h4>
+        <ul style="margin: 10px 0; padding-left: 20px; color: #374151;">
+          <li>If you did NOT make this change, contact HR or IT immediately</li>
+          <li>Never share your password with anyone</li>
+          <li>Use a strong, unique password</li>
+          <li>Change your password regularly</li>
+        </ul>
+      </div>
+
+      <p>If you have any security concerns or did not initiate this password change, please contact the HR department or IT support immediately.</p>
+      
+      <p>Thank you for keeping your account secure!</p>
+      
+      <hr/>
+      <p style="font-size: 12px; color: #666;">This is an automated security notification from Futura System. Please do not reply to this email.</p>
+    `;
+    
+    const textContent = `Password Changed Successfully - Security Alert\n\nHello ${name},\n\nYour password has been successfully changed for your Futura account.\n\nChange Details:\n- Employee ID: ${employeeId}\n- Email Address: ${email}\n- Change Time: ${currentDateTime}\n- Source: System change via employee portal\n\nWhat this means:\n- Your password change was successful\n- Your account is secure\n- You can continue using the system with your new password\n\nSecurity Reminder:\n- If you did NOT make this change, contact HR or IT immediately\n- Never share your password with anyone\n- Use a strong, unique password\n- Change your password regularly\n\nIf you have any security concerns or did not initiate this password change, please contact the HR department or IT support immediately.\n\nThank you for keeping your account secure!`;
+
+    const result = await sendEmail({
+      to: email,
+      subject,
+      text: textContent,
+      html: htmlContent
+    });
+
+    if (result) {
+      console.log(`[EMAIL] Successfully sent password change notification to ${email}`);
+    } else {
+      console.log(`[EMAIL] Failed to send password change notification to ${email}, but continuing...`);
+    }
+
+  } catch (error) {
+    console.error('Failed to send password change notification email:', error);
+    // Don't throw - email failure shouldn't break the main flow
+  }
+}
+
 module.exports = {
   sendEmail,
   sendCLNotificationEmail,
   sendWelcomeEmail,
+  sendPasswordChangeEmail,
   getUserEmail,
   getSupervisorEmail,
   getHREmails

@@ -1670,6 +1670,84 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
 
 // Profile modal for viewing complete employee information
 function ProfileModal({ open, userData, loading, onClose }) {
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+
+  // Reset form when modal closes
+  useEffect(() => {
+    if (!open) {
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+      setPasswordError('');
+      setPasswordSuccess('');
+    }
+  }, [open]);
+
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    // Validation
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      setPasswordError('All password fields are required');
+      return;
+    }
+
+    if (passwordForm.newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters long');
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError('New passwords do not match');
+      return;
+    }
+
+    if (passwordForm.currentPassword === passwordForm.newPassword) {
+      setPasswordError('New password must be different from current password');
+      return;
+    }
+
+    try {
+      setPasswordLoading(true);
+      
+      await apiRequest('/api/users/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword
+        })
+      });
+
+      setPasswordSuccess('Password changed successfully!');
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+      
+      // Auto close success message after 3 seconds
+      setTimeout(() => {
+        setPasswordSuccess('');
+      }, 3000);
+
+    } catch (error) {
+      setPasswordError(error.message || 'Failed to change password');
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
   if (!open) return null;
 
   return (
@@ -1723,6 +1801,96 @@ function ProfileModal({ open, userData, loading, onClose }) {
                     <div className="font-medium text-right">{userData?.am_name || '-'}</div>
                   </div>
                 </div>
+              </div>
+
+              {/* Change Password Section */}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  Change Password
+                </h4>
+
+                {passwordError && (
+                  <div className="mb-3 p-2 rounded bg-red-50 border border-red-200">
+                    <p className="text-sm text-red-700">{passwordError}</p>
+                  </div>
+                )}
+
+                {passwordSuccess && (
+                  <div className="mb-3 p-2 rounded bg-green-50 border border-green-200">
+                    <p className="text-sm text-green-700">{passwordSuccess}</p>
+                  </div>
+                )}
+
+                <form onSubmit={handlePasswordChange} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Current Password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordForm.currentPassword}
+                      onChange={(e) => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:outline-none focus:border-blue-500"
+                      placeholder="Enter current password"
+                      disabled={passwordLoading}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:outline-none focus:border-blue-500"
+                      placeholder="Enter new password (min. 6 characters)"
+                      disabled={passwordLoading}
+                      minLength={6}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:outline-none focus:border-blue-500"
+                      placeholder="Confirm new password"
+                      disabled={passwordLoading}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={passwordLoading || !passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  >
+                    {passwordLoading ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Changing Password...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Change Password
+                      </>
+                    )}
+                  </button>
+                </form>
               </div>
 
               {/* Past competencies moved to sidebar */}

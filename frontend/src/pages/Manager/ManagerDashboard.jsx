@@ -321,23 +321,37 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       setAllCL(clAll || []);
       setDepartmentCLs(deptCLs || []);
 
-      // Fetch all users and filter by department
+      // Fetch all users for mapping and filtering
       const allUsers = await apiRequest('/api/users');
 
-      // Get supervisors in the department
-      const deptSupervisors = (allUsers || []).filter(
-        u => u.department_id === user.department_id && u.role === 'Supervisor'
-      );
+      // Get supervisors - for AM dashboard get those under this AM, for Manager get those in department
+      let deptSupervisors;
+      if (isAMDashboard) {
+        deptSupervisors = (allUsers || []).filter(
+          u => u.am_id === user.id && u.role === 'Supervisor'
+        );
+      } else {
+        deptSupervisors = (allUsers || []).filter(
+          u => u.department_id === user.department_id && u.role === 'Supervisor'
+        );
+      }
       setSupervisors(deptSupervisors);
 
-      // Get employees in the department
-      const deptEmployees = (allUsers || []).filter(
-        u => u.department_id === user.department_id && u.role === 'Employee'
-      );
+      // Get employees - only those assigned to this manager/AM
+      let assignedEmployees;
+      if (isAMDashboard) {
+        assignedEmployees = (allUsers || []).filter(
+          u => u.am_id === user.id && u.role === 'Employee'
+        );
+      } else {
+        assignedEmployees = (allUsers || []).filter(
+          u => u.manager_id === user.id && u.role === 'Employee'
+        );
+      }
 
       // Enrich with competency data
       const enriched = await Promise.all(
-        deptEmployees.map(async (emp) => {
+        assignedEmployees.map(async (emp) => {
           try {
             const resp = await apiRequest(`/api/cl/employee/${emp.id}/competencies`);
             const competencyCount = (resp?.competencies || []).length;

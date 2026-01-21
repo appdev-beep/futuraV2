@@ -19,9 +19,9 @@ async function logRecentAction({
 }
 
 async function getRecentActions(actorId, limit = 20, module = null) {
-  // Get user role to determine if they should see department-wide recent actions
+  // Get user role and assignment info
   const [userRows] = await db.query(
-    `SELECT role, department_id FROM users WHERE id = ?`,
+    `SELECT role, department_id, manager_id, am_id FROM users WHERE id = ?`,
     [actorId]
   );
   
@@ -33,26 +33,41 @@ async function getRecentActions(actorId, limit = 20, module = null) {
   let sql = '';
   let params = [];
 
-  // If user is Manager, show Manager, AM, HR actions; if AM, show only AM and HR actions
+  // Filter based on role and employee assignment
   if (user.role === 'Manager') {
+    // Manager sees only:
+    // 1. Their own actions
+    // 2. Actions related to employees assigned to them (regardless of who performed the action)
     sql = `
       SELECT ra.id, ra.module, ra.title, ra.description, ra.url, ra.created_at, 
              u.name as actor_name, u.role as actor_role
       FROM recent_actions ra
       JOIN users u ON ra.actor_id = u.id
-      WHERE (ra.actor_id = ? OR (u.department_id = ? AND u.role IN ('Manager', 'AM', 'HR')))
+      LEFT JOIN users e ON ra.employee_id = e.id
+      WHERE (
+        ra.actor_id = ? 
+        OR (ra.employee_id IS NOT NULL AND e.manager_id = ?)
+      )
     `;
-    params = [actorId, user.department_id];
+    params = [actorId, actorId];
   } else if (user.role === 'AM') {
+    // AM sees only:
+    // 1. Their own actions  
+    // 2. Actions related to employees assigned to them (regardless of who performed the action)
     sql = `
       SELECT ra.id, ra.module, ra.title, ra.description, ra.url, ra.created_at, 
              u.name as actor_name, u.role as actor_role
       FROM recent_actions ra
       JOIN users u ON ra.actor_id = u.id
-      WHERE (ra.actor_id = ? OR (u.department_id = ? AND u.role IN ('AM', 'HR')))
+      LEFT JOIN users e ON ra.employee_id = e.id
+      WHERE (
+        ra.actor_id = ?
+        OR (ra.employee_id IS NOT NULL AND e.am_id = ?)
+      )
     `;
-    params = [actorId, user.department_id];
+    params = [actorId, actorId];
   } else if (user.role === 'HR') {
+    // HR sees all actions (keep existing logic)
     sql = `
       SELECT ra.id, ra.module, ra.title, ra.description, ra.url, ra.created_at, 
              u.name as actor_name, u.role as actor_role

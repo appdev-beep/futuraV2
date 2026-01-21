@@ -337,10 +337,47 @@ async function updateUser(userId, {
   return rows[0];
 }
 
+// Change user password
+async function changeUserPassword(userId, currentPassword, newPassword) {
+  // First, get the current user to verify the current password
+  const [rows] = await db.query(
+    'SELECT id, password FROM users WHERE id = ? AND is_active = 1',
+    [userId]
+  );
+
+  if (rows.length === 0) {
+    const err = new Error('User not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const user = rows[0];
+  
+  // Verify current password
+  const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+  if (!isCurrentPasswordValid) {
+    const err = new Error('Current password is incorrect');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Hash new password
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  
+  // Update password
+  await db.query(
+    'UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?',
+    [passwordHash, userId]
+  );
+
+  return { success: true };
+}
+
 module.exports = {
   createUser,
   listUsers,
   deleteUser,
   getUserById,
-  updateUser
+  updateUser,
+  changeUserPassword
 };

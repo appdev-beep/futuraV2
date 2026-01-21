@@ -384,8 +384,12 @@ async function getAMAllCL(req, res, next) {
 }
 
 async function getAMDepartmentCL(req, res, next) {
-  // Reuse manager logic for AM
-  return getManagerDepartmentCL(req, res, next);
+  try {
+    const cls = await clService.getAMDepartmentCL(req.user.id);
+    res.json(cls || []);
+  } catch (err) {
+    next(err);
+  }
 }
 async function getHRSummary(req, res, next) {
   try {

@@ -8,6 +8,9 @@ router.use(requireAuth);
 // Allow authenticated users to fetch their own profile; role checks apply to other user management routes
 router.get('/:id', userController.getById);
 
+// POST /api/users/change-password - Allow any authenticated user to change their own password
+router.post('/change-password', userController.changePassword);
+
 router.use(requireRole('Admin', 'Supervisor', 'Manager', 'HR', 'AM')); // Admin, Supervisor, Manager, HR, and AM can access users
 
 // GET /api/users
