@@ -1,4 +1,4 @@
-const { createUser, listUsers, deleteUser, getUserById, updateUser, changeUserPassword } = require('../services/user.service');
+const { createUser, listUsers, deleteUser, getUserById, updateUser, changeUserPassword, getSupervisorEmployeesList } = require('../services/user.service');
 const { sendWelcomeEmail, sendPasswordChangeEmail } = require('../services/email.service');
 const { db } = require('../config/db');
 
@@ -252,11 +252,26 @@ async function changePassword(req, res, next) {
   }
 }
 
+async function getSupervisorEmployees(req, res, next) {
+  try {
+    const supervisorId = req.user?.id;
+    if (!supervisorId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const employees = await getSupervisorEmployeesList(supervisorId);
+    res.json(employees || []);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getAll,
   create,
   deleteById,
   getById,
   update,
-  changePassword
+  changePassword,
+  getSupervisorEmployees
 };

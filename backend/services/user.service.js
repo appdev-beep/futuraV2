@@ -373,11 +373,35 @@ async function changeUserPassword(userId, currentPassword, newPassword) {
   return { success: true };
 }
 
+// Get employees under a specific supervisor
+async function getSupervisorEmployeesList(supervisorId) {
+  const [rows] = await db.query(
+    `
+    SELECT 
+      u.id,
+      u.employee_id,
+      u.name,
+      u.email,
+      u.role,
+      d.name AS department_name,
+      p.title AS position_title
+    FROM users u
+    LEFT JOIN departments d ON u.department_id = d.id
+    LEFT JOIN positions p ON u.position_id = p.id
+    WHERE u.supervisor_id = ? AND u.is_active = 1
+    ORDER BY u.name ASC
+    `,
+    [supervisorId]
+  );
+  return rows;
+}
+
 module.exports = {
   createUser,
   listUsers,
   deleteUser,
   getUserById,
   updateUser,
-  changeUserPassword
+  changeUserPassword,
+  getSupervisorEmployeesList
 };

@@ -13,6 +13,9 @@ router.post('/change-password', userController.changePassword);
 
 router.use(requireRole('Admin', 'Supervisor', 'Manager', 'HR', 'AM')); // Admin, Supervisor, Manager, HR, and AM can access users
 
+// GET /api/users/supervisor/employees - Get employees under current supervisor
+router.get('/supervisor/employees', userController.getSupervisorEmployees);
+
 // GET /api/users
 router.get('/', userController.getAll);
 

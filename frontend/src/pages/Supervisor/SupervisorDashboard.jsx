@@ -38,23 +38,11 @@ function SupervisorDashboard() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  const [summary, setSummary] = useState({
-    clPending: 0,
-    clApproved: 0,
-    clReturned: 0,
-  });
-
-  const [idpSummary, setIdpSummary] = useState({
-    idpCreation: 0,
-    idpPending: 0,
-    idpCycleCompleted: 0,
-    idpReturned: 0,
-    idpDrafts: 0,
-  });
   const [idpByStatus, setIdpByStatus] = useState({});
   const [clByStatus, setClByStatus] = useState({});
   const [idpEmployees, setIdpEmployees] = useState([]);
+  const [allEmployees, setAllEmployees] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState('ALL');
   const [notifications, setNotifications] = useState([]);
   const [notificationFilter, setNotificationFilter] = useState('ALL'); // 'ALL' | 'CL' | 'IDP'
   const [recentActions, setRecentActions] = useState([]);
@@ -127,6 +115,61 @@ function SupervisorDashboard() {
     return sections;
   }, [department]);
 
+  // Filter data by selected employee
+  const filteredClByStatus = useMemo(() => {
+    if (selectedEmployee === 'ALL') return clByStatus;
+    
+    const filtered = {};
+    for (const [status, items] of Object.entries(clByStatus)) {
+      filtered[status] = (items || []).filter(item => 
+        String(item.employee_id) === String(selectedEmployee) ||
+        String(item.employee_code) === String(selectedEmployee)
+      );
+    }
+    return filtered;
+  }, [clByStatus, selectedEmployee]);
+
+  const filteredIdpByStatus = useMemo(() => {
+    if (selectedEmployee === 'ALL') return idpByStatus;
+    
+    const filtered = {};
+    for (const [status, items] of Object.entries(idpByStatus)) {
+      filtered[status] = (items || []).filter(item => 
+        String(item.employee_id) === String(selectedEmployee) ||
+        String(item.employee_code) === String(selectedEmployee)
+      );
+    }
+    return filtered;
+  }, [idpByStatus, selectedEmployee]);
+
+  const filteredIdpEmployees = useMemo(() => {
+    if (selectedEmployee === 'ALL') return idpEmployees;
+    return (idpEmployees || []).filter(emp => 
+      String(emp.id) === String(selectedEmployee) ||
+      String(emp.employee_id) === String(selectedEmployee) ||
+      String(emp.employee_code) === String(selectedEmployee)
+    );
+  }, [idpEmployees, selectedEmployee]);
+
+  // Update summary calculations to use filtered data
+  const filteredSummary = useMemo(() => {
+    return {
+      clPending: (filteredClByStatus?.PENDING_AM?.length || 0) + (filteredClByStatus?.PENDING_MANAGER?.length || 0),
+      clApproved: (filteredClByStatus?.APPROVED?.length || 0),
+      clReturned: (filteredClByStatus?.DRAFT?.length || 0) + (filteredClByStatus?.RETURNED?.length || 0),
+    };
+  }, [filteredClByStatus]);
+
+  const filteredIdpSummary = useMemo(() => {
+    return {
+      idpCreation: filteredIdpEmployees.length,
+      idpPending: (filteredIdpByStatus?.PENDING_AM?.length || 0) + (filteredIdpByStatus?.PENDING_MANAGER?.length || 0),
+      idpCycleCompleted: (filteredIdpByStatus?.CYCLE_COMPLETED?.length || 0),
+      idpReturned: (filteredIdpByStatus?.RETURNED?.length || 0),
+      idpDrafts: (filteredIdpByStatus?.DRAFT?.length || 0),
+    };
+  }, [filteredIdpByStatus, filteredIdpEmployees]);
+
   useEffect(() => {
     const supervisorRoles = ['Supervisor', 'AM', 'Manager', 'HR'];
     const stored = localStorage.getItem('user');
@@ -158,37 +201,36 @@ function SupervisorDashboard() {
 
   const navigate = useNavigate();
 
+  // Load employees under this supervisor
+  async function loadEmployees() {
+    if (!user) return;
+    try {
+      const employees = await apiRequest('/api/users/supervisor/employees');
+      setAllEmployees(employees || []);
+    } catch (err) {
+      console.error('Failed to load employees:', err);
+      setAllEmployees([]);
+    }
+  }
+
   // Load dashboard data; exposed so child components can trigger a refresh without reloading the page
   async function loadDashboard(preserveScroll = false) {
     if (!user) return;
     const scrollPosition = preserveScroll ? window.scrollY : 0;
     try {
       setLoading(true);
-      const [clSummary, clGrouped, idpCreation, idpGrouped] = await Promise.all([
+      const [, clGrouped, idpCreation, idpGrouped] = await Promise.all([
         apiRequest('/api/cl/supervisor/summary'),
         apiRequest('/api/cl/supervisor/all'),
         apiRequest('/api/idp/supervisor/for-creation'),
         apiRequest('/api/idp/supervisor/grouped'),
       ]);
 
-      setSummary({
-        clPending: clSummary.clPending || 0,
-        clApproved: clSummary.clApproved || 0,
-        clReturned: clSummary.clInProgress || 0,
-      });
-
       setClByStatus(clGrouped || {});
       setIdpEmployees(idpCreation || []);
 
       // Calculate summary from grouped IDPs
       setIdpByStatus(idpGrouped || {});
-      setIdpSummary({
-        idpCreation: (idpCreation || []).length,
-        idpPending: (idpGrouped?.PENDING_AM?.length || 0) + (idpGrouped?.PENDING_MANAGER?.length || 0),
-        idpCycleCompleted: (idpGrouped?.CYCLE_COMPLETED?.length || 0),
-        idpReturned: (idpGrouped?.RETURNED?.length || 0),
-        idpDrafts: (idpGrouped?.DRAFT?.length || 0),
-      });
     } catch (err) {
       console.error(err);
       setError('Failed to load Supervisor dashboard data.');
@@ -203,6 +245,7 @@ function SupervisorDashboard() {
 
   useEffect(() => {
     loadDashboard();
+    loadEmployees();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -426,48 +469,48 @@ function SupervisorDashboard() {
   const sectionCounts = useMemo(() => {
     const counts = { ALL: 0 };
     for (const s of CL_STATUS_SECTIONS) {
-      counts[s.key] = (clByStatus?.[s.key] || []).length;
+      counts[s.key] = (filteredClByStatus?.[s.key] || []).length;
       counts.ALL += counts[s.key];
     }
     return counts;
-  }, [clByStatus, CL_STATUS_SECTIONS]);
+  }, [filteredClByStatus, CL_STATUS_SECTIONS]);
 
-  // Grouped counts for CL
+  // Grouped counts for CL (using filtered data)
   const clActionRequiredCount = useMemo(() => {
-    const draft = (clByStatus?.DRAFT || []).length;
-    const returned = (clByStatus?.RETURNED || []).length;
+    const draft = (filteredClByStatus?.DRAFT || []).length;
+    const returned = (filteredClByStatus?.RETURNED || []).length;
     return draft + returned;
-  }, [clByStatus]);
+  }, [filteredClByStatus]);
   const clInReviewCount = useMemo(() => {
-    return (clByStatus?.PENDING_EMPLOYEE?.length || 0)
-      + (clByStatus?.PENDING_HR?.length || 0)
-      + (clByStatus?.PENDING_MANAGER?.length || 0)
-      + (clByStatus?.PENDING_AM?.length || 0);
-  }, [clByStatus]);
-  const clApprovedCount = useMemo(() => (clByStatus?.APPROVED?.length || 0), [clByStatus]);
+    return (filteredClByStatus?.PENDING_EMPLOYEE?.length || 0)
+      + (filteredClByStatus?.PENDING_HR?.length || 0)
+      + (filteredClByStatus?.PENDING_MANAGER?.length || 0)
+      + (filteredClByStatus?.PENDING_AM?.length || 0);
+  }, [filteredClByStatus]);
+  const clApprovedCount = useMemo(() => (filteredClByStatus?.APPROVED?.length || 0), [filteredClByStatus]);
 
   const idpSectionCounts = useMemo(() => {
     const counts = { ALL: 0 };
     for (const s of IDP_STATUS_SECTIONS) {
-      counts[s.key] = (idpByStatus?.[s.key] || []).length;
+      counts[s.key] = (filteredIdpByStatus?.[s.key] || []).length;
       counts.ALL += counts[s.key];
     }
     return counts;
-  }, [idpByStatus, IDP_STATUS_SECTIONS]);
+  }, [filteredIdpByStatus, IDP_STATUS_SECTIONS]);
 
-  // Grouped counts for IDP
+  // Grouped counts for IDP (using filtered data)
   const idpActionRequiredCount = useMemo(() => {
-    return (idpByStatus?.RETURNED?.length || 0)
-      + (idpByStatus?.DRAFT?.length || 0)
-      + (idpByStatus?.FOR_COMPLETION?.length || 0);
-  }, [idpByStatus]);
+    return (filteredIdpByStatus?.RETURNED?.length || 0)
+      + (filteredIdpByStatus?.DRAFT?.length || 0)
+      + (filteredIdpByStatus?.FOR_COMPLETION?.length || 0);
+  }, [filteredIdpByStatus]);
   const idpInReviewCount = useMemo(() => {
-    return (idpByStatus?.PENDING_EMPLOYEE?.length || 0)
-      + (idpByStatus?.PENDING_HR?.length || 0)
-      + (idpByStatus?.PENDING_MANAGER?.length || 0)
-      + (idpByStatus?.PENDING_AM?.length || 0);
-  }, [idpByStatus]);
-  const idpApprovedCount = useMemo(() => (idpByStatus?.CYCLE_COMPLETED?.length || 0), [idpByStatus]);
+    return (filteredIdpByStatus?.PENDING_EMPLOYEE?.length || 0)
+      + (filteredIdpByStatus?.PENDING_HR?.length || 0)
+      + (filteredIdpByStatus?.PENDING_MANAGER?.length || 0)
+      + (filteredIdpByStatus?.PENDING_AM?.length || 0);
+  }, [filteredIdpByStatus]);
+  const idpApprovedCount = useMemo(() => (filteredIdpByStatus?.CYCLE_COMPLETED?.length || 0), [filteredIdpByStatus]);
 
   const activeLabel = useMemo(() => {
     if (activeSection === 'ALL') return 'All Competency Levelings';
@@ -801,17 +844,53 @@ function SupervisorDashboard() {
           </div>
         </header>
 
+        {/* Employee Filter */}
+        <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-medium text-gray-700">Filter by Employee:</label>
+            <select
+              value={selectedEmployee}
+              onChange={(e) => setSelectedEmployee(e.target.value)}
+              className="flex-1 max-w-xs px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="ALL">All Employees</option>
+              {allEmployees.map((emp) => (
+                <option key={emp.id} value={emp.employee_id || emp.employee_code || emp.id}>
+                  {emp.name} ({emp.employee_id || emp.employee_code})
+                </option>
+              ))}
+            </select>
+            {selectedEmployee !== 'ALL' && (
+              <button
+                onClick={() => setSelectedEmployee('ALL')}
+                className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border"
+              >
+                Clear Filter
+              </button>
+            )}
+          </div>
+          {selectedEmployee !== 'ALL' && (
+            <div className="mt-2 text-xs text-blue-600">
+              Showing data for: {allEmployees.find(emp => 
+                String(emp.employee_id) === String(selectedEmployee) || 
+                String(emp.employee_code) === String(selectedEmployee) || 
+                String(emp.id) === String(selectedEmployee)
+              )?.name || selectedEmployee}
+            </div>
+          )}
+        </div>
+
         {error && <div className="text-red-600 mb-4">{error}</div>}
         
         {activePage === 'CL' && (
           <SupervisorCL
             loading={loading}
-            summary={summary}
+            summary={filteredSummary}
             activeLabel={activeLabel}
             activeSection={activeSection}
             CL_STATUS_SECTIONS={CL_STATUS_SECTIONS}
             sectionCounts={sectionCounts}
-            clByStatus={clByStatus}
+            clByStatus={filteredClByStatus}
             handleDeleteCL={handleDeleteCL}
             goTo={goTo}
             setActiveSection={setActiveSection}
@@ -820,9 +899,9 @@ function SupervisorDashboard() {
 
         {activePage === 'IDP' && (
           <SupervisorIDP
-            idpSummary={idpSummary}
-            idpEmployees={idpEmployees}
-            idpByStatus={idpByStatus}
+            idpSummary={filteredIdpSummary}
+            idpEmployees={filteredIdpEmployees}
+            idpByStatus={filteredIdpByStatus}
             activeIDPSection={activeIDPSection}
             setActiveIDPSection={setActiveIDPSection}
             IDP_STATUS_SECTIONS={IDP_STATUS_SECTIONS}

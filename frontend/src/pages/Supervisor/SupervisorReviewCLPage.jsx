@@ -215,11 +215,11 @@ function SupervisorReviewCLPage() {
     supervisor_name,
     manager_name,
     am_name,
-    supervisor_remarks,
-    manager_remarks,
-    employee_remarks,
-    hr_remarks,
-    updated_at,
+    _supervisor_remarks,
+    _manager_remarks,
+    _employee_remarks,
+    _hr_remarks,
+    _updated_at,
   } = cl;
 
   // Compute display status: check if there's a recent RETURNED action in audit trail
