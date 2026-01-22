@@ -94,6 +94,14 @@ function HRDashboard() {
   const [showClInReview, setShowClInReview] = useState(false);
   const [showIdpAction, setShowIdpAction] = useState(false);
   const [showIdpInReview, setShowIdpInReview] = useState(false);
+  
+  // Date search state
+  const [dateSearch, setDateSearch] = useState({
+    startDate: '',
+    endDate: '',
+    enabled: false
+  });
+  const [showDateSearch, setShowDateSearch] = useState(false);
   const [recentActionsPagination, setRecentActionsPagination] = useState({
     currentPage: 1,
     itemsPerPage: 10
@@ -217,12 +225,12 @@ function HRDashboard() {
   // Reset CL pagination when filters change
   useEffect(() => {
     setClPagination(prev => ({ ...prev, currentPage: 1 }));
-  }, [activeSection, selectedDepartment, activeModule]);
+  }, [activeSection, selectedDepartment, activeModule, dateSearch]);
 
   // Reset IDP pagination when filters change
   useEffect(() => {
     setIdpPagination(prev => ({ ...prev, currentPage: 1 }));
-  }, [activeIDPSection, selectedDepartment, activeModule]);
+  }, [activeIDPSection, selectedDepartment, activeModule, dateSearch]);
 
   function goTo(url) {
     const currentPath = window.location.pathname;
@@ -423,6 +431,19 @@ function HRDashboard() {
       module: 'CL',
       selectedStatus: 'ALL'
     });
+  }
+
+  // Clear date search
+  function clearDateSearch() {
+    setDateSearch({ startDate: '', endDate: '', enabled: false });
+    setShowDateSearch(false);
+  }
+
+  // Apply date search
+  function applyDateSearch() {
+    if (dateSearch.startDate || dateSearch.endDate) {
+      setDateSearch(prev => ({ ...prev, enabled: true }));
+    }
   }
 
   async function handleExportCSV() {
@@ -637,15 +658,43 @@ function HRDashboard() {
   }, [activeModule, activeSection, CL_STATUS_SECTIONS, activeIDPSection, IDP_STATUS_SECTIONS]);
 
   const filteredIncomingIDPs = useMemo(() => {
-    if (!selectedDepartment || selectedDepartment === 'ALL') return allIncomingIDP;
-    return allIncomingIDP.filter(idp => idp.department_name === selectedDepartment);
-  }, [allIncomingIDP, selectedDepartment]);
+    let filtered = !selectedDepartment || selectedDepartment === 'ALL' ? allIncomingIDP : allIncomingIDP.filter(idp => idp.department_name === selectedDepartment);
+    
+    // Apply date filtering if enabled
+    if (dateSearch.enabled && (dateSearch.startDate || dateSearch.endDate)) {
+      filtered = filtered.filter(item => {
+        const itemDate = new Date(item.created_at || item.submitted_at);
+        const startDate = dateSearch.startDate ? new Date(dateSearch.startDate) : null;
+        const endDate = dateSearch.endDate ? new Date(dateSearch.endDate + 'T23:59:59') : null;
+        
+        if (startDate && itemDate < startDate) return false;
+        if (endDate && itemDate > endDate) return false;
+        return true;
+      });
+    }
+    
+    return filtered;
+  }, [allIncomingIDP, selectedDepartment, dateSearch]);
 
-  // Filter incoming CLs by selected department
+  // Filter incoming CLs by selected department and date range
   const filteredIncomingCLs = useMemo(() => {
-    if (!selectedDepartment || selectedDepartment === 'ALL') return allIncomingCL;
-    return allIncomingCL.filter(cl => cl.department_name === selectedDepartment);
-  }, [allIncomingCL, selectedDepartment]);
+    let filtered = !selectedDepartment || selectedDepartment === 'ALL' ? allIncomingCL : allIncomingCL.filter(cl => cl.department_name === selectedDepartment);
+    
+    // Apply date filtering if enabled
+    if (dateSearch.enabled && (dateSearch.startDate || dateSearch.endDate)) {
+      filtered = filtered.filter(item => {
+        const itemDate = new Date(item.created_at || item.submitted_at);
+        const startDate = dateSearch.startDate ? new Date(dateSearch.startDate) : null;
+        const endDate = dateSearch.endDate ? new Date(dateSearch.endDate + 'T23:59:59') : null;
+        
+        if (startDate && itemDate < startDate) return false;
+        if (endDate && itemDate > endDate) return false;
+        return true;
+      });
+    }
+    
+    return filtered;
+  }, [allIncomingCL, selectedDepartment, dateSearch]);
 
   // Paginated CL data
   const paginatedCLData = useMemo(() => {
@@ -1042,6 +1091,20 @@ function HRDashboard() {
 
           <div className="flex items-center gap-4">
             <button
+              onClick={() => setShowDateSearch(!showDateSearch)}
+              className={`flex items-center gap-2 px-4 py-2 rounded text-sm transition ${
+                dateSearch.enabled 
+                  ? 'bg-green-600 text-white hover:bg-green-700' 
+                  : 'bg-gray-600 text-white hover:bg-gray-700'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              {dateSearch.enabled ? 'Date Filter Active' : 'Search by Date'}
+            </button>
+            
+            <button
               onClick={openExportModal}
               className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white
                          text-sm hover:bg-blue-700 transition"
@@ -1066,6 +1129,97 @@ function HRDashboard() {
             </button>
           </div>
         </header>
+
+        {/* Date Search Panel */}
+        {showDateSearch && (
+          <div className="mb-6 bg-white rounded-lg shadow border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Search Records by Date Range
+              </h3>
+              <button
+                onClick={() => setShowDateSearch(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={dateSearch.startDate}
+                  onChange={(e) => setDateSearch(prev => ({ ...prev, startDate: e.target.value }))}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={dateSearch.endDate}
+                  onChange={(e) => setDateSearch(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={applyDateSearch}
+                  disabled={!dateSearch.startDate && !dateSearch.endDate}
+                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  Apply
+                </button>
+              </div>
+              
+              <div>
+                {dateSearch.enabled && (
+                  <button
+                    onClick={clearDateSearch}
+                    className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Clear Filter
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            {dateSearch.enabled && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="flex items-center">
+                  <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="text-sm text-blue-800">
+                    <strong>Active Date Filter:</strong>
+                    {dateSearch.startDate && ` From ${new Date(dateSearch.startDate).toLocaleDateString()}`}
+                    {dateSearch.endDate && ` To ${new Date(dateSearch.endDate).toLocaleDateString()}`}
+                    {!dateSearch.startDate && !dateSearch.endDate && ' No date range specified'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Removed error and loading UI as those states are not used */}
 
@@ -1108,10 +1262,24 @@ function HRDashboard() {
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">
-            {activeLabel}
-            {selectedDepartment && selectedDepartment !== 'ALL' && <span className="text-gray-500 text-lg ml-2">- {selectedDepartment}</span>}
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xl font-semibold">
+              {activeLabel}
+              {selectedDepartment && selectedDepartment !== 'ALL' && <span className="text-gray-500 text-lg ml-2">- {selectedDepartment}</span>}
+            </h2>
+            
+            {dateSearch.enabled && (
+              <div className="text-sm text-gray-600 bg-yellow-50 px-3 py-1 rounded-md border border-yellow-200">
+                <span className="font-medium">Date Filtered:</span>
+                <span className="ml-1">
+                  {activeModule === 'CL' 
+                    ? `${filteredIncomingCLs.length} CL records` 
+                    : `${filteredIncomingIDPs.length} IDP records`
+                  }
+                </span>
+              </div>
+            )}
+          </div>
 
             {activeModule === 'CL' ? (
             activeSection === 'ALL' ? (
