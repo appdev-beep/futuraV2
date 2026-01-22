@@ -17,6 +17,8 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ExclamationTriangleIcon,
+  MagnifyingGlassIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 import '../../index.css';
@@ -43,6 +45,7 @@ function SupervisorDashboard() {
   const [idpEmployees, setIdpEmployees] = useState([]);
   const [allEmployees, setAllEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState('ALL');
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [notificationFilter, setNotificationFilter] = useState('ALL'); // 'ALL' | 'CL' | 'IDP'
   const [recentActions, setRecentActions] = useState([]);
@@ -57,6 +60,12 @@ function SupervisorDashboard() {
   const [showClInReview, setShowClInReview] = useState(false);
   const [showIdpAction, setShowIdpAction] = useState(false);
   const [showIdpInReview, setShowIdpInReview] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [totalItems, setTotalItems] = useState(0);
+  
   // Pagination for Recent Actions (right sidebar)
   const [recentPage, setRecentPage] = useState(1);
   const RECENT_PAGE_SIZE = 10;
@@ -115,41 +124,122 @@ function SupervisorDashboard() {
     return sections;
   }, [department]);
 
-  // Filter data by selected employee
+  // Filter data by selected employee or search term
   const filteredClByStatus = useMemo(() => {
-    if (selectedEmployee === 'ALL') return clByStatus;
+    if (selectedEmployee === 'ALL' && !employeeSearchTerm.trim()) return clByStatus;
     
     const filtered = {};
     for (const [status, items] of Object.entries(clByStatus)) {
-      filtered[status] = (items || []).filter(item => 
-        String(item.employee_id) === String(selectedEmployee) ||
-        String(item.employee_code) === String(selectedEmployee)
-      );
+      filtered[status] = (items || []).filter(item => {
+        // If specific employee is selected, filter by that
+        if (selectedEmployee !== 'ALL') {
+          return String(item.employee_id) === String(selectedEmployee) ||
+                 String(item.employee_code) === String(selectedEmployee);
+        }
+        
+        // If search term is provided, filter by search
+        if (employeeSearchTerm.trim()) {
+          const searchTerm = employeeSearchTerm.toLowerCase().trim();
+          const employee = allEmployees.find(emp => 
+            String(emp.employee_id) === String(item.employee_id) ||
+            String(emp.employee_code) === String(item.employee_code)
+          );
+          
+          return (employee?.name || '').toLowerCase().includes(searchTerm) ||
+                 String(item.employee_id || '').toLowerCase().includes(searchTerm) ||
+                 String(item.employee_code || '').toLowerCase().includes(searchTerm);
+        }
+        
+        return true;
+      });
     }
     return filtered;
-  }, [clByStatus, selectedEmployee]);
+  }, [clByStatus, selectedEmployee, employeeSearchTerm, allEmployees]);
+
+  // Paginated data for current section
+  const paginatedClData = useMemo(() => {
+    if (activeSection === 'ALL') {
+      // For 'ALL' section, we need to paginate across all statuses
+      const allItems = [];
+      CL_STATUS_SECTIONS.forEach(({ key }) => {
+        const items = filteredClByStatus[key] || [];
+        allItems.push(...items.map(item => ({ ...item, section: key })));
+      });
+      
+      const startIndex = (currentPage - 1) * itemsPerPage;
+      const endIndex = startIndex + itemsPerPage;
+      setTotalItems(allItems.length);
+      
+      return allItems.slice(startIndex, endIndex);
+    } else {
+      // For specific section
+      const items = filteredClByStatus[activeSection] || [];
+      const startIndex = (currentPage - 1) * itemsPerPage;
+      const endIndex = startIndex + itemsPerPage;
+      setTotalItems(items.length);
+      
+      return items.slice(startIndex, endIndex);
+    }
+  }, [filteredClByStatus, activeSection, currentPage, itemsPerPage, CL_STATUS_SECTIONS]);
+
+  // Reset pagination when section or filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeSection, selectedEmployee, employeeSearchTerm]);
 
   const filteredIdpByStatus = useMemo(() => {
-    if (selectedEmployee === 'ALL') return idpByStatus;
+    if (selectedEmployee === 'ALL' && !employeeSearchTerm.trim()) return idpByStatus;
     
     const filtered = {};
     for (const [status, items] of Object.entries(idpByStatus)) {
-      filtered[status] = (items || []).filter(item => 
-        String(item.employee_id) === String(selectedEmployee) ||
-        String(item.employee_code) === String(selectedEmployee)
-      );
+      filtered[status] = (items || []).filter(item => {
+        // If specific employee is selected, filter by that
+        if (selectedEmployee !== 'ALL') {
+          return String(item.employee_id) === String(selectedEmployee) ||
+                 String(item.employee_code) === String(selectedEmployee);
+        }
+        
+        // If search term is provided, filter by search
+        if (employeeSearchTerm.trim()) {
+          const searchTerm = employeeSearchTerm.toLowerCase().trim();
+          const employee = allEmployees.find(emp => 
+            String(emp.employee_id) === String(item.employee_id) ||
+            String(emp.employee_code) === String(item.employee_code)
+          );
+          
+          return (employee?.name || '').toLowerCase().includes(searchTerm) ||
+                 String(item.employee_id || '').toLowerCase().includes(searchTerm) ||
+                 String(item.employee_code || '').toLowerCase().includes(searchTerm);
+        }
+        
+        return true;
+      });
     }
     return filtered;
-  }, [idpByStatus, selectedEmployee]);
+  }, [idpByStatus, selectedEmployee, employeeSearchTerm, allEmployees]);
 
   const filteredIdpEmployees = useMemo(() => {
-    if (selectedEmployee === 'ALL') return idpEmployees;
-    return (idpEmployees || []).filter(emp => 
-      String(emp.id) === String(selectedEmployee) ||
-      String(emp.employee_id) === String(selectedEmployee) ||
-      String(emp.employee_code) === String(selectedEmployee)
-    );
-  }, [idpEmployees, selectedEmployee]);
+    if (selectedEmployee === 'ALL' && !employeeSearchTerm.trim()) return idpEmployees;
+    
+    return (idpEmployees || []).filter(emp => {
+      // If specific employee is selected, filter by that
+      if (selectedEmployee !== 'ALL') {
+        return String(emp.id) === String(selectedEmployee) ||
+               String(emp.employee_id) === String(selectedEmployee) ||
+               String(emp.employee_code) === String(selectedEmployee);
+      }
+      
+      // If search term is provided, filter by search
+      if (employeeSearchTerm.trim()) {
+        const searchTerm = employeeSearchTerm.toLowerCase().trim();
+        return (emp.name || '').toLowerCase().includes(searchTerm) ||
+               String(emp.employee_id || '').toLowerCase().includes(searchTerm) ||
+               String(emp.employee_code || '').toLowerCase().includes(searchTerm);
+      }
+      
+      return true;
+    });
+  }, [idpEmployees, selectedEmployee, employeeSearchTerm]);
 
   // Update summary calculations to use filtered data
   const filteredSummary = useMemo(() => {
@@ -818,7 +908,7 @@ function SupervisorDashboard() {
 
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-y-auto p-8">
-        <header className="flex items-center justify-between mb-6">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">
               {activePage === 'CL' ? 'Competency Levelling' : 'IDP Leveling'}
@@ -828,57 +918,103 @@ function SupervisorDashboard() {
             </p>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-semibold text-gray-800">{user.name}</p>
-              <p className="text-xs text-gray-500">{user.role}</p>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            {/* Employee Filter */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder={selectedEmployee !== 'ALL' 
+                  ? `Filtered: ${allEmployees.find(emp => 
+                      String(emp.employee_id) === String(selectedEmployee) || 
+                      String(emp.employee_code) === String(selectedEmployee) || 
+                      String(emp.id) === String(selectedEmployee)
+                    )?.name || selectedEmployee}`
+                  : "Search employee..."
+                }
+                value={employeeSearchTerm}
+                onChange={(e) => {
+                  setEmployeeSearchTerm(e.target.value);
+                  if (selectedEmployee !== 'ALL') {
+                    setSelectedEmployee('ALL');
+                  }
+                }}
+                className="w-full sm:w-64 px-3 py-2 pl-9 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              {(employeeSearchTerm || selectedEmployee !== 'ALL') && (
+                <button
+                  onClick={() => {
+                    setEmployeeSearchTerm('');
+                    setSelectedEmployee('ALL');
+                  }}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                >
+                  <XMarkIcon className="h-4 w-4 text-gray-400" />
+                </button>
+              )}
+              
+              {/* Search suggestions dropdown - only show when typing */}
+              {employeeSearchTerm && selectedEmployee === 'ALL' && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {allEmployees
+                    .filter(emp => {
+                      const searchTerm = employeeSearchTerm.toLowerCase().trim();
+                      return (emp.name || '').toLowerCase().includes(searchTerm) ||
+                             String(emp.employee_id || '').toLowerCase().includes(searchTerm) ||
+                             String(emp.employee_code || '').toLowerCase().includes(searchTerm);
+                    })
+                    .slice(0, 10)
+                    .map((emp) => (
+                      <button
+                        key={emp.id}
+                        onClick={() => {
+                          setSelectedEmployee(String(emp.employee_id) || String(emp.employee_code) || String(emp.id));
+                          setEmployeeSearchTerm('');
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{emp.name}</div>
+                            <div className="text-xs text-gray-500">
+                              ID: {emp.employee_id || emp.employee_code}
+                            </div>
+                          </div>
+                          <ChevronRightIcon className="h-4 w-4 text-gray-400" />
+                        </div>
+                      </button>
+                    ))}
+                  {allEmployees.filter(emp => {
+                    const searchTerm = employeeSearchTerm.toLowerCase().trim();
+                    return (emp.name || '').toLowerCase().includes(searchTerm) ||
+                           String(emp.employee_id || '').toLowerCase().includes(searchTerm) ||
+                           String(emp.employee_code || '').toLowerCase().includes(searchTerm);
+                  }).length === 0 && (
+                    <div className="px-3 py-2 text-sm text-gray-500">No employees found</div>
+                  )}
+                </div>
+              )}
             </div>
-            <button
-              onClick={logout}
-              className="flex items-center gap-2 px-3 py-2 rounded bg-red-600 text-white
-                         text-sm hover:bg-red-700 transition"
-            >
-              <ArrowRightOnRectangleIcon className="w-4 h-4" />
-              <span>Logout</span>
-            </button>
+
+            {/* User info and logout */}
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-sm font-semibold text-gray-800">{user.name}</p>
+                <p className="text-xs text-gray-500">{user.role}</p>
+              </div>
+              <button
+                onClick={logout}
+                className="flex items-center gap-2 px-3 py-2 rounded bg-red-600 text-white
+                           text-sm hover:bg-red-700 transition"
+              >
+                <ArrowRightOnRectangleIcon className="w-4 h-4" />
+                <span>Logout</span>
+              </button>
+            </div>
           </div>
         </header>
 
-        {/* Employee Filter */}
-        <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium text-gray-700">Filter by Employee:</label>
-            <select
-              value={selectedEmployee}
-              onChange={(e) => setSelectedEmployee(e.target.value)}
-              className="flex-1 max-w-xs px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="ALL">All Employees</option>
-              {allEmployees.map((emp) => (
-                <option key={emp.id} value={emp.employee_id || emp.employee_code || emp.id}>
-                  {emp.name} ({emp.employee_id || emp.employee_code})
-                </option>
-              ))}
-            </select>
-            {selectedEmployee !== 'ALL' && (
-              <button
-                onClick={() => setSelectedEmployee('ALL')}
-                className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border"
-              >
-                Clear Filter
-              </button>
-            )}
-          </div>
-          {selectedEmployee !== 'ALL' && (
-            <div className="mt-2 text-xs text-blue-600">
-              Showing data for: {allEmployees.find(emp => 
-                String(emp.employee_id) === String(selectedEmployee) || 
-                String(emp.employee_code) === String(selectedEmployee) || 
-                String(emp.id) === String(selectedEmployee)
-              )?.name || selectedEmployee}
-            </div>
-          )}
-        </div>
+
 
         {error && <div className="text-red-600 mb-4">{error}</div>}
         
@@ -891,9 +1027,20 @@ function SupervisorDashboard() {
             CL_STATUS_SECTIONS={CL_STATUS_SECTIONS}
             sectionCounts={sectionCounts}
             clByStatus={filteredClByStatus}
+            paginatedData={paginatedClData}
+            currentPage={currentPage}
+            setCurrentPage={setCurrentPage}
+            itemsPerPage={itemsPerPage}
+            setItemsPerPage={setItemsPerPage}
+            totalItems={totalItems}
             handleDeleteCL={handleDeleteCL}
             goTo={goTo}
             setActiveSection={setActiveSection}
+            employeeSearchTerm={employeeSearchTerm}
+            setEmployeeSearchTerm={setEmployeeSearchTerm}
+            selectedEmployee={selectedEmployee}
+            setSelectedEmployee={setSelectedEmployee}
+            allEmployees={allEmployees}
           />
         )}
 

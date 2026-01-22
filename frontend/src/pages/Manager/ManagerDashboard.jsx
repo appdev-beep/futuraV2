@@ -23,6 +23,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ExclamationTriangleIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import {
   COMPLETION_STATUS_OPTIONS,
@@ -140,8 +141,15 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [employees, setEmployees] = useState([]); // All employees in department
   const [supervisors, setSupervisors] = useState([]); // All supervisors in department
 
-  const [selectedSupervisorId, _setSelectedSupervisorId] = useState(null); // Selected supervisor to view employees
+  const [selectedEmployeeId, _setSelectedEmployeeId] = useState(null); // Selected employee to view
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
   const [searchQuery, setSearchQuery] = useState(''); // Search for employees
+  
+  // Proper employee setter function
+  const setSelectedEmployeeId = (id) => {
+    _setSelectedEmployeeId(id);
+    setEmployeeSearchTerm(''); // Clear search when selecting specific employee
+  };
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [hasCompetenciesOnly, setHasCompetenciesOnly] = useState(false); // Filter: only employees with competencies
   // ✅ NEW: notifications + recent actions (right sidebar)
@@ -642,34 +650,72 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     ).length;
   }, [notifications]);
 
-  // Filter CLs by section and supervisor (if selected)
-  const filterBySupervisor = (items) => {
-    if (!selectedSupervisorId) return items;
-    // Filter by supervisor_id field or by employee's supervisor_id
+  // Filter CLs by specific employee (if selected) or search term
+  const filterByEmployee = (items) => {
+    if (!selectedEmployeeId && !employeeSearchTerm.trim()) return items;
+    
     return items.filter(item => {
-      if (item.supervisor_id === selectedSupervisorId) return true;
-      // Fallback: check if the employee's supervisor matches
-      const emp = employees.find(e => e.id === item.employee_id);
-      return emp && emp.supervisor_id === selectedSupervisorId;
+      // If specific employee is selected, show only that employee's data
+      if (selectedEmployeeId) {
+        return String(item.employee_id) === String(selectedEmployeeId);
+      }
+      
+      // If search term is provided, filter by employee search
+      if (employeeSearchTerm.trim()) {
+        const searchTerm = employeeSearchTerm.toLowerCase().trim();
+        
+        // Find the employee for this item
+        const employee = employees.find(emp => 
+          String(emp.id) === String(item.employee_id) ||
+          String(emp.employee_id) === String(item.employee_id)
+        );
+        
+        if (!employee) return false;
+        
+        return (employee.name || '').toLowerCase().includes(searchTerm) ||
+               String(employee.employee_id || '').toLowerCase().includes(searchTerm);
+      }
+      
+      return true;
     });
   };
 
-  const filteredPendingCL = filterBySupervisor(pendingCL);
-  const approvedCLs = filterBySupervisor(allCL.filter(item => item.manager_decision === 'APPROVED'));
+  const filteredPendingCL = filterByEmployee(pendingCL);
+  const approvedCLs = filterByEmployee(allCL.filter(item => item.manager_decision === 'APPROVED'));
   // Only show returned CLs that are still in DRAFT status (not yet resubmitted)
-  const returnedCLs = filterBySupervisor(allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT'));
+  const returnedCLs = filterByEmployee(allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT'));
 
-  // Filter department CLs by status and supervisor (if selected)
+  // Filter department CLs by status and employee (if selected) or search term
   const filteredDepartmentCLs = useMemo(() => {
     let items = departmentCLs;
-    if (selectedSupervisorId) {
-      items = items.filter(item => item.supervisor_id === selectedSupervisorId);
+    
+    // Apply employee filter first
+    if (selectedEmployeeId) {
+      items = items.filter(item => {
+        return String(item.employee_id) === String(selectedEmployeeId);
+      });
+    } else if (employeeSearchTerm.trim()) {
+      const searchTerm = employeeSearchTerm.toLowerCase().trim();
+      items = items.filter(item => {
+        // Find the employee for this item
+        const employee = employees.find(emp => 
+          String(emp.id) === String(item.employee_id) ||
+          String(emp.employee_id) === String(item.employee_id)
+        );
+        
+        if (!employee) return false;
+        
+        return (employee.name || '').toLowerCase().includes(searchTerm) ||
+               String(employee.employee_id || '').toLowerCase().includes(searchTerm);
+      });
     }
+    
+    // Apply status filter
     if (departmentStatusFilter === 'ALL') {
       return items;
     }
     return items.filter(item => item.status === departmentStatusFilter);
-  }, [departmentCLs, departmentStatusFilter, selectedSupervisorId]);
+  }, [departmentCLs, departmentStatusFilter, selectedEmployeeId, employeeSearchTerm, employees]);
 
   const sectionCounts = useMemo(() => {
     return {
@@ -688,25 +734,25 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }, [department, isAMDashboard]);
 
   const activeSectionLabel = useMemo(() => {
-    const supervisor = supervisors.find(s => s.id === selectedSupervisorId);
-    const supervisorSuffix = supervisor ? ` (${supervisor.name})` : '';
-    if (activeSection === 'all') return `All Competency Levelings${supervisorSuffix}`;
-    if (activeSection === 'idp_all') return `All IDPs${supervisorSuffix}`;
-    if (activeSection === 'idp_pending_manager') return `${isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}${supervisorSuffix}`;
-    if (activeSection === 'idp_pending_hr') return `For Approval by HR${supervisorSuffix}`;
-    if (activeSection === 'idp_for_completion') return `For Completion${supervisorSuffix}`;
-    if (activeSection === 'idp_approved') return `Manager Approved IDPs${supervisorSuffix}`;
-    if (activeSection === 'idp_returned') return `Returned to Supervisor${supervisorSuffix}`;
-    if (activeSection === 'idp_cycle_completed') return `Cycle Completed IDPs${supervisorSuffix}`;
+    const employee = employees.find(emp => String(emp.id) === String(selectedEmployeeId) || String(emp.employee_id) === String(selectedEmployeeId));
+    const employeeSuffix = employee ? ` (${employee.name})` : '';
+    if (activeSection === 'all') return `All Competency Levelings${employeeSuffix}`;
+    if (activeSection === 'idp_all') return `All IDPs${employeeSuffix}`;
+    if (activeSection === 'idp_pending_manager') return `${isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}${employeeSuffix}`;
+    if (activeSection === 'idp_pending_hr') return `For Approval by HR${employeeSuffix}`;
+    if (activeSection === 'idp_for_completion') return `For Completion${employeeSuffix}`;
+    if (activeSection === 'idp_approved') return `Manager Approved IDPs${employeeSuffix}`;
+    if (activeSection === 'idp_returned') return `Returned to Supervisor${employeeSuffix}`;
+    if (activeSection === 'idp_cycle_completed') return `Cycle Completed IDPs${employeeSuffix}`;
     const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
-    if (section) return `${section.label}${supervisorSuffix}`;
+    if (section) return `${section.label}${employeeSuffix}`;
     // Fallback for AM dashboard
     if (isAMDashboard) {
-      if (activeSection === 'pending') return `For Approval by Assistant Manager${supervisorSuffix}`;
-      if (activeSection === 'approved') return `Approved by Assistant Manager${supervisorSuffix}`;
+      if (activeSection === 'pending') return `For Approval by Assistant Manager${employeeSuffix}`;
+      if (activeSection === 'approved') return `Approved by Assistant Manager${employeeSuffix}`;
     }
-    return `Competency Levelings${supervisorSuffix}`;
-  }, [activeSection, CL_STATUS_SECTIONS, isAMDashboard, selectedSupervisorId, supervisors]);
+    return `Competency Levelings${employeeSuffix}`;
+  }, [activeSection, CL_STATUS_SECTIONS, isAMDashboard, selectedEmployeeId, employees]);
 
   // Fetch pending IDPs for manager
   const [pendingIDPs, setPendingIDPs] = useState([]);
@@ -750,20 +796,42 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     };
   }, [pendingIDPs, isAMDashboard]);
 
-  // Filter IDPs by selected supervisor
+  // Filter IDPs by selected employee or search term
   const filteredIDPsByStatus = useMemo(() => {
-    if (!selectedSupervisorId) {
+    if (!selectedEmployeeId && !employeeSearchTerm.trim()) {
       return idpByStatus;
     }
-    return {
-      pending_manager: idpByStatus.pending_manager.filter(i => i.supervisor_id === selectedSupervisorId),
-      pending_hr: idpByStatus.pending_hr.filter(i => i.supervisor_id === selectedSupervisorId),
-      for_completion: idpByStatus.for_completion.filter(i => i.supervisor_id === selectedSupervisorId),
-      approved: idpByStatus.approved.filter(i => i.supervisor_id === selectedSupervisorId),
-      returned: idpByStatus.returned.filter(i => i.supervisor_id === selectedSupervisorId),
-      cycle_completed: idpByStatus.cycle_completed.filter(i => i.supervisor_id === selectedSupervisorId),
-    };
-  }, [idpByStatus, selectedSupervisorId]);
+    
+    const filtered = {};
+    Object.keys(idpByStatus).forEach(status => {
+      filtered[status] = idpByStatus[status].filter(idp => {
+        // If specific employee is selected, show only that employee's data
+        if (selectedEmployeeId) {
+          return String(idp.employee_id) === String(selectedEmployeeId);
+        }
+        
+        // If search term is provided, filter by employee search
+        if (employeeSearchTerm.trim()) {
+          const searchTerm = employeeSearchTerm.toLowerCase().trim();
+          
+          // Find the employee for this IDP
+          const employee = employees.find(emp => 
+            String(emp.id) === String(idp.employee_id) ||
+            String(emp.employee_id) === String(idp.employee_id)
+          );
+          
+          if (!employee) return false;
+          
+          return (employee.name || '').toLowerCase().includes(searchTerm) ||
+                 String(employee.employee_id || '').toLowerCase().includes(searchTerm);
+        }
+        
+        return true;
+      });
+    });
+    
+    return filtered;
+  }, [idpByStatus, selectedEmployeeId, employeeSearchTerm, employees]);
 
   const idpSectionCounts = useMemo(() => {
     return {
@@ -779,13 +847,37 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }, [filteredIDPsByStatus]);
 
   const filteredPendingIDPs = useMemo(() => {
-    if (!selectedSupervisorId) return pendingIDPs;
-    return pendingIDPs.filter(idp => idp.supervisor_id === selectedSupervisorId);
-  }, [pendingIDPs, selectedSupervisorId]);
+    if (!selectedEmployeeId && !employeeSearchTerm.trim()) return pendingIDPs;
+    
+    return pendingIDPs.filter(idp => {
+      // If specific employee is selected, show only that employee's data
+      if (selectedEmployeeId) {
+        return String(idp.employee_id) === String(selectedEmployeeId);
+      }
+      
+      // If search term is provided, filter by employee search
+      if (employeeSearchTerm.trim()) {
+        const searchTerm = employeeSearchTerm.toLowerCase().trim();
+        
+        // Find the employee for this IDP
+        const employee = employees.find(emp => 
+          String(emp.id) === String(idp.employee_id) ||
+          String(emp.employee_id) === String(idp.employee_id)
+        );
+        
+        if (!employee) return false;
+        
+        return (employee.name || '').toLowerCase().includes(searchTerm) ||
+               String(employee.employee_id || '').toLowerCase().includes(searchTerm);
+      }
+      
+      return true;
+    });
+  }, [pendingIDPs, selectedEmployeeId, employeeSearchTerm, employees]);
 
-  const selectedSupervisor = useMemo(() => {
-    return supervisors.find(s => s.id === selectedSupervisorId);
-  }, [supervisors, selectedSupervisorId]);
+  const selectedEmployee = useMemo(() => {
+    return employees.find(emp => String(emp.id) === String(selectedEmployeeId) || String(emp.employee_id) === String(selectedEmployeeId));
+  }, [employees, selectedEmployeeId]);
 
   if (!user) return null;
 
@@ -1076,6 +1168,96 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
           />
         </section>
 
+        {/* Employee Filter */}
+        <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-gray-700">Filter by Employee:</label>
+            <div className="relative">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 max-w-md">
+                  <input
+                    type="text"
+                    placeholder="Search employee name or employee ID..."
+                    value={employeeSearchTerm}
+                    onChange={(e) => {
+                      setEmployeeSearchTerm(e.target.value);
+                      // Clear specific employee selection when typing
+                      if (selectedEmployeeId) {
+                        setSelectedEmployeeId(null);
+                      }
+                    }}
+                    className="w-full px-3 py-2 pl-9 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  {(employeeSearchTerm || selectedEmployeeId) && (
+                    <button
+                      onClick={() => {
+                        setEmployeeSearchTerm('');
+                        setSelectedEmployeeId(null);
+                      }}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                    >
+                      <XMarkIcon className="h-4 w-4 text-gray-400" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              
+              {/* Search suggestions dropdown */}
+              {employeeSearchTerm && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {employees
+                    .filter(emp => {
+                      const searchTerm = employeeSearchTerm.toLowerCase().trim();
+                      return (emp.name || '').toLowerCase().includes(searchTerm) ||
+                             String(emp.employee_id || '').toLowerCase().includes(searchTerm);
+                    })
+                    .slice(0, 10) // Limit to 10 suggestions
+                    .map((emp) => (
+                      <button
+                        key={emp.id}
+                        onClick={() => {
+                          setSelectedEmployeeId(emp.employee_id || emp.id);
+                          setEmployeeSearchTerm('');
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{emp.name}</div>
+                            <div className="text-xs text-gray-500">
+                              ID: {emp.employee_id}
+                            </div>
+                          </div>
+                          <ChevronRightIcon className="h-4 w-4 text-gray-400" />
+                        </div>
+                      </button>
+                    ))}
+                  {employees.filter(emp => {
+                    const searchTerm = employeeSearchTerm.toLowerCase().trim();
+                    return (emp.name || '').toLowerCase().includes(searchTerm) ||
+                           String(emp.employee_id || '').toLowerCase().includes(searchTerm);
+                  }).length === 0 && (
+                    <div className="px-3 py-2 text-sm text-gray-500">No employees found</div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {/* Current filter display */}
+            {(selectedEmployeeId || employeeSearchTerm) && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-blue-600">
+                  {selectedEmployeeId 
+                    ? `Showing data for: ${selectedEmployee?.name || 'Selected Employee'}`
+                    : `Searching for: "${employeeSearchTerm}"`
+                  }
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* CONDITIONAL CONTENT BASED ON SECTION */}
         <section>
           <h2 className="text-xl font-semibold mb-3">{activeSectionLabel}</h2>
@@ -1159,7 +1341,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             <EmployeeCompetenciesView 
               employees={employees}
               supervisors={supervisors}
-              selectedSupervisorId={selectedSupervisorId}
+              selectedEmployeeId={selectedEmployeeId}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               viewMode={viewMode}
@@ -2013,20 +2195,20 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
 }
 
 // Employee Competencies View Component
-function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId, searchQuery, setSearchQuery, viewMode, setViewMode, hasCompetenciesOnly, setHasCompetenciesOnly, goTo }) {
-  // Filter employees by selected supervisor
-  const employeesForSupervisor = useMemo(() => {
-    if (!selectedSupervisorId) return [];
-    return employees.filter(emp => emp.supervisor_id === selectedSupervisorId);
-  }, [employees, selectedSupervisorId]);
+function EmployeeCompetenciesView({ employees, supervisors, selectedEmployeeId, searchQuery, setSearchQuery, viewMode, setViewMode, hasCompetenciesOnly, setHasCompetenciesOnly, goTo }) {
+  // Filter employees by selected employee
+  const employeesForDisplay = useMemo(() => {
+    if (!selectedEmployeeId) return employees;
+    return employees.filter(emp => String(emp.id) === String(selectedEmployeeId) || String(emp.employee_id) === String(selectedEmployeeId));
+  }, [employees, selectedEmployeeId]);
 
-  // Find the selected supervisor's name    
-  const selectedSupervisor = useMemo(() => {
-    return supervisors.find(s => s.id === selectedSupervisorId);
-  }, [supervisors, selectedSupervisorId]);
+  // Find the selected employee's info
+  const selectedEmployee = useMemo(() => {
+    return employees.find(emp => String(emp.id) === String(selectedEmployeeId) || String(emp.employee_id) === String(selectedEmployeeId));
+  }, [employees, selectedEmployeeId]);
 
   const filteredEmployees = useMemo(() => {
-    let list = employeesForSupervisor;
+    let list = employeesForDisplay;
     if (hasCompetenciesOnly) {
       list = list.filter(emp => (emp.competencyCount || 0) > 0);
     }
@@ -2037,7 +2219,7 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
       emp.employee_id?.toLowerCase().includes(query) ||
       emp.position_title?.toLowerCase().includes(query)
     );
-  }, [employeesForSupervisor, hasCompetenciesOnly, searchQuery]);
+  }, [employeesForDisplay, hasCompetenciesOnly, searchQuery]);
 
   return (
     <div>
@@ -2045,11 +2227,11 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-lg font-bold text-gray-800">
-            {selectedSupervisor ? `Employees under ${selectedSupervisor.name}` : 'Select a Supervisor'}
+            {selectedEmployee ? `Employee: ${selectedEmployee.name}` : 'All Employees'}
           </h2>
-          {selectedSupervisor && (
+          {selectedEmployee && (
             <p className="text-sm text-gray-600 font-medium">
-              Supervisor ID: {selectedSupervisor.employee_id}
+              Employee ID: {selectedEmployee.employee_id}
             </p>
           )}
         </div>
@@ -2104,13 +2286,9 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
         </label>
       </div>
 
-      {!selectedSupervisorId ? (
+      {filteredEmployees.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-8">
-          Please select a supervisor from the sidebar to view their employees.
-        </p>
-      ) : filteredEmployees.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-8">
-          {searchQuery ? 'No employees found matching your search.' : 'No employees found.'}
+          {searchQuery ? 'No employees found matching your search.' : selectedEmployee ? 'Employee details loaded.' : 'No employees found.'}
         </p>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
