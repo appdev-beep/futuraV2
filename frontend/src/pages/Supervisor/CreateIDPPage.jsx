@@ -63,7 +63,7 @@ function PrimaryActionButton({ onClick, disabled, label }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className="bg-white text-black px-4 py-2 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition focus:outline-none focus:ring-2 focus:ring-white/30"
+      className="bg-white text-black px-4 py-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition focus:outline-none focus:ring-2 focus:ring-white/30"
     >
       {label}
     </button>
@@ -75,7 +75,7 @@ function BlackButton({ onClick, disabled, label, className = '' }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center justify-center px-4 py-2 rounded-lg bg-black text-white hover:bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed font-semibold focus:outline-none focus:ring-2 focus:ring-black/10 ${className}`}
+      className={`inline-flex items-center justify-center px-4 py-2 rounded-lg bg-black text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold focus:outline-none focus:ring-2 focus:ring-black/10 ${className}`}
     >
       {label}
     </button>
@@ -157,7 +157,7 @@ function PdfUpload({
             href={viewHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-blue-600 hover:underline truncate"
+            className="text-sm text-blue-600 truncate"
           >
             View
           </a>
@@ -1390,7 +1390,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           <p className="text-red-600 font-semibold">Employee not found</p>
           <button
             onClick={() => navigate('/supervisor')}
-            className="mt-4 inline-flex items-center justify-center px-4 py-2 rounded-md bg-black text-white hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-black/10"
+            className="mt-4 inline-flex items-center justify-center px-4 py-2 rounded-md bg-black text-white focus:outline-none focus:ring-2 focus:ring-black/10"
           >
             Back to Dashboard
           </button>
@@ -1408,7 +1408,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             <div className="flex items-start sm:items-center gap-3 min-w-0">
               <button
                 onClick={() => navigate(getBackRoute())}
-                className="shrink-0 p-2 bg-white/10 hover:bg-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-white/30"
+                className="shrink-0 p-2 bg-white/10 rounded-md focus:outline-none focus:ring-2 focus:ring-white/30"
                 aria-label="Back"
               >
                 <ArrowLeftIcon className="h-5 w-5 text-white" />
@@ -1428,7 +1428,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <button
                 onClick={() => setShowScoringGuide((v) => !v)}
-                className="inline-flex items-center gap-2 bg-white/10 text-white font-semibold px-3 py-2 rounded-md hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/30"
+                className="inline-flex items-center gap-2 bg-white/10 text-white font-semibold px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-white/30"
               >
                 <InformationCircleIcon className="h-5 w-5" />
                 <span className="hidden sm:inline">Scoring Guide</span>
@@ -1439,7 +1439,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 <button
                   onClick={saveDraft}
                   disabled={saving}
-                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gray-400 text-white hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed font-semibold focus:outline-none focus:ring-2 focus:ring-white/30"
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gray-400 text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold focus:outline-none focus:ring-2 focus:ring-white/30"
                 >
                   {saving ? 'Saving...' : 'Save Draft'}
                 </button>
@@ -1465,7 +1465,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                   </h2>
                   <button
                     onClick={() => setShowScoringGuide(false)}
-                    className="text-black text-2xl font-bold bg-gray-100 hover:bg-gray-200 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-black/10"
+                    className="text-black text-2xl font-bold bg-gray-100 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-black/10"
                     aria-label="Close scoring guide"
                   >
                     ×
@@ -1530,7 +1530,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowValidationErrorModal(false)}
-                className="px-4 py-2 rounded-md bg-black text-white hover:bg-black/90 font-semibold"
+                className="px-4 py-2 rounded-md bg-black text-white font-semibold"
               >
                 Close
               </button>
@@ -1547,14 +1547,14 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowSubmitConfirmation(false)}
-                className="px-4 py-2 rounded-md bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 font-semibold"
+                className="px-4 py-2 rounded-md bg-white border border-gray-300 text-gray-800 font-semibold"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmAndSubmitIDP}
                 disabled={saving}
-                className="px-4 py-2 rounded-md bg-black text-white hover:bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+                className="px-4 py-2 rounded-md bg-black text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
               >
                 {saving ? 'Submitting...' : 'Confirm & Submit'}
               </button>
@@ -1724,7 +1724,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 <div className="flex flex-col sm:flex-row sm:justify-end gap-3">
                   <button
                     onClick={handleReturnIDP}
-                    className="px-6 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap order-2 sm:order-1"
+                    className="px-6 py-2 rounded-lg bg-red-600 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap order-2 sm:order-1"
                     disabled={actionLoading}
                   >
                     {actionLoading ? 'Processing...' : 'Return to Supervisor'}
@@ -1735,9 +1735,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                     className={`px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 disabled:opacity-50 whitespace-nowrap transition order-1 sm:order-2 ${
                       (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR') 
                         ? (areAllActivitiesComplete 
-                            ? 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500/50' 
+                            ? 'bg-green-600 text-white focus:ring-green-500/50' 
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed')
-                        : 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500/50'
+                        : 'bg-green-600 text-white focus:ring-green-500/50'
                     }`}
                     disabled={actionLoading || (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' && !areAllActivitiesComplete)}
                   >
@@ -1761,7 +1761,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 
                 <button
                   onClick={() => setShowScoringGuide(true)}
-                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white focus:outline-none focus:ring-2 focus:ring-black/10"
                 >
                   <InformationCircleIcon className="h-5 w-5" />
                   View Scoring Guide
@@ -1817,7 +1817,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                       <button
                         onClick={handleReturnIDP}
                         disabled={actionLoading}
-                        className="flex-1 px-4 py-2 rounded-lg font-semibold text-sm bg-red-600 text-white hover:bg-red-700 focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+                        className="flex-1 px-4 py-2 rounded-lg font-semibold text-sm bg-red-600 text-white focus:ring-2 focus:ring-red-500 disabled:opacity-50"
                       >
                         {actionLoading ? 'Processing...' : 'Return to Supervisor'}
                       </button>
@@ -1827,7 +1827,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                         disabled={!areAllActivitiesComplete || actionLoading}
                         className={`flex-1 px-4 py-2 rounded-lg font-semibold text-sm transition ${
                           areAllActivitiesComplete 
-                            ? 'bg-green-600 text-white hover:bg-green-700 focus:ring-2 focus:ring-green-500' 
+                            ? 'bg-green-600 text-white focus:ring-2 focus:ring-green-500' 
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         }`}
                       >
@@ -1855,7 +1855,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               
               <button
                 onClick={() => setShowScoringGuide(true)}
-                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-black/10"
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white focus:outline-none focus:ring-2 focus:ring-black/10"
               >
                 <InformationCircleIcon className="h-5 w-5" />
                 View Scoring Guide
@@ -1875,7 +1875,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               </div>
               <button
                 onClick={() => setShowScoringGuide(true)}
-                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-black/10"
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white focus:outline-none focus:ring-2 focus:ring-black/10"
               >
                 <InformationCircleIcon className="h-5 w-5" />
                 View Scoring Guide
@@ -2004,7 +2004,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                     <div
                       id={`item-${itemIndex}`}
                       key={item.competencyId}
-                      className={`rounded-xl ${viewOnly ? 'border-0 shadow-lg' : 'border-2 border-gradient-to-r from-blue-200 to-purple-200 shadow-lg hover:shadow-xl transition-all duration-300'} bg-gradient-to-br from-gray-50 to-white overflow-hidden transform hover:scale-[1.01] transition-transform duration-200`}
+                      className={`rounded-xl ${viewOnly ? 'border-0 shadow-lg' : 'border-2 border-gradient-to-r from-blue-200 to-purple-200 shadow-lg transition-all duration-300'} bg-gradient-to-br from-gray-50 to-white overflow-hidden transform transition-transform duration-200`}
                     >
                       {/* Card header */}
                       <div className={`px-4 py-4 bg-gradient-to-r from-blue-50 via-white to-purple-50 ${viewOnly ? 'border-0' : 'border-b-2 border-gray-200'}`}>
@@ -2128,7 +2128,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         href={`${apiBase}/${activity.pdfPath}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 font-semibold text-sm"
+                                        className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg font-semibold text-sm"
                                       >
                                         📄 View PDF
                                       </a>
@@ -2173,7 +2173,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   href={`${apiBase}/${activity.pdfPath}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 font-semibold"
+                                  className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg font-semibold"
                                 >
                                   📄 View PDF
                                 </a>
@@ -2235,7 +2235,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      <tr className="hover:bg-gray-50">
+                                      <tr className="bg-gray-50">
                                         <td className="border border-gray-300 px-3 py-2 min-w-[180px]">
                                           <input
                                             type="text"
@@ -2489,7 +2489,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                           </td>
                                         </tr>
                                       )}
-                                      <tr key={`${ti}-row1`} className="hover:bg-gray-100 transition-colors">
+                                      <tr key={`${ti}-row1`} className="bg-gray-100 transition-colors">
                                         <td className="border border-gray-300 px-4 py-2">
                                           <input
                                             type="text"
@@ -2605,7 +2605,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                     href={`${apiBase}/${t.pdfPath}`}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
-                                                    className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-semibold pointer-events-auto"
+                                                    className="text-xs text-blue-600 font-semibold pointer-events-auto"
                                                     style={{ pointerEvents: 'auto' }}
                                                     onClick={(e) => e.stopPropagation()}
                                                   >
@@ -2621,14 +2621,14 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                             <button
                                               type="button"
                                               onClick={() => removeExtraTable(itemIndex, ti)}
-                                              className="text-xs text-red-600 hover:text-red-800 font-semibold"
+                                              className="text-xs text-red-600 font-semibold"
                                             >
                                               Remove
                                             </button>
                                           )}
                                         </td>
                                       </tr>
-                                      <tr key={`${ti}-duration`} className="hover:bg-gray-50 transition-colors bg-gray-50">
+                                      <tr key={`${ti}-duration`} className="bg-gray-50 transition-colors bg-gray-50">
                                         <td colSpan="7" className="border border-gray-300 px-4 py-2">
                                           <div className="text-sm font-bold text-gray-800 mb-3">Duration of Exposure</div>
                                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2693,7 +2693,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                           </div>
                                         </td>
                                       </tr>
-                                      <tr key={`${ti}-row2`} className="hover:bg-blue-50 transition-colors">
+                                      <tr key={`${ti}-row2`} className="bg-blue-50 transition-colors">
                                         <td colSpan="7" className="border border-gray-300 px-4 py-2">
                                           <div className="flex items-center justify-between mb-3">
                                             <label className="block text-sm font-bold text-gray-800 mb-2">Areas of Exposure</label>
@@ -2712,7 +2712,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                   });
                                                   updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...(t.areasOfExposure || [])]);
                                                 }}
-                                                className="text-xs bg-black text-white px-2 py-1 rounded hover:bg-black/90"
+                                                className="text-xs bg-black text-white px-2 py-1 rounded"
                                               >
                                                 + Add Area
                                               </button>
@@ -2734,7 +2734,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                 </thead>
                                                 <tbody>
                                                   {t.areasOfExposure.map((area, ai) => (
-                                                    <tr key={`${itemIndex}-${ti}-${ai}-${area.dateTime || 'new'}`} className="hover:bg-gray-100">
+                                                    <tr key={`${itemIndex}-${ti}-${ai}-${area.dateTime || 'new'}`} className="bg-gray-100">
                                                       <td className="border border-gray-300 px-2 py-1">
                                                         <input
                                                           type="text"
@@ -2914,7 +2914,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                               newAreas.splice(ai, 1);
                                                               updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, newAreas);
                                                             }}
-                                                            className="text-xs text-red-600 hover:text-red-800 font-semibold"
+                                                            className="text-xs text-red-600 font-semibold"
                                                           >
                                                             Remove
                                                           </button>

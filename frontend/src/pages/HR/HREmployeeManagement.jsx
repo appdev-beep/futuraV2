@@ -29,6 +29,12 @@ function HREmployeeManagement() {
   const [editingUser, setEditingUser] = useState(null);
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info', isConfirm: false, onConfirm: null });
 
+  // UI state
+  const [activeView, setActiveView] = useState('table'); // 'table' or 'form'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [selectedRole, setSelectedRole] = useState('');
+
   const showModal = (title, message, type = 'info') => {
     setModal({ isOpen: true, title, message, type, isConfirm: false, onConfirm: null });
   };
@@ -126,12 +132,6 @@ function HREmployeeManagement() {
     ? positions.filter((p) => String(p.department_id) === String(departmentId))
     : [];
 
-  function handleLogout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
-  }
-
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
@@ -193,6 +193,7 @@ function HREmployeeManagement() {
       setSupervisorId('');
       setManagerId('');
       setAmId('');
+      setActiveView('table'); // Return to table view
 
       // Refresh users list
       await fetchUsers();
@@ -221,6 +222,7 @@ function HREmployeeManagement() {
       loadDepartmentUsers(user.department_id);
     }
     
+    setActiveView('form'); // Switch to form view
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -236,6 +238,35 @@ function HREmployeeManagement() {
     setSupervisorId('');
     setManagerId('');
     setAmId('');
+    setActiveView('table'); // Return to table view
+  }
+
+  // Filter users based on search and filters
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = searchTerm === '' || 
+      user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.employee_id?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesDepartment = selectedDepartment === '' || user.department_name === selectedDepartment;
+    const matchesRole = selectedRole === '' || user.role === selectedRole;
+    
+    return matchesSearch && matchesDepartment && matchesRole;
+  });
+
+  // Group filtered users by department
+  const groupedUsers = departments.reduce((acc, dept) => {
+    const deptUsers = filteredUsers.filter(u => u.department_name === dept.name);
+    if (deptUsers.length > 0) {
+      acc[dept.name] = deptUsers;
+    }
+    return acc;
+  }, {});
+
+  // Users without department
+  const usersWithoutDept = filteredUsers.filter(u => !u.department_name);
+  if (usersWithoutDept.length > 0) {
+    groupedUsers['No Department'] = usersWithoutDept;
   }
 
   // Handle delete user
@@ -280,16 +311,6 @@ function HREmployeeManagement() {
               <p className="text-sm text-gray-600">Manage employee accounts and information</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="inline-flex items-center gap-2 rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            Logout
-          </button>
         </div>
       </header>
 
@@ -315,407 +336,521 @@ function HREmployeeManagement() {
           </div>
         )}
 
-        {/* Create user form */}
-        <div className="mb-8 rounded border border-gray-200 bg-white p-6 shadow">
-          <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">
-              {editingUser ? 'Edit Employee' : 'Add New Employee'}
-            </h2>
-            {editingUser && (
-              <button
-                type="button"
-                onClick={handleCancelEdit}
-                className="text-sm text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded"
-              >
-                Cancel Edit
-              </button>
-            )}
-          </div>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Employee ID
-              </label>
-              <input
-                type="text"
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
-                required
-                className="block w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                placeholder="Enter employee ID"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Full Name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="block w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                placeholder="Enter full name"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="block w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                placeholder="Enter email address"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Department
-              </label>
-              <select
-                value={departmentId}
-                onChange={handleDepartmentChange}
-                required
-                className="block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              >
-                <option value="">-- Select Department --</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Position
-              </label>
-              <select
-                value={positionId}
-                onChange={(e) => setPositionId(e.target.value)}
-                required
-                disabled={!departmentId}
-                className="block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
-              >
-                <option value="">
-                  {departmentId
-                    ? '-- Select Position --'
-                    : 'Select department first'}
-                </option>
-                {filteredPositions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Role
-              </label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                required
-                className="block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              >
-                <option value="Employee">Employee</option>
-                <option value="Supervisor">Supervisor</option>
-                <option value="AM">Assistant Manager</option>
-                <option value="Manager">Manager</option>
-                <option value="HR">HR</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Supervisor
-              </label>
-              <select
-                value={supervisorId}
-                onChange={(e) => setSupervisorId(e.target.value)}
-                required={role === 'Employee'}
-                disabled={!departmentId}
-                className="block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
-              >
-                <option value="">
-                  {departmentId
-                    ? '-- Select Supervisor --'
-                    : 'Select department first'}
-                </option>
-                {supervisors.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.email})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Manager
-              </label>
-              <select
-                value={managerId}
-                onChange={(e) => setManagerId(e.target.value)}
-                disabled={!departmentId}
-                className="block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
-              >
-                <option value="">
-                  {departmentId
-                    ? '-- Select Manager (Optional) --'
-                    : 'Select department first'}
-                </option>
-                {managers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.email})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Assistant Manager
-              </label>
-              <select
-                value={amId}
-                onChange={(e) => setAmId(e.target.value)}
-                disabled={!departmentId}
-                className="block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
-              >
-                <option value="">
-                  {departmentId
-                    ? '-- Select Assistant Manager (Optional) --'
-                    : 'Select department first'}
-                </option>
-                {ams.map((am) => (
-                  <option key={am.id} value={am.id}>
-                    {am.name} ({am.email})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Password {editingUser && <span className="text-xs text-gray-500 font-normal">(leave blank to keep current)</span>}
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required={!editingUser}
-                className="block w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                placeholder="Enter password"
-              />
-            </div>
-
-            <div className="md:col-span-2 pt-4">
-              <button
-                type="submit"
-                className="w-full flex justify-center items-center gap-2 rounded bg-blue-600 px-6 py-3 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                {editingUser ? 'Update Employee' : 'Add Employee'}
-              </button>
-            </div>
-          </form>
+        {/* Navigation Tabs */}
+        <div className="mb-8">
+          <nav className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveView('table')}
+              className={`px-6 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
+                activeView === 'table'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5v14M16 5v14" />
+                </svg>
+                Employee Directory ({filteredUsers.length})
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveView('form')}
+              className={`px-6 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
+                activeView === 'form'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                {editingUser ? 'Edit Employee' : 'Add New Employee'}
+              </div>
+            </button>
+          </nav>
         </div>
 
-        {/* Employee Directory */}
-        <section className="rounded border border-gray-200 bg-white p-6 shadow">
-          <h2 className="text-lg font-semibold text-gray-900 mb-6">
-            Employee Directory
-          </h2>
+        {/* Table View */}
+        {activeView === 'table' && (
+          <div className="rounded-lg border border-gray-200 bg-white shadow">
+            {/* Search and Filter Controls */}
+            <div className="border-b border-gray-200 bg-gray-50 p-6">
+              <div className="flex flex-col lg:flex-row gap-4">
+                {/* Search Bar */}
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Search Employees
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search by name, email, or employee ID..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    />
+                  </div>
+                </div>
 
-          {loadingUsers ? (
-            <div className="text-center py-12">
-              <div className="animate-spin h-8 w-8 text-blue-500 mx-auto mb-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-              <p className="text-sm text-gray-500">Loading employees...</p>
-            </div>
-          ) : users.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-lg text-gray-500 mb-2">No employees found</p>
-              <p className="text-sm text-gray-400">Add your first employee using the form above</p>
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {/* Group users by department */}
-              {departments.map(dept => {
-                const deptUsers = users.filter(u => u.department_name === dept.name);
-                if (deptUsers.length === 0) return null;
-                
-                return (
-                  <div key={dept.id}>
-                    <h3 className="text-md font-semibold text-gray-800 mb-4 border-b border-gray-200 pb-2">
-                      {dept.name} ({deptUsers.length} employees)
-                    </h3>
-                    <div className="overflow-x-auto rounded border border-gray-200">
-                      <table className="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Employee ID</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Name</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Email</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Position</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Role</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Supervisor</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Manager</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Assistant Manager</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                          {deptUsers.map((u) => (
-                            <tr key={u.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3">
-                                <span className="font-mono text-sm">{u.employee_id}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="font-medium text-gray-900">{u.name}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="text-gray-600">{u.email}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="text-gray-700">{u.position_title || u.position_id}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800">
-                                  {u.role}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                {u.role === 'Employee' && (!u.supervisor_name && !u.supervisor_id) ? (
-                                  <span className="text-red-600 font-medium text-sm">Missing</span>
-                                ) : (
-                                  <span className="text-gray-700">{u.supervisor_name || '-'}</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="text-gray-700">{u.manager_name || '-'}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="text-gray-700">{u.am_name || '-'}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => handleEditUser(u)}
-                                    className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteUser(u.id, u.name)}
-                                    className="px-3 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                {/* Department Filter */}
+                <div className="lg:w-48">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Filter by Department
+                  </label>
+                  <select
+                    value={selectedDepartment}
+                    onChange={(e) => setSelectedDepartment(e.target.value)}
+                    className="block w-full border border-gray-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">All Departments</option>
+                    {departments.map((dept) => (
+                      <option key={dept.id} value={dept.name}>
+                        {dept.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Role Filter */}
+                <div className="lg:w-40">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Filter by Role
+                  </label>
+                  <select
+                    value={selectedRole}
+                    onChange={(e) => setSelectedRole(e.target.value)}
+                    className="block w-full border border-gray-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">All Roles</option>
+                    <option value="Employee">Employee</option>
+                    <option value="Supervisor">Supervisor</option>
+                    <option value="AM">Assistant Manager</option>
+                    <option value="Manager">Manager</option>
+                    <option value="HR">HR</option>
+                  </select>
+                </div>
+
+                {/* Clear Filters */}
+                {(searchTerm || selectedDepartment || selectedRole) && (
+                  <div className="lg:w-auto flex items-end">
+                    <button
+                      onClick={() => {
+                        setSearchTerm('');
+                        setSelectedDepartment('');
+                        setSelectedRole('');
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      Clear Filters
+                    </button>
                   </div>
-                );
-              })}
-              
-              {/* Users without department */}
-              {(() => {
-                const usersWithoutDept = users.filter(u => !u.department_name);
-                if (usersWithoutDept.length === 0) return null;
-                
-                return (
-                  <div>
-                    <h3 className="text-md font-semibold text-gray-800 mb-4 border-b border-gray-200 pb-2">
-                      No Department ({usersWithoutDept.length} employees)
-                    </h3>
-                    <div className="overflow-x-auto rounded border border-gray-200">
-                      <table className="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Employee ID</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Name</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Email</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Position</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Role</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Supervisor</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Manager</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Assistant Manager</th>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                          {usersWithoutDept.map((u) => (
-                            <tr key={u.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3">
-                                <span className="font-mono text-sm">{u.employee_id}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="font-medium text-gray-900">{u.name}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="text-gray-600">{u.email}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="text-gray-700">{u.position_title || u.position_id}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800">
-                                  {u.role}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                {u.role === 'Employee' && (!u.supervisor_name && !u.supervisor_id) ? (
-                                  <span className="text-red-600 font-medium text-sm">Missing</span>
-                                ) : (
-                                  <span className="text-gray-700">{u.supervisor_name || '-'}</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="text-gray-700">{u.manager_name || '-'}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="text-gray-700">{u.am_name || '-'}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => handleEditUser(u)}
-                                    className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteUser(u.id, u.name)}
-                                    className="px-3 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })()
-              }
+                )}
+              </div>
             </div>
-          )}
-        </section>
+
+            {/* Table Content */}
+            <div className="p-6">
+              {loadingUsers ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin h-8 w-8 text-blue-500 mx-auto mb-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                  <p className="text-sm text-gray-500">Loading employees...</p>
+                </div>
+              ) : Object.keys(groupedUsers).length === 0 ? (
+                <div className="text-center py-12">
+                  <svg className="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  <p className="text-lg text-gray-500 mb-2">
+                    {searchTerm || selectedDepartment || selectedRole 
+                      ? 'No employees found matching your filters' 
+                      : 'No employees found'
+                    }
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    {searchTerm || selectedDepartment || selectedRole 
+                      ? 'Try adjusting your search or filters'
+                      : 'Add your first employee using the form'
+                    }
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {Object.entries(groupedUsers).map(([departmentName, deptUsers]) => (
+                    <div key={departmentName}>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                          {departmentName}
+                        </h3>
+                        <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                          {deptUsers.length} employees
+                        </span>
+                      </div>
+                      
+                      <div className="overflow-x-auto rounded-lg border border-gray-200">
+                        <table className="min-w-full divide-y divide-gray-200 text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-medium text-gray-700">Employee</th>
+                              <th className="px-4 py-3 text-left font-medium text-gray-700">Contact</th>
+                              <th className="px-4 py-3 text-left font-medium text-gray-700">Position</th>
+                              <th className="px-4 py-3 text-left font-medium text-gray-700">Role</th>
+                              <th className="px-4 py-3 text-left font-medium text-gray-700">Reporting Structure</th>
+                              <th className="px-4 py-3 text-left font-medium text-gray-700">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 bg-white">
+                            {deptUsers.map((user) => (
+                              <tr key={user.id} className="hover:bg-gray-50 transition-colors duration-150">
+                                <td className="px-4 py-4">
+                                  <div className="flex items-center">
+                                    <div className="flex-shrink-0 h-10 w-10">
+                                      <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center">
+                                        <span className="text-sm font-medium text-white">
+                                          {user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : user.employee_id.slice(0, 2)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="ml-4">
+                                      <div className="text-sm font-medium text-gray-900">{user.name || 'N/A'}</div>
+                                      <div className="text-sm text-gray-500 font-mono">{user.employee_id}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-4">
+                                  <div className="text-sm text-gray-900">{user.email}</div>
+                                </td>
+                                <td className="px-4 py-4">
+                                  <div className="text-sm text-gray-900">{user.position_title || user.position_id || 'N/A'}</div>
+                                </td>
+                                <td className="px-4 py-4">
+                                  <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                    user.role === 'Manager' ? 'bg-purple-100 text-purple-800' :
+                                    user.role === 'AM' ? 'bg-blue-100 text-blue-800' :
+                                    user.role === 'Supervisor' ? 'bg-green-100 text-green-800' :
+                                    user.role === 'HR' ? 'bg-red-100 text-red-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {user.role}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-4">
+                                  <div className="text-sm space-y-1">
+                                    {user.supervisor_name && (
+                                      <div className="flex items-center text-gray-600">
+                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide mr-2">SUP:</span>
+                                        {user.supervisor_name}
+                                      </div>
+                                    )}
+                                    {user.manager_name && (
+                                      <div className="flex items-center text-gray-600">
+                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide mr-2">MGR:</span>
+                                        {user.manager_name}
+                                      </div>
+                                    )}
+                                    {user.am_name && (
+                                      <div className="flex items-center text-gray-600">
+                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide mr-2">AM:</span>
+                                        {user.am_name}
+                                      </div>
+                                    )}
+                                    {user.role === 'Employee' && (!user.supervisor_name && !user.supervisor_id) && (
+                                      <div className="text-red-600 text-xs font-medium flex items-center">
+                                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                        </svg>
+                                        Missing Supervisor
+                                      </div>
+                                    )}
+                                    {!user.supervisor_name && !user.manager_name && !user.am_name && user.role !== 'Employee' && (
+                                      <div className="text-gray-400 text-xs">No reporting structure</div>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-4">
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => handleEditUser(user)}
+                                      className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-150"
+                                    >
+                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                      </svg>
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteUser(user.id, user.name)}
+                                      className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors duration-150"
+                                    >
+                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Create/Edit Form */}
+        {activeView === 'form' && (
+          <div className="rounded-lg border border-gray-200 bg-white shadow">
+            <div className="border-b border-gray-200 bg-gray-50 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={editingUser ? "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" : "M12 6v6m0 0v6m0-6h6m-6 0H6"} />
+                  </svg>
+                  {editingUser ? 'Edit Employee' : 'Add New Employee'}
+                </h2>
+                {editingUser && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Cancel Edit
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            <div className="p-6"></div>
+            <div className="p-6">
+              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Employee ID
+                  </label>
+                  <input
+                    type="text"
+                    value={employeeId}
+                    onChange={(e) => setEmployeeId(e.target.value)}
+                    required
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                    placeholder="Enter employee ID"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                    placeholder="Enter full name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                    placeholder="Enter email address"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Department
+                  </label>
+                  <select
+                    value={departmentId}
+                    onChange={handleDepartmentChange}
+                    required
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                  >
+                    <option value="">-- Select Department --</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Position
+                  </label>
+                  <select
+                    value={positionId}
+                    onChange={(e) => setPositionId(e.target.value)}
+                    required
+                    disabled={!departmentId}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                  >
+                    <option value="">
+                      {departmentId
+                        ? '-- Select Position --'
+                        : 'Select department first'}
+                    </option>
+                    {filteredPositions.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Role
+                  </label>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    required
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                  >
+                    <option value="Employee">Employee</option>
+                    <option value="Supervisor">Supervisor</option>
+                    <option value="AM">Assistant Manager</option>
+                    <option value="Manager">Manager</option>
+                    <option value="HR">HR</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Supervisor
+                  </label>
+                  <select
+                    value={supervisorId}
+                    onChange={(e) => setSupervisorId(e.target.value)}
+                    required={role === 'Employee'}
+                    disabled={!departmentId}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                  >
+                    <option value="">
+                      {departmentId
+                        ? '-- Select Supervisor --'
+                        : 'Select department first'}
+                    </option>
+                    {supervisors.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Manager
+                  </label>
+                  <select
+                    value={managerId}
+                    onChange={(e) => setManagerId(e.target.value)}
+                    disabled={!departmentId}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                  >
+                    <option value="">
+                      {departmentId
+                        ? '-- Select Manager (Optional) --'
+                        : 'Select department first'}
+                    </option>
+                    {managers.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Assistant Manager
+                  </label>
+                  <select
+                    value={amId}
+                    onChange={(e) => setAmId(e.target.value)}
+                    disabled={!departmentId}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                  >
+                    <option value="">
+                      {departmentId
+                        ? '-- Select Assistant Manager (Optional) --'
+                        : 'Select department first'}
+                    </option>
+                    {ams.map((am) => (
+                      <option key={am.id} value={am.id}>
+                        {am.name} ({am.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Password {editingUser && <span className="text-xs text-gray-500 font-normal">(leave blank to keep current)</span>}
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required={!editingUser}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                    placeholder="Enter password"
+                  />
+                </div>
+
+                <div className="md:col-span-2 pt-4 border-t border-gray-200">
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      {editingUser ? 'Update Employee' : 'Add Employee'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </main>
 
       <Modal

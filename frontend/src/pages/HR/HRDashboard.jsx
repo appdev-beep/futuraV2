@@ -98,6 +98,14 @@ function HRDashboard() {
     currentPage: 1,
     itemsPerPage: 10
   });
+  const [clPagination, setClPagination] = useState({
+    currentPage: 1,
+    itemsPerPage: 10
+  });
+  const [idpPagination, setIdpPagination] = useState({
+    currentPage: 1,
+    itemsPerPage: 10
+  });
   const [modalState, setModalState] = useState({
     open: false,
     title: '',
@@ -205,6 +213,16 @@ function HRDashboard() {
 
     loadRecentActions();
   }, [user, CL_STATUS_SECTIONS]);
+
+  // Reset CL pagination when filters change
+  useEffect(() => {
+    setClPagination(prev => ({ ...prev, currentPage: 1 }));
+  }, [activeSection, selectedDepartment, activeModule]);
+
+  // Reset IDP pagination when filters change
+  useEffect(() => {
+    setIdpPagination(prev => ({ ...prev, currentPage: 1 }));
+  }, [activeIDPSection, selectedDepartment, activeModule]);
 
   function goTo(url) {
     const currentPath = window.location.pathname;
@@ -500,13 +518,14 @@ function HRDashboard() {
 
   // Get unique departments from incoming CLs
   const departments = useMemo(() => {
+    if (!allDepartments || allDepartments.length === 0) return [];
     return allDepartments.map(d => d.name).sort();
   }, [allDepartments]);
 
   const filteredDepartments = useMemo(() => {
-    if (!departmentSearch) return departments;
-    const s = departmentSearch.toLowerCase();
-    return departments.filter(d => d.toLowerCase().includes(s));
+    if (!departmentSearch.trim()) return departments;
+    const term = departmentSearch.toLowerCase();
+    return departments.filter(d => d.toLowerCase().includes(term));
   }, [departments, departmentSearch]);
 
   // Set first department as default when departments load
@@ -514,123 +533,107 @@ function HRDashboard() {
 
   // Load department-specific summary when department changes
   useEffect(() => {
-    if (!user) return;
-
-    async function loadDepartmentSummary() {
+    async function loadSummary() {
       try {
-        const qs = selectedDepartment && selectedDepartment !== 'ALL'
-          ? `?department=${encodeURIComponent(selectedDepartment)}`
-          : '';
-        const clSummary = await apiRequest(`/api/cl/hr/summary${qs}`, { method: 'GET' });
-
+        const endpoint = selectedDepartment === 'ALL'
+          ? '/api/cl/hr/summary'
+          : `/api/cl/hr/summary?department=${encodeURIComponent(selectedDepartment)}`;
+        const data = await apiRequest(endpoint);
         setSummary({
-          clPending: clSummary.clPending || 0,
-          clApproved: clSummary.clApproved || 0,
-          clReturned: clSummary.clReturned || 0
+          clPending: data.pending || 0,
+          clApproved: data.approved || 0,
+          clReturned: data.returned || 0,
         });
       } catch (err) {
-        console.error('Failed to load department summary:', err);
+        console.error('Failed to load summary:', err);
       }
     }
-
-    loadDepartmentSummary();
+    if (user) loadSummary();
   }, [user, selectedDepartment]);
 
   // Load incoming IDPs for HR (load all once so dropdown can show counts for both CL and IDP)
   useEffect(() => {
-    if (!user) return;
-
-    async function fetchIncomingIDPs() {
+    async function loadIncomingIDPs() {
+      setIdpLoading(true);
       try {
-        const data = await apiRequest(`/api/idp/hr/incoming`, { method: 'GET' });
-        console.debug('[HRDashboard] fetched initial incoming IDPs:', data);
+        const data = await apiRequest('/api/idp/hr/incoming');
         setAllIncomingIDP(data || []);
       } catch (err) {
-        console.error('Failed to load incoming IDPs', err);
-        setIdpError(err.message || 'Failed to load incoming IDPs');
+        console.error('Failed to load IDPs', err);
+        setIdpError(`Error loading IDPs: ${err.message || 'Unknown error'}`);
+      } finally {
+        setIdpLoading(false);
       }
     }
-
-    fetchIncomingIDPs();
+    if (user) loadIncomingIDPs();
   }, [user]);
 
   // Fetch filtered IDPs when switching to IDP module or department changes
   useEffect(() => {
-    if (!user) return;
-    if (activeModule !== 'IDP') return;
-
-    let cancelled = false;
-    async function fetchFiltered() {
+    async function fetchIDPs() {
+      if (activeModule !== 'IDP') return;
       setIdpLoading(true);
       setIdpError(null);
       try {
-        const qs = (selectedDepartment && selectedDepartment !== 'ALL') ? `?department=${encodeURIComponent(selectedDepartment)}` : '';
-        console.debug('[HRDashboard] fetching filtered IDPs for', { selectedDepartment, qs });
-        const data = await apiRequest(`/api/idp/hr/incoming${qs}`, { method: 'GET' });
-        console.debug('[HRDashboard] fetched filtered IDPs:', data);
-        if (!cancelled) setAllIncomingIDP(data || []);
+        const endpoint = selectedDepartment === 'ALL'
+          ? '/api/idp/hr/incoming'
+          : `/api/idp/hr/incoming?department=${encodeURIComponent(selectedDepartment)}`;
+        const data = await apiRequest(endpoint);
+        setAllIncomingIDP(data || []);
       } catch (err) {
-        if (!cancelled) {
-          console.error('Failed to load filtered IDPs', err);
-          setIdpError(err.message || 'Failed to load IDPs');
-        }
+        console.error('Failed to fetch IDPs:', err);
+        setIdpError(err.message || 'Failed to load IDPs');
       } finally {
-        if (!cancelled) setIdpLoading(false);
+        setIdpLoading(false);
       }
     }
-
-    fetchFiltered();
-    return () => { cancelled = true; };
+    if (user) fetchIDPs();
   }, [user, selectedDepartment, activeModule]);
 
   const sectionCounts = useMemo(() => {
-    const counts = { ALL: 0 };
-    const dataToCount = (selectedDepartment && selectedDepartment !== 'ALL')
-      ? allIncomingCL.filter(cl => cl.department_name === selectedDepartment)
-      : allIncomingCL;
-    for (const s of CL_STATUS_SECTIONS) {
-      counts[s.key] = dataToCount.filter(cl => cl.status === s.key).length;
-      counts.ALL += counts[s.key];
-    }
+    if (!allIncomingCL) return { ALL: 0 };
+    const filtered = selectedDepartment === 'ALL' ? allIncomingCL : allIncomingCL.filter(cl => cl.department_name === selectedDepartment);
+    const counts = { ALL: filtered.length };
+    CL_STATUS_SECTIONS.forEach(({ key }) => {
+      counts[key] = filtered.filter(cl => cl.status === key).length;
+    });
     return counts;
   }, [allIncomingCL, selectedDepartment, CL_STATUS_SECTIONS]);
 
   // Grouped counts for CL
   const clActionRequiredCount = useMemo(() => {
-    const actionStatuses = ['DRAFT', 'RETURNED', 'PENDING_HR'];
-    return actionStatuses.reduce((sum, status) => sum + (sectionCounts[status] || 0), 0);
+    return ['DRAFT', 'RETURNED', 'PENDING_HR'].reduce((sum, status) => sum + (sectionCounts[status] || 0), 0);
   }, [sectionCounts]);
 
   const clInReviewCount = useMemo(() => {
-    const reviewStatuses = ['PENDING_SUPERVISOR', 'PENDING_MANAGER', 'PENDING_AM', 'PENDING_EMPLOYEE'];
-    return reviewStatuses.reduce((sum, status) => sum + (sectionCounts[status] || 0), 0);
+    return ['PENDING_SUPERVISOR', 'PENDING_MANAGER', 'PENDING_AM', 'PENDING_EMPLOYEE'].reduce((sum, status) => sum + (sectionCounts[status] || 0), 0);
   }, [sectionCounts]);
 
   // Grouped counts for IDP
   const idpActionRequiredCount = useMemo(() => {
-    const actionStatuses = ['DRAFT', 'RETURNED', 'FOR_COMPLETION', 'PENDING_HR'];
-    return actionStatuses.reduce((sum, status) => sum + (
-      allIncomingIDP.filter(i => i.status === status && (selectedDepartment === 'ALL' || !selectedDepartment || i.department_name === selectedDepartment)).length
-    ), 0);
+    const filteredIDPs = selectedDepartment === 'ALL' ? allIncomingIDP : allIncomingIDP.filter(idp => idp.department_name === selectedDepartment);
+    return ['DRAFT', 'RETURNED', 'FOR_COMPLETION', 'PENDING_HR'].reduce((sum, status) => {
+      return sum + filteredIDPs.filter(idp => idp.status === status).length;
+    }, 0);
   }, [allIncomingIDP, selectedDepartment]);
 
   const idpInReviewCount = useMemo(() => {
-    const reviewStatuses = ['PENDING_MANAGER', 'PENDING_AM', 'PENDING_EMPLOYEE'];
-    return reviewStatuses.reduce((sum, status) => sum + (
-      allIncomingIDP.filter(i => i.status === status && (selectedDepartment === 'ALL' || !selectedDepartment || i.department_name === selectedDepartment)).length
-    ), 0);
+    const filteredIDPs = selectedDepartment === 'ALL' ? allIncomingIDP : allIncomingIDP.filter(idp => idp.department_name === selectedDepartment);
+    return ['PENDING_MANAGER', 'PENDING_AM', 'PENDING_EMPLOYEE'].reduce((sum, status) => {
+      return sum + filteredIDPs.filter(idp => idp.status === status).length;
+    }, 0);
   }, [allIncomingIDP, selectedDepartment]);
 
   const activeLabel = useMemo(() => {
     if (activeModule === 'CL') {
       if (activeSection === 'ALL') return 'All Competency Levelings';
-      const s = CL_STATUS_SECTIONS.find((x) => x.key === activeSection);
+      const s = CL_STATUS_SECTIONS.find(sec => sec.key === activeSection);
       return s ? s.label : 'All Competency Levelings';
+    } else {
+      if (activeIDPSection === 'ALL') return 'All IDP Levelings';
+      const s = IDP_STATUS_SECTIONS.find(sec => sec.key === activeIDPSection);
+      return s ? s.label : 'All IDP Levelings';
     }
-    // IDP label
-    if (activeIDPSection === 'ALL') return 'All IDP Levelings';
-    const s = IDP_STATUS_SECTIONS.find((x) => x.key === activeIDPSection);
-    return s ? s.label : 'All IDP Levelings';
   }, [activeModule, activeSection, CL_STATUS_SECTIONS, activeIDPSection, IDP_STATUS_SECTIONS]);
 
   const filteredIncomingIDPs = useMemo(() => {
@@ -643,6 +646,40 @@ function HRDashboard() {
     if (!selectedDepartment || selectedDepartment === 'ALL') return allIncomingCL;
     return allIncomingCL.filter(cl => cl.department_name === selectedDepartment);
   }, [allIncomingCL, selectedDepartment]);
+
+  // Paginated CL data
+  const paginatedCLData = useMemo(() => {
+    const { currentPage, itemsPerPage } = clPagination;
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredIncomingCLs.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredIncomingCLs, clPagination]);
+
+  const totalCLPages = Math.ceil(filteredIncomingCLs.length / clPagination.itemsPerPage);
+
+  // Paginated IDP data
+  const paginatedIDPData = useMemo(() => {
+    const { currentPage, itemsPerPage } = idpPagination;
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredIncomingIDPs.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredIncomingIDPs, idpPagination]);
+
+  const totalIDPPages = Math.ceil(filteredIncomingIDPs.length / idpPagination.itemsPerPage);
+
+  // Helper function to get paginated data for a specific CL status
+  const getPaginatedCLByStatus = (status) => {
+    const items = filteredIncomingCLs.filter(cl => cl.status === status);
+    const { currentPage, itemsPerPage } = clPagination;
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return items.slice(startIndex, startIndex + itemsPerPage);
+  };
+
+  // Helper function to get paginated data for a specific IDP status
+  const getPaginatedIDPByStatus = (status) => {
+    const items = filteredIncomingIDPs.filter(idp => idp.status === status);
+    const { currentPage, itemsPerPage } = idpPagination;
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return items.slice(startIndex, startIndex + itemsPerPage);
+  };
 
   if (!user) {
     return null;
@@ -1079,27 +1116,119 @@ function HRDashboard() {
             {activeModule === 'CL' ? (
             activeSection === 'ALL' ? (
               /* All Sections View */
-              CL_STATUS_SECTIONS.map(({ key, label }) => {
-                const items = filteredIncomingCLs.filter(cl => cl.status === key);
-                return (
-                  <div key={key} className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">{label}</h3>
-                    {items.length === 0 ? (
-                      <p className="text-gray-400 text-sm italic">No employees in this status.</p>
-                    ) : (
-                      <CLTable data={items} onCLClick={handleCLClick} />
-                    )}
+              <>
+                {CL_STATUS_SECTIONS.map(({ key, label }) => {
+                  const items = getPaginatedCLByStatus(key);
+                  const totalItems = filteredIncomingCLs.filter(cl => cl.status === key).length;
+                  return (
+                    <div key={key} className="mb-6">
+                      <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                        {label} ({totalItems} total)
+                      </h3>
+                      {items.length === 0 ? (
+                        <p className="text-gray-400 text-sm italic">No employees in this status.</p>
+                      ) : (
+                        <CLTable data={items} onCLClick={handleCLClick} />
+                      )}
+                    </div>
+                  );
+                })}
+                {/* CL Pagination Controls for ALL view */}
+                {filteredIncomingCLs.length > clPagination.itemsPerPage && (
+                  <div className="flex items-center justify-between mt-6 p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-gray-600">
+                        Showing {((clPagination.currentPage - 1) * clPagination.itemsPerPage) + 1} to{' '}
+                        {Math.min(clPagination.currentPage * clPagination.itemsPerPage, filteredIncomingCLs.length)} of{' '}
+                        {filteredIncomingCLs.length} entries
+                      </span>
+                      <select
+                        value={clPagination.itemsPerPage}
+                        onChange={(e) => setClPagination(prev => ({ ...prev, itemsPerPage: Number(e.target.value), currentPage: 1 }))}
+                        className="px-2 py-1 text-sm border border-gray-300 rounded"
+                      >
+                        <option value={5}>5 per page</option>
+                        <option value={10}>10 per page</option>
+                        <option value={20}>20 per page</option>
+                        <option value={50}>50 per page</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setClPagination(prev => ({ ...prev, currentPage: Math.max(1, prev.currentPage - 1) }))}
+                        disabled={clPagination.currentPage === 1}
+                        className="px-3 py-1 text-sm bg-white border border-gray-300 rounded disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-sm text-gray-600">
+                        {clPagination.currentPage} of {totalCLPages}
+                      </span>
+                      <button
+                        onClick={() => setClPagination(prev => ({ ...prev, currentPage: Math.min(totalCLPages, prev.currentPage + 1) }))}
+                        disabled={clPagination.currentPage === totalCLPages}
+                        className="px-3 py-1 text-sm bg-white border border-gray-300 rounded disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
                   </div>
-                );
-              })
+                )}
+              </>
             ) : (
               /* Single Section View */
               (() => {
-                const items = filteredIncomingCLs.filter(cl => cl.status === activeSection);
-                if (items.length === 0) {
+                const items = getPaginatedCLByStatus(activeSection);
+                const totalItems = filteredIncomingCLs.filter(cl => cl.status === activeSection).length;
+                if (totalItems === 0) {
                   return <p className="text-gray-400 text-sm italic">No employees in this status.</p>;
                 }
-                return <CLTable data={items} onCLClick={handleCLClick} />;
+                return (
+                  <>
+                    <CLTable data={items} onCLClick={handleCLClick} />
+                    {/* CL Pagination Controls for single section view */}
+                    {totalItems > clPagination.itemsPerPage && (
+                      <div className="flex items-center justify-between mt-6 p-4 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-gray-600">
+                            Showing {((clPagination.currentPage - 1) * clPagination.itemsPerPage) + 1} to{' '}
+                            {Math.min(clPagination.currentPage * clPagination.itemsPerPage, totalItems)} of{' '}
+                            {totalItems} entries
+                          </span>
+                          <select
+                            value={clPagination.itemsPerPage}
+                            onChange={(e) => setClPagination(prev => ({ ...prev, itemsPerPage: Number(e.target.value), currentPage: 1 }))}
+                            className="px-2 py-1 text-sm border border-gray-300 rounded"
+                          >
+                            <option value={5}>5 per page</option>
+                            <option value={10}>10 per page</option>
+                            <option value={20}>20 per page</option>
+                            <option value={50}>50 per page</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setClPagination(prev => ({ ...prev, currentPage: Math.max(1, prev.currentPage - 1) }))}
+                            disabled={clPagination.currentPage === 1}
+                            className="px-3 py-1 text-sm bg-white border border-gray-300 rounded disabled:opacity-50"
+                          >
+                            Previous
+                          </button>
+                          <span className="text-sm text-gray-600">
+                            {clPagination.currentPage} of {Math.ceil(totalItems / clPagination.itemsPerPage)}
+                          </span>
+                          <button
+                            onClick={() => setClPagination(prev => ({ ...prev, currentPage: Math.min(Math.ceil(totalItems / clPagination.itemsPerPage), prev.currentPage + 1) }))}
+                            disabled={clPagination.currentPage === Math.ceil(totalItems / clPagination.itemsPerPage)}
+                            className="px-3 py-1 text-sm bg-white border border-gray-300 rounded disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
               })()
             )
             ) : (
@@ -1109,32 +1238,124 @@ function HRDashboard() {
             ) : idpError ? (
               <p className="text-red-500">{idpError}</p>
             ) : activeIDPSection === 'ALL' ? (
-              IDP_STATUS_SECTIONS.map(({ key, label }) => {
-                const items = filteredIncomingIDPs.filter(idp => idp.status === key);
-                return (
-                  <div key={key} className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">{label}</h3>
-                    {items.length === 0 ? (
-                      <p className="text-gray-400 text-sm italic">No employees in this status.</p>
-                    ) : (
-                      <IDPTable 
-                        data={items} 
-                        goTo={goTo}
-                      />
-                    )}
+              <>
+                {IDP_STATUS_SECTIONS.map(({ key, label }) => {
+                  const items = getPaginatedIDPByStatus(key);
+                  const totalItems = filteredIncomingIDPs.filter(idp => idp.status === key).length;
+                  return (
+                    <div key={key} className="mb-6">
+                      <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                        {label} ({totalItems} total)
+                      </h3>
+                      {items.length === 0 ? (
+                        <p className="text-gray-400 text-sm italic">No employees in this status.</p>
+                      ) : (
+                        <IDPTable 
+                          data={items} 
+                          goTo={goTo}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+                {/* IDP Pagination Controls for ALL view */}
+                {filteredIncomingIDPs.length > idpPagination.itemsPerPage && (
+                  <div className="flex items-center justify-between mt-6 p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-gray-600">
+                        Showing {((idpPagination.currentPage - 1) * idpPagination.itemsPerPage) + 1} to{' '}
+                        {Math.min(idpPagination.currentPage * idpPagination.itemsPerPage, filteredIncomingIDPs.length)} of{' '}
+                        {filteredIncomingIDPs.length} entries
+                      </span>
+                      <select
+                        value={idpPagination.itemsPerPage}
+                        onChange={(e) => setIdpPagination(prev => ({ ...prev, itemsPerPage: Number(e.target.value), currentPage: 1 }))}
+                        className="px-2 py-1 text-sm border border-gray-300 rounded"
+                      >
+                        <option value={5}>5 per page</option>
+                        <option value={10}>10 per page</option>
+                        <option value={20}>20 per page</option>
+                        <option value={50}>50 per page</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setIdpPagination(prev => ({ ...prev, currentPage: Math.max(1, prev.currentPage - 1) }))}
+                        disabled={idpPagination.currentPage === 1}
+                        className="px-3 py-1 text-sm bg-white border border-gray-300 rounded disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-sm text-gray-600">
+                        {idpPagination.currentPage} of {totalIDPPages}
+                      </span>
+                      <button
+                        onClick={() => setIdpPagination(prev => ({ ...prev, currentPage: Math.min(totalIDPPages, prev.currentPage + 1) }))}
+                        disabled={idpPagination.currentPage === totalIDPPages}
+                        className="px-3 py-1 text-sm bg-white border border-gray-300 rounded disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
                   </div>
-                );
-              })
+                )}
+              </>
             ) : (
               (() => {
-                const items = filteredIncomingIDPs.filter(idp => idp.status === activeIDPSection);
-                if (items.length === 0) {
+                const items = getPaginatedIDPByStatus(activeIDPSection);
+                const totalItems = filteredIncomingIDPs.filter(idp => idp.status === activeIDPSection).length;
+                if (totalItems === 0) {
                   return <p className="text-gray-400 text-sm italic">No employees in this status.</p>;
                 }
-                return <IDPTable 
-                  data={items} 
-                  goTo={goTo}
-                />;
+                return (
+                  <>
+                    <IDPTable 
+                      data={items} 
+                      goTo={goTo}
+                    />
+                    {/* IDP Pagination Controls for single section view */}
+                    {totalItems > idpPagination.itemsPerPage && (
+                      <div className="flex items-center justify-between mt-6 p-4 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-gray-600">
+                            Showing {((idpPagination.currentPage - 1) * idpPagination.itemsPerPage) + 1} to{' '}
+                            {Math.min(idpPagination.currentPage * idpPagination.itemsPerPage, totalItems)} of{' '}
+                            {totalItems} entries
+                          </span>
+                          <select
+                            value={idpPagination.itemsPerPage}
+                            onChange={(e) => setIdpPagination(prev => ({ ...prev, itemsPerPage: Number(e.target.value), currentPage: 1 }))}
+                            className="px-2 py-1 text-sm border border-gray-300 rounded"
+                          >
+                            <option value={5}>5 per page</option>
+                            <option value={10}>10 per page</option>
+                            <option value={20}>20 per page</option>
+                            <option value={50}>50 per page</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setIdpPagination(prev => ({ ...prev, currentPage: Math.max(1, prev.currentPage - 1) }))}
+                            disabled={idpPagination.currentPage === 1}
+                            className="px-3 py-1 text-sm bg-white border border-gray-300 rounded disabled:opacity-50"
+                          >
+                            Previous
+                          </button>
+                          <span className="text-sm text-gray-600">
+                            {idpPagination.currentPage} of {Math.ceil(totalItems / idpPagination.itemsPerPage)}
+                          </span>
+                          <button
+                            onClick={() => setIdpPagination(prev => ({ ...prev, currentPage: Math.min(Math.ceil(totalItems / idpPagination.itemsPerPage), prev.currentPage + 1) }))}
+                            disabled={idpPagination.currentPage === Math.ceil(totalItems / idpPagination.itemsPerPage)}
+                            className="px-3 py-1 text-sm bg-white border border-gray-300 rounded disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
               })()
             )
           )}
