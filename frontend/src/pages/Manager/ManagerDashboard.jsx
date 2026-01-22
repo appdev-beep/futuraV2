@@ -24,6 +24,7 @@ import {
   ChevronRightIcon,
   ExclamationTriangleIcon,
   XMarkIcon,
+  CalendarIcon,
 } from '@heroicons/react/24/outline';
 import {
   COMPLETION_STATUS_OPTIONS,
@@ -213,6 +214,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [totalItems, setTotalItems] = useState(0);
+
+  // Date search state
+  const [showDateSearch, setShowDateSearch] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
@@ -643,9 +649,27 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
   // Filter CLs by specific employee (if selected) or search term
   const filterByEmployee = useCallback((items) => {
-    if (!selectedEmployeeId && !employeeSearchTerm.trim()) return items;
+    if (!selectedEmployeeId && !employeeSearchTerm.trim() && !startDate && !endDate) return items;
     
     return items.filter(item => {
+      // Check date filtering first
+      if (startDate || endDate) {
+        const itemDate = new Date(item.created_at);
+        if (isNaN(itemDate.getTime())) return false;
+        
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          if (itemDate < start) return false;
+        }
+        
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          if (itemDate > end) return false;
+        }
+      }
+      
       // If specific employee is selected, show only that employee's data
       if (selectedEmployeeId) {
         // Find the selected employee by ID to get their name
@@ -689,7 +713,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       
       return true;
     });
-  }, [selectedEmployeeId, employeeSearchTerm, employees]);
+  }, [selectedEmployeeId, employeeSearchTerm, employees, startDate, endDate]);
 
   const filteredPendingCL = useMemo(() => filterByEmployee(pendingCL), [filterByEmployee, pendingCL]);
   const approvedCLs = useMemo(() => filterByEmployee(allCL.filter(item => item.manager_decision === 'APPROVED')), [filterByEmployee, allCL]);
@@ -700,7 +724,29 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const filteredDepartmentCLs = useMemo(() => {
     let items = departmentCLs;
     
-    // Apply employee filter first
+    // Apply date filtering first
+    if (startDate || endDate) {
+      items = items.filter(item => {
+        const itemDate = new Date(item.created_at);
+        if (isNaN(itemDate.getTime())) return false;
+        
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          if (itemDate < start) return false;
+        }
+        
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          if (itemDate > end) return false;
+        }
+        
+        return true;
+      });
+    }
+    
+    // Apply employee filter
     if (selectedEmployeeId) {
       items = items.filter(item => {
         return String(item.employee_id) === String(selectedEmployeeId);
@@ -726,7 +772,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       return items;
     }
     return items.filter(item => item.status === departmentStatusFilter);
-  }, [departmentCLs, departmentStatusFilter, selectedEmployeeId, employeeSearchTerm, employees]);
+  }, [departmentCLs, departmentStatusFilter, selectedEmployeeId, employeeSearchTerm, employees, startDate, endDate]);
 
   const sectionCounts = useMemo(() => {
     return {
@@ -768,7 +814,17 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   // Reset pagination when section or filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeSection, selectedEmployeeId, employeeSearchTerm]);
+  }, [activeSection, selectedEmployeeId, employeeSearchTerm, startDate, endDate]);
+
+  // Helper functions for date search
+  const clearDateSearch = useCallback(() => {
+    setStartDate('');
+    setEndDate('');
+  }, []);
+
+  const hasDateFilters = useMemo(() => {
+    return !!(startDate || endDate);
+  }, [startDate, endDate]);
 
   // Paginated data for current section
   const paginatedData = useMemo(() => {
@@ -836,13 +892,31 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
   // Filter IDPs by selected employee or search term
   const filteredIDPsByStatus = useMemo(() => {
-    if (!selectedEmployeeId && !employeeSearchTerm.trim()) {
+    if (!selectedEmployeeId && !employeeSearchTerm.trim() && !startDate && !endDate) {
       return idpByStatus;
     }
     
     const filtered = {};
     Object.keys(idpByStatus).forEach(status => {
       filtered[status] = idpByStatus[status].filter(idp => {
+        // Check date filtering first
+        if (startDate || endDate) {
+          const itemDate = new Date(idp.created_at);
+          if (isNaN(itemDate.getTime())) return false;
+          
+          if (startDate) {
+            const start = new Date(startDate);
+            start.setHours(0, 0, 0, 0);
+            if (itemDate < start) return false;
+          }
+          
+          if (endDate) {
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            if (itemDate > end) return false;
+          }
+        }
+        
         // If specific employee is selected, show only that employee's data
         if (selectedEmployeeId) {
           // Debug logging
@@ -903,7 +977,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     });
     
     return filtered;
-  }, [idpByStatus, selectedEmployeeId, employeeSearchTerm, employees]);
+  }, [idpByStatus, selectedEmployeeId, employeeSearchTerm, employees, startDate, endDate]);
 
   const idpSectionCounts = useMemo(() => {
     return {
@@ -919,12 +993,30 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }, [filteredIDPsByStatus]);
 
   const filteredPendingIDPs = useMemo(() => {
-    if (!selectedEmployeeId && !employeeSearchTerm.trim()) return pendingIDPs;
+    if (!selectedEmployeeId && !employeeSearchTerm.trim() && !startDate && !endDate) return pendingIDPs;
     
     console.log('Filtering Pending IDPs - Selected Employee ID:', selectedEmployeeId);
     console.log('Pending IDPs Data:', pendingIDPs);
     
     return pendingIDPs.filter(idp => {
+      // Check date filtering first
+      if (startDate || endDate) {
+        const itemDate = new Date(idp.created_at);
+        if (isNaN(itemDate.getTime())) return false;
+        
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          if (itemDate < start) return false;
+        }
+        
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          if (itemDate > end) return false;
+        }
+      }
+      
       // If specific employee is selected, show only that employee's data
       if (selectedEmployeeId) {
         // Find the selected employee by ID to get their name
@@ -975,7 +1067,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       
       return true;
     });
-  }, [pendingIDPs, selectedEmployeeId, employeeSearchTerm, employees]);
+  }, [pendingIDPs, selectedEmployeeId, employeeSearchTerm, employees, startDate, endDate]);
 
   const selectedEmployee = useMemo(() => {
     return employees.find(emp => String(emp.id) === String(selectedEmployeeId) || String(emp.employee_id) === String(selectedEmployeeId));
@@ -1310,6 +1402,34 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               )}
             </div>
             
+            {/* Date Search Controls */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowDateSearch(!showDateSearch)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                  showDateSearch || hasDateFilters
+                    ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                    : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
+                }`}
+                title="Filter by date range"
+              >
+                <CalendarIcon className="w-4 h-4" />
+                Date Filter
+                {hasDateFilters && <span className="w-2 h-2 bg-blue-500 rounded-full"></span>}
+              </button>
+              
+              {hasDateFilters && (
+                <button
+                  onClick={clearDateSearch}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+                  title="Clear date filters"
+                >
+                  <XMarkIcon className="w-3 h-3" />
+                  Clear
+                </button>
+              )}
+            </div>
+            
             <button
               onClick={logout}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition"
@@ -1320,6 +1440,63 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             </button>
           </div>
         </header>
+
+        {/* Date Search Panel */}
+        {showDateSearch && (
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex flex-col sm:flex-row gap-4 items-end">
+              <div className="flex-1">
+                <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
+                  From Date
+                </label>
+                <input
+                  type="date"
+                  id="startDate"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              
+              <div className="flex-1">
+                <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
+                  To Date
+                </label>
+                <input
+                  type="date"
+                  id="endDate"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={clearDateSearch}
+                  className="px-4 py-2 text-sm text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                >
+                  Clear
+                </button>
+                
+                <button
+                  onClick={() => setShowDateSearch(false)}
+                  className="px-4 py-2 text-sm text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+            
+            {hasDateFilters && (
+              <div className="mt-3 text-sm text-gray-600">
+                <span className="font-medium">Active filters:</span>
+                {startDate && <span className="ml-2">From: {new Date(startDate).toLocaleDateString()}</span>}
+                {endDate && <span className="ml-2">To: {new Date(endDate).toLocaleDateString()}</span>}
+              </div>
+            )}
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
