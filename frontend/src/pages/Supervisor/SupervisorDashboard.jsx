@@ -61,6 +61,14 @@ function SupervisorDashboard() {
   const [showIdpAction, setShowIdpAction] = useState(false);
   const [showIdpInReview, setShowIdpInReview] = useState(false);
   
+  // Date search state
+  const [dateSearch, setDateSearch] = useState({
+    startDate: '',
+    endDate: '',
+    enabled: false
+  });
+  const [showDateSearch, setShowDateSearch] = useState(false);
+  
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -124,37 +132,58 @@ function SupervisorDashboard() {
     return sections;
   }, [department]);
 
-  // Filter data by selected employee or search term
+  // Filter data by selected employee, search term, and date range
   const filteredClByStatus = useMemo(() => {
-    if (selectedEmployee === 'ALL' && !employeeSearchTerm.trim()) return clByStatus;
-    
-    const filtered = {};
-    for (const [status, items] of Object.entries(clByStatus)) {
-      filtered[status] = (items || []).filter(item => {
-        // If specific employee is selected, filter by that
-        if (selectedEmployee !== 'ALL') {
-          return String(item.employee_id) === String(selectedEmployee) ||
-                 String(item.employee_code) === String(selectedEmployee);
-        }
-        
-        // If search term is provided, filter by search
-        if (employeeSearchTerm.trim()) {
-          const searchTerm = employeeSearchTerm.toLowerCase().trim();
-          const employee = allEmployees.find(emp => 
-            String(emp.employee_id) === String(item.employee_id) ||
-            String(emp.employee_code) === String(item.employee_code)
-          );
+    let baseFiltered;
+    if (selectedEmployee === 'ALL' && !employeeSearchTerm.trim()) {
+      baseFiltered = clByStatus;
+    } else {
+      baseFiltered = {};
+      for (const [status, items] of Object.entries(clByStatus)) {
+        baseFiltered[status] = (items || []).filter(item => {
+          // If specific employee is selected, filter by that
+          if (selectedEmployee !== 'ALL') {
+            return String(item.employee_id) === String(selectedEmployee) ||
+                   String(item.employee_code) === String(selectedEmployee);
+          }
           
-          return (employee?.name || '').toLowerCase().includes(searchTerm) ||
-                 String(item.employee_id || '').toLowerCase().includes(searchTerm) ||
-                 String(item.employee_code || '').toLowerCase().includes(searchTerm);
-        }
-        
-        return true;
-      });
+          // If search term is provided, filter by search
+          if (employeeSearchTerm.trim()) {
+            const searchTerm = employeeSearchTerm.toLowerCase().trim();
+            const employee = allEmployees.find(emp => 
+              String(emp.employee_id) === String(item.employee_id) ||
+              String(emp.employee_code) === String(item.employee_code)
+            );
+            
+            return (employee?.name || '').toLowerCase().includes(searchTerm) ||
+                   String(item.employee_id || '').toLowerCase().includes(searchTerm) ||
+                   String(item.employee_code || '').toLowerCase().includes(searchTerm);
+          }
+          
+          return true;
+        });
+      }
     }
-    return filtered;
-  }, [clByStatus, selectedEmployee, employeeSearchTerm, allEmployees]);
+    
+    // Apply date filtering if enabled
+    if (dateSearch.enabled && (dateSearch.startDate || dateSearch.endDate)) {
+      const dateFiltered = {};
+      for (const [status, items] of Object.entries(baseFiltered)) {
+        dateFiltered[status] = (items || []).filter(item => {
+          const itemDate = new Date(item.created_at || item.submitted_at);
+          const startDate = dateSearch.startDate ? new Date(dateSearch.startDate) : null;
+          const endDate = dateSearch.endDate ? new Date(dateSearch.endDate + 'T23:59:59') : null;
+          
+          if (startDate && itemDate < startDate) return false;
+          if (endDate && itemDate > endDate) return false;
+          return true;
+        });
+      }
+      return dateFiltered;
+    }
+    
+    return baseFiltered;
+  }, [clByStatus, selectedEmployee, employeeSearchTerm, allEmployees, dateSearch]);
 
   // Paginated data for current section
   const paginatedClData = useMemo(() => {
@@ -185,60 +214,88 @@ function SupervisorDashboard() {
   // Reset pagination when section or filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeSection, selectedEmployee, employeeSearchTerm]);
+  }, [activeSection, selectedEmployee, employeeSearchTerm, dateSearch]);
 
   const filteredIdpByStatus = useMemo(() => {
-    if (selectedEmployee === 'ALL' && !employeeSearchTerm.trim()) return idpByStatus;
+    let baseFiltered;
+    if (selectedEmployee === 'ALL' && !employeeSearchTerm.trim()) {
+      baseFiltered = idpByStatus;
+    } else {
+      baseFiltered = {};
+      for (const [status, items] of Object.entries(idpByStatus)) {
+        baseFiltered[status] = (items || []).filter(item => {
+          // If specific employee is selected, filter by that
+          if (selectedEmployee !== 'ALL') {
+            return String(item.employee_id) === String(selectedEmployee) ||
+                   String(item.employee_code) === String(selectedEmployee);
+          }
+          
+          // If search term is provided, filter by search
+          if (employeeSearchTerm.trim()) {
+            const searchTerm = employeeSearchTerm.toLowerCase().trim();
+            const employee = allEmployees.find(emp => 
+              String(emp.employee_id) === String(item.employee_id) ||
+              String(emp.employee_code) === String(item.employee_code)
+            );
+            
+            return (employee?.name || '').toLowerCase().includes(searchTerm) ||
+                   String(item.employee_id || '').toLowerCase().includes(searchTerm) ||
+                   String(item.employee_code || '').toLowerCase().includes(searchTerm);
+          }
+          
+          return true;
+        });
+      }
+    }
     
-    const filtered = {};
-    for (const [status, items] of Object.entries(idpByStatus)) {
-      filtered[status] = (items || []).filter(item => {
+    // Apply date filtering if enabled
+    if (dateSearch.enabled && (dateSearch.startDate || dateSearch.endDate)) {
+      const dateFiltered = {};
+      for (const [status, items] of Object.entries(baseFiltered)) {
+        dateFiltered[status] = (items || []).filter(item => {
+          const itemDate = new Date(item.created_at || item.submitted_at);
+          const startDate = dateSearch.startDate ? new Date(dateSearch.startDate) : null;
+          const endDate = dateSearch.endDate ? new Date(dateSearch.endDate + 'T23:59:59') : null;
+          
+          if (startDate && itemDate < startDate) return false;
+          if (endDate && itemDate > endDate) return false;
+          return true;
+        });
+      }
+      return dateFiltered;
+    }
+    
+    return baseFiltered;
+  }, [idpByStatus, selectedEmployee, employeeSearchTerm, allEmployees, dateSearch]);
+
+  const filteredIdpEmployees = useMemo(() => {
+    let baseFiltered;
+    if (selectedEmployee === 'ALL' && !employeeSearchTerm.trim()) {
+      baseFiltered = idpEmployees;
+    } else {
+      baseFiltered = (idpEmployees || []).filter(emp => {
         // If specific employee is selected, filter by that
         if (selectedEmployee !== 'ALL') {
-          return String(item.employee_id) === String(selectedEmployee) ||
-                 String(item.employee_code) === String(selectedEmployee);
+          return String(emp.id) === String(selectedEmployee) ||
+                 String(emp.employee_id) === String(selectedEmployee) ||
+                 String(emp.employee_code) === String(selectedEmployee);
         }
         
         // If search term is provided, filter by search
         if (employeeSearchTerm.trim()) {
           const searchTerm = employeeSearchTerm.toLowerCase().trim();
-          const employee = allEmployees.find(emp => 
-            String(emp.employee_id) === String(item.employee_id) ||
-            String(emp.employee_code) === String(item.employee_code)
-          );
-          
-          return (employee?.name || '').toLowerCase().includes(searchTerm) ||
-                 String(item.employee_id || '').toLowerCase().includes(searchTerm) ||
-                 String(item.employee_code || '').toLowerCase().includes(searchTerm);
+          return (emp.name || '').toLowerCase().includes(searchTerm) ||
+                 String(emp.employee_id || '').toLowerCase().includes(searchTerm) ||
+                 String(emp.employee_code || '').toLowerCase().includes(searchTerm);
         }
         
         return true;
       });
     }
-    return filtered;
-  }, [idpByStatus, selectedEmployee, employeeSearchTerm, allEmployees]);
-
-  const filteredIdpEmployees = useMemo(() => {
-    if (selectedEmployee === 'ALL' && !employeeSearchTerm.trim()) return idpEmployees;
     
-    return (idpEmployees || []).filter(emp => {
-      // If specific employee is selected, filter by that
-      if (selectedEmployee !== 'ALL') {
-        return String(emp.id) === String(selectedEmployee) ||
-               String(emp.employee_id) === String(selectedEmployee) ||
-               String(emp.employee_code) === String(selectedEmployee);
-      }
-      
-      // If search term is provided, filter by search
-      if (employeeSearchTerm.trim()) {
-        const searchTerm = employeeSearchTerm.toLowerCase().trim();
-        return (emp.name || '').toLowerCase().includes(searchTerm) ||
-               String(emp.employee_id || '').toLowerCase().includes(searchTerm) ||
-               String(emp.employee_code || '').toLowerCase().includes(searchTerm);
-      }
-      
-      return true;
-    });
+    // Note: IDP employees don't have creation/submission dates to filter by
+    // Date filtering is applied to actual IDP records in filteredIdpByStatus
+    return baseFiltered;
   }, [idpEmployees, selectedEmployee, employeeSearchTerm]);
 
   // Update summary calculations to use filtered data
@@ -385,6 +442,32 @@ function SupervisorDashboard() {
   useEffect(() => {
     loadRecentActions();
   }, [loadRecentActions]);
+
+  // Clear date search
+  function clearDateSearch() {
+    setDateSearch({ startDate: '', endDate: '', enabled: false });
+    setShowDateSearch(false);
+  }
+
+  // Apply date search
+  function applyDateSearch() {
+    if (dateSearch.startDate || dateSearch.endDate) {
+      setDateSearch(prev => ({ ...prev, enabled: true }));
+    }
+  }
+
+  // Clear date search
+  function clearDateSearch() {
+    setDateSearch({ startDate: '', endDate: '', enabled: false });
+    setShowDateSearch(false);
+  }
+
+  // Apply date search
+  function applyDateSearch() {
+    if (dateSearch.startDate || dateSearch.endDate) {
+      setDateSearch(prev => ({ ...prev, enabled: true }));
+    }
+  }
 
   function logout() {
     openModal({
@@ -919,6 +1002,23 @@ function SupervisorDashboard() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            {/* Date Search Button */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowDateSearch(!showDateSearch)}
+                className={`flex items-center gap-2 px-4 py-2 rounded text-sm transition ${
+                  dateSearch.enabled 
+                    ? 'bg-green-600 text-white hover:bg-green-700' 
+                    : 'bg-gray-600 text-white hover:bg-gray-700'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                {dateSearch.enabled ? 'Date Filter Active' : 'Search by Date'}
+              </button>
+            </div>
+            
             {/* Employee Filter */}
             <div className="relative">
               <input
@@ -1013,6 +1113,97 @@ function SupervisorDashboard() {
             </div>
           </div>
         </header>
+
+        {/* Date Search Panel */}
+        {showDateSearch && (
+          <div className="mb-6 bg-white rounded-lg shadow border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Search Records by Date Range
+              </h3>
+              <button
+                onClick={() => setShowDateSearch(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={dateSearch.startDate}
+                  onChange={(e) => setDateSearch(prev => ({ ...prev, startDate: e.target.value }))}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={dateSearch.endDate}
+                  onChange={(e) => setDateSearch(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={applyDateSearch}
+                  disabled={!dateSearch.startDate && !dateSearch.endDate}
+                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  Apply
+                </button>
+              </div>
+              
+              <div>
+                {dateSearch.enabled && (
+                  <button
+                    onClick={clearDateSearch}
+                    className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Clear Filter
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            {dateSearch.enabled && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="flex items-center">
+                  <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="text-sm text-blue-800">
+                    <strong>Active Date Filter:</strong>
+                    {dateSearch.startDate && ` From ${new Date(dateSearch.startDate).toLocaleDateString()}`}
+                    {dateSearch.endDate && ` To ${new Date(dateSearch.endDate).toLocaleDateString()}`}
+                    {!dateSearch.startDate && !dateSearch.endDate && ' No date range specified'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
 
 
