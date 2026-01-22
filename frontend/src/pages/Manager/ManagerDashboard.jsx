@@ -219,6 +219,17 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
+  // Export modal state
+  const [exportModal, setExportModal] = useState({
+    open: false,
+    loading: false,
+    startDate: '',
+    endDate: '',
+    module: 'CL',
+    selectedStatus: 'ALL',
+    employee: 'ALL'
+  });
+
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
     notification: null,
@@ -574,6 +585,88 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     }
   }
 
+  // Export functions
+  function openExportModal() {
+    setExportModal({
+      open: true,
+      loading: false,
+      startDate: '',
+      endDate: '',
+      module: 'CL',
+      selectedStatus: 'ALL',
+      employee: 'ALL'
+    });
+  }
+
+  function closeExportModal() {
+    setExportModal({
+      open: false,
+      loading: false,
+      startDate: '',
+      endDate: '',
+      module: 'CL',
+      selectedStatus: 'ALL',
+      employee: 'ALL'
+    });
+  }
+
+  async function handleExportCSV() {
+    if (!exportModal.startDate || !exportModal.endDate) {
+      alert('Please select both start and end dates');
+      return;
+    }
+
+    setExportModal(prev => ({ ...prev, loading: true }));
+
+    try {
+      const role = isAMDashboard ? 'am' : 'manager';
+      const endpoint = exportModal.module === 'CL' 
+        ? `/api/cl/${role}/export` 
+        : `/api/idp/${role}/export`;
+      
+      const params = new URLSearchParams({
+        startDate: exportModal.startDate,
+        endDate: exportModal.endDate,
+      });
+
+      if (exportModal.selectedStatus && exportModal.selectedStatus !== 'ALL') {
+        params.append('status', exportModal.selectedStatus);
+      }
+
+      if (exportModal.employee && exportModal.employee !== 'ALL') {
+        params.append('employee', exportModal.employee);
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}${endpoint}?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `${exportModal.module}_Export_${exportModal.startDate}_${exportModal.endDate}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      closeExportModal();
+    } catch (err) {
+      console.error('Export failed:', err);
+      alert(`Export failed: ${err.message}`);
+    } finally {
+      setExportModal(prev => ({ ...prev, loading: false }));
+    }
+  }
+
   async function handleRecentActionClick(action) {
     // If action is a deletion, show when it was deleted
     if (action.title && action.title.toLowerCase().includes('deleted')) {
@@ -772,6 +865,19 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const CL_STATUS_SECTIONS = useMemo(() => {
     return getCLStatusSections(department, isAMDashboard);
   }, [department, isAMDashboard]);
+
+  // IDP status sections for export modal
+  const IDP_STATUS_SECTIONS = useMemo(() => [
+    { key: 'DRAFT', label: 'Draft' },
+    { key: 'FOR_COMPLETION', label: 'For Completion' },
+    { key: 'PENDING_EMPLOYEE', label: 'Pending Employee' },
+    { key: 'PENDING_SUPERVISOR', label: 'Pending Supervisor' },
+    { key: 'PENDING_AM', label: 'Pending Assistant Manager' },
+    { key: 'PENDING_MANAGER', label: 'Pending Manager' },
+    { key: 'PENDING_HR', label: 'Pending HR' },
+    { key: 'CYCLE_COMPLETED', label: 'Cycle Completed' },
+    { key: 'RETURNED', label: 'Returned' }
+  ], []);
 
   const activeSectionLabel = useMemo(() => {
     const employee = employees.find(emp => String(emp.id) === String(selectedEmployeeId) || String(emp.employee_id) === String(selectedEmployeeId));
@@ -1414,6 +1520,17 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             </div>
             
             <button
+              onClick={openExportModal}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold transition"
+              title="Export Data"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Export CSV
+            </button>
+            
+            <button
               onClick={logout}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition"
               title="Logout"
@@ -1925,6 +2042,147 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         onConfirm={handleModalConfirm}
         onClose={closeModal}
       />
+
+      {/* Export Modal */}
+      {exportModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-200 bg-opacity-50 backdrop-blur-sm">
+          <div
+            className="absolute inset-0"
+            onClick={closeExportModal}
+          />
+
+          <div className="relative z-50 bg-white rounded-lg shadow-xl border border-gray-300 max-w-lg w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800">Export Data</h3>
+              <button
+                onClick={closeExportModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Module</label>
+                <select
+                  value={exportModal.module}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, module: e.target.value, selectedStatus: 'ALL' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
+                >
+                  <option value="CL">Competency Leveling (CL)</option>
+                  <option value="IDP">Individual Development Plan (IDP)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Employee
+                  <span className="text-xs text-gray-500 ml-2">(Filter by specific employee or all)</span>
+                </label>
+                <select
+                  value={exportModal.employee}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, employee: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
+                >
+                  <option value="ALL">All Employees</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.employee_id || emp.id}>
+                      {emp.name} ({emp.employee_id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                  <input
+                    type="date"
+                    value={exportModal.startDate}
+                    onChange={(e) => setExportModal(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    max={exportModal.endDate || new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                  <input
+                    type="date"
+                    value={exportModal.endDate}
+                    onChange={(e) => setExportModal(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    min={exportModal.startDate}
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Status Filter</label>
+                <select
+                  value={exportModal.selectedStatus}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, selectedStatus: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
+                >
+                  <option value="ALL">All Statuses</option>
+                  {exportModal.module === 'CL' ? (
+                    CL_STATUS_SECTIONS.map(section => (
+                      <option key={section.key} value={section.key}>{section.label}</option>
+                    ))
+                  ) : (
+                    IDP_STATUS_SECTIONS.map(section => (
+                      <option key={section.key} value={section.key}>{section.label}</option>
+                    ))
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={closeExportModal}
+                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
+                disabled={exportModal.loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExportCSV}
+                className={`px-6 py-2 text-sm text-white rounded-md transition-all flex items-center gap-2 ${
+                  exportModal.loading 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : !exportModal.startDate || !exportModal.endDate
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
+                }`}
+                disabled={exportModal.loading || !exportModal.startDate || !exportModal.endDate}
+                title={!exportModal.startDate || !exportModal.endDate ? 'Please select both start and end dates' : ''}
+              >
+                {exportModal.loading ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Export CSV
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -452,6 +452,66 @@ async function exportIDPForSupervisor(req, res, next) {
   }
 }
 
+// =====================================
+// CSV EXPORT FOR ASSISTANT MANAGER
+// =====================================
+async function exportIDPForAM(req, res, next) {
+  try {
+    const { startDate, endDate, department, status } = req.query;
+    const amId = req.user.id; // Get AM ID from authenticated user
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: 'Start date and end date are required' });
+    }
+    
+    const csvData = await idpService.exportIDPForAM({
+      startDate,
+      endDate,
+      department: department || null,
+      status: status || null,
+      amId: amId
+    });
+    
+    // Set CSV headers
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="IDP_AM_Export_${department || 'All'}_${startDate}_${endDate}.csv"`);
+    
+    res.send(csvData);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// =====================================
+// CSV EXPORT FOR MANAGER
+// =====================================
+async function exportIDPForManager(req, res, next) {
+  try {
+    const { startDate, endDate, department, status } = req.query;
+    const managerId = req.user.id; // Get Manager ID from authenticated user
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: 'Start date and end date are required' });
+    }
+    
+    const csvData = await idpService.exportIDPForManager({
+      startDate,
+      endDate,
+      department: department || null,
+      status: status || null,
+      managerId: managerId
+    });
+    
+    // Set CSV headers
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="IDP_Manager_Export_${department || 'All'}_${startDate}_${endDate}.csv"`);
+    
+    res.send(csvData);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getById,
   create,
@@ -481,6 +541,8 @@ module.exports = {
   resubmitToManager,
   exportIDP,
   exportIDPForSupervisor,
+  exportIDPForAM,
+  exportIDPForManager,
 };
 
 // POST /api/idp/create

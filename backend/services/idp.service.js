@@ -1689,6 +1689,226 @@ async function exportIDPForSupervisor({ startDate, endDate, department, status, 
 }
 
 // =====================
+// CSV EXPORT FOR ASSISTANT MANAGER
+// =====================
+async function exportIDPForAM({ startDate, endDate, department, status, amId }) {
+  console.log('IDP Export for AM params:', { startDate, endDate, department, status, amId });
+  
+  let sql = `
+    SELECT DISTINCT
+      ih.id as idp_id,
+      ih.status,
+      ih.created_at,
+      ih.updated_at,
+      e.employee_id,
+      e.name as employee_name,
+      p.title as position_title,
+      d.name as department_name,
+      s.name as supervisor_name,
+      am.name as am_name,
+      m.name as manager_name,
+      ih.submitted_at,
+      ih.am_decision,
+      ih.am_remarks,
+      ih.manager_decision,
+      ih.manager_remarks,
+      ih.hr_decision,
+      ih.hr_remarks
+    FROM idp_headers ih
+    JOIN users e ON ih.employee_id = e.id
+    LEFT JOIN departments d ON ih.department_id = d.id
+    LEFT JOIN positions p ON e.position_id = p.id
+    LEFT JOIN users s ON ih.supervisor_id = s.id
+    LEFT JOIN users am ON ih.am_id = am.id
+    LEFT JOIN users m ON ih.manager_id = m.id
+    WHERE 1 = 1
+  `;
+  
+  const params = [];
+  
+  // Filter by AM assigned IDPs
+  if (amId) {
+    sql += ` AND ih.am_id = ?`;
+    params.push(amId);
+  }
+  
+  if (startDate) {
+    sql += ` AND ih.created_at >= ?`;
+    params.push(startDate);
+  }
+  
+  if (endDate) {
+    sql += ` AND ih.created_at <= ?`;
+    params.push(endDate);
+  }
+  
+  if (department) {
+    sql += ` AND d.name = ?`;
+    params.push(department);
+  }
+  
+  if (status && status !== 'ALL') {
+    sql += ` AND ih.status = ?`;
+    params.push(status);
+  }
+  
+  sql += ` ORDER BY ih.created_at DESC`;
+  
+  const [rows] = await db.query(sql, params);
+  console.log(`Found ${rows.length} IDP records for AM export`);
+  
+  if (rows.length === 0) {
+    return generateEmptyIDPCSV('No data found for the specified criteria');
+  }
+  
+  // Generate CSV
+  const headers = [
+    'IDP ID', 'Employee ID', 'Employee Name', 'Position', 'Department',
+    'Supervisor', 'Assistant Manager', 'Manager', 'Status',
+    'Submitted At', 'AM Decision', 'AM Remarks', 'Manager Decision', 'Manager Remarks',
+    'HR Decision', 'HR Remarks', 'Created At', 'Updated At'
+  ];
+  
+  const csvRows = [headers.join(',')];
+  
+  rows.forEach(row => {
+    const csvRow = [
+      row.idp_id || '',
+      row.employee_id || '',
+      `"${(row.employee_name || '').replace(/"/g, '""')}"`,
+      `"${(row.position_title || '').replace(/"/g, '""')}"`,
+      `"${(row.department_name || '').replace(/"/g, '""')}"`,
+      `"${(row.supervisor_name || '').replace(/"/g, '""')}"`,
+      `"${(row.am_name || '').replace(/"/g, '""')}"`,
+      `"${(row.manager_name || '').replace(/"/g, '""')}"`,
+      row.status || '',
+      row.submitted_at ? new Date(row.submitted_at).toISOString() : '',
+      row.am_decision || '',
+      `"${(row.am_remarks || '').replace(/"/g, '""')}"`,
+      row.manager_decision || '',
+      `"${(row.manager_remarks || '').replace(/"/g, '""')}"`,
+      row.hr_decision || '',
+      `"${(row.hr_remarks || '').replace(/"/g, '""')}"`,
+      row.created_at ? new Date(row.created_at).toISOString() : '',
+      row.updated_at ? new Date(row.updated_at).toISOString() : ''
+    ];
+    csvRows.push(csvRow.join(','));
+  });
+  
+  return csvRows.join('\n');
+}
+
+// =====================
+// CSV EXPORT FOR MANAGER
+// =====================
+async function exportIDPForManager({ startDate, endDate, department, status, managerId }) {
+  console.log('IDP Export for Manager params:', { startDate, endDate, department, status, managerId });
+  
+  let sql = `
+    SELECT DISTINCT
+      ih.id as idp_id,
+      ih.status,
+      ih.created_at,
+      ih.updated_at,
+      e.employee_id,
+      e.name as employee_name,
+      p.title as position_title,
+      d.name as department_name,
+      s.name as supervisor_name,
+      am.name as am_name,
+      m.name as manager_name,
+      ih.submitted_at,
+      ih.am_decision,
+      ih.am_remarks,
+      ih.manager_decision,
+      ih.manager_remarks,
+      ih.hr_decision,
+      ih.hr_remarks
+    FROM idp_headers ih
+    JOIN users e ON ih.employee_id = e.id
+    LEFT JOIN departments d ON ih.department_id = d.id
+    LEFT JOIN positions p ON e.position_id = p.id
+    LEFT JOIN users s ON ih.supervisor_id = s.id
+    LEFT JOIN users am ON ih.am_id = am.id
+    LEFT JOIN users m ON ih.manager_id = m.id
+    WHERE 1 = 1
+  `;
+  
+  const params = [];
+  
+  // Filter by Manager's department employees
+  if (managerId) {
+    sql += ` AND (ih.manager_id = ? OR d.manager_id = ?)`;
+    params.push(managerId, managerId);
+  }
+  
+  if (startDate) {
+    sql += ` AND ih.created_at >= ?`;
+    params.push(startDate);
+  }
+  
+  if (endDate) {
+    sql += ` AND ih.created_at <= ?`;
+    params.push(endDate);
+  }
+  
+  if (department) {
+    sql += ` AND d.name = ?`;
+    params.push(department);
+  }
+  
+  if (status && status !== 'ALL') {
+    sql += ` AND ih.status = ?`;
+    params.push(status);
+  }
+  
+  sql += ` ORDER BY ih.created_at DESC`;
+  
+  const [rows] = await db.query(sql, params);
+  console.log(`Found ${rows.length} IDP records for Manager export`);
+  
+  if (rows.length === 0) {
+    return generateEmptyIDPCSV('No data found for the specified criteria');
+  }
+  
+  // Generate CSV
+  const headers = [
+    'IDP ID', 'Employee ID', 'Employee Name', 'Position', 'Department',
+    'Supervisor', 'Assistant Manager', 'Manager', 'Status',
+    'Submitted At', 'AM Decision', 'AM Remarks', 'Manager Decision', 'Manager Remarks',
+    'HR Decision', 'HR Remarks', 'Created At', 'Updated At'
+  ];
+  
+  const csvRows = [headers.join(',')];
+  
+  rows.forEach(row => {
+    const csvRow = [
+      row.idp_id || '',
+      row.employee_id || '',
+      `"${(row.employee_name || '').replace(/"/g, '""')}"`,
+      `"${(row.position_title || '').replace(/"/g, '""')}"`,
+      `"${(row.department_name || '').replace(/"/g, '""')}"`,
+      `"${(row.supervisor_name || '').replace(/"/g, '""')}"`,
+      `"${(row.am_name || '').replace(/"/g, '""')}"`,
+      `"${(row.manager_name || '').replace(/"/g, '""')}"`,
+      row.status || '',
+      row.submitted_at ? new Date(row.submitted_at).toISOString() : '',
+      row.am_decision || '',
+      `"${(row.am_remarks || '').replace(/"/g, '""')}"`,
+      row.manager_decision || '',
+      `"${(row.manager_remarks || '').replace(/"/g, '""')}"`,
+      row.hr_decision || '',
+      `"${(row.hr_remarks || '').replace(/"/g, '""')}"`,
+      row.created_at ? new Date(row.created_at).toISOString() : '',
+      row.updated_at ? new Date(row.updated_at).toISOString() : ''
+    ];
+    csvRows.push(csvRow.join(','));
+  });
+  
+  return csvRows.join('\n');
+}
+
+// =====================
 // CSV EXPORT (for HR - all data)
 // =====================
 async function exportIDP({ startDate, endDate, department, status }) {
@@ -2367,4 +2587,6 @@ module.exports = {
   hrReturn,
   exportIDP,
   exportIDPForSupervisor,
+  exportIDPForAM,
+  exportIDPForManager,
 };

@@ -40,6 +40,13 @@ router.put(
   idpController.amReturnIDP
 );
 
+// GET /api/idp/am/export (CSV export for assistant managers)
+router.get(
+  '/am/export',
+  requireRole('AM', 'HR', 'Admin'),
+  idpController.exportIDPForAM
+);
+
 // GET /api/idp/manager/pending (IDPs pending manager approval)
 router.get(
   '/manager/pending',
@@ -52,6 +59,13 @@ router.get(
   '/manager/grouped',
   requireRole('Manager', 'HR', 'Admin'),
   idpController.getManagerGroupedIDPs
+);
+
+// GET /api/idp/manager/export (CSV export for managers)
+router.get(
+  '/manager/export',
+  requireRole('Manager', 'HR', 'Admin'),
+  idpController.exportIDPForManager
 );
 
 // GET /api/idp/employee/my (IDPs for current employee)

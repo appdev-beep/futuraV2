@@ -40,6 +40,13 @@ router.get(
   clController.getAMPending
 );
 
+// GET /api/cl/am/export (CSV export for assistant managers)
+router.get(
+  '/am/export',
+  requireRole('AM'),
+  clController.exportCLForAM
+);
+
 // All CL routes require authentication
 router.use(requireAuth);
 
@@ -105,6 +112,13 @@ router.get(
   '/manager/department',
   requireRole('Manager', 'HR', 'Admin'),
   clController.getManagerDepartmentCL
+);
+
+// GET /api/cl/manager/export (CSV export for managers)
+router.get(
+  '/manager/export',
+  requireRole('Manager', 'HR', 'Admin'),
+  clController.exportCLForManager
 );
 
 // =====================================

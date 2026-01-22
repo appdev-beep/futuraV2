@@ -2355,6 +2355,222 @@ async function exportCLForSupervisor({ startDate, endDate, department, status, s
 }
 
 // =====================
+// CSV EXPORT FOR ASSISTANT MANAGER
+// =====================
+async function exportCLForAM({ startDate, endDate, department, status, amId }) {
+  console.log('CL Export for AM params:', { startDate, endDate, department, status, amId });
+  
+  let sql = `
+    SELECT 
+      ch.id as cl_id,
+      ch.status,
+      ch.created_at,
+      ch.updated_at,
+      e.employee_id,
+      e.name as employee_name,
+      p.title as position_title,
+      d.name as department_name,
+      s.name as supervisor_name,
+      am.name as am_name,
+      m.name as manager_name,
+      ch.remarks,
+      ch.supervisor_remarks,
+      ch.manager_remarks,
+      ch.employee_remarks,
+      ch.hr_decision,
+      ch.hr_remarks
+    FROM cl_headers ch
+    JOIN users e ON ch.employee_id = e.id
+    LEFT JOIN departments d ON ch.department_id = d.id
+    LEFT JOIN positions p ON e.position_id = p.id
+    LEFT JOIN users s ON ch.supervisor_id = s.id
+    LEFT JOIN users am ON e.am_id = am.id
+    LEFT JOIN users m ON ch.manager_id = m.id
+    WHERE 1 = 1
+  `;
+  
+  const params = [];
+  
+  // Filter by AM assigned employees
+  if (amId) {
+    sql += ` AND e.am_id = ?`;
+    params.push(amId);
+  }
+  
+  if (startDate) {
+    sql += ` AND ch.created_at >= ?`;
+    params.push(startDate);
+  }
+  
+  if (endDate) {
+    sql += ` AND ch.created_at <= ?`;
+    params.push(endDate);
+  }
+  
+  if (department) {
+    sql += ` AND d.name = ?`;
+    params.push(department);
+  }
+  
+  if (status && status !== 'ALL') {
+    sql += ` AND ch.status = ?`;
+    params.push(status);
+  }
+  
+  sql += ` ORDER BY ch.created_at DESC`;
+  
+  const [rows] = await db.query(sql, params);
+  console.log(`Found ${rows.length} CL records for AM export`);
+
+  if (rows.length === 0) {
+    return 'No data found for the specified criteria';
+  }
+
+  // Generate CSV
+  const headers = [
+    'CL ID', 'Employee ID', 'Employee Name', 'Position', 'Department',
+    'Supervisor', 'Assistant Manager', 'Manager', 'Status', 'General Remarks',
+    'Supervisor Remarks', 'Manager Remarks', 'Employee Remarks',
+    'HR Decision', 'HR Remarks', 'Created At', 'Updated At'
+  ];
+
+  const csvRows = [headers.join(',')];
+
+  rows.forEach(row => {
+    const csvRow = [
+      row.cl_id || '',
+      row.employee_id || '',
+      `"${(row.employee_name || '').replace(/"/g, '""')}"`,
+      `"${(row.position_title || '').replace(/"/g, '""')}"`,
+      `"${(row.department_name || '').replace(/"/g, '""')}"`,
+      `"${(row.supervisor_name || '').replace(/"/g, '""')}"`,
+      `"${(row.am_name || '').replace(/"/g, '""')}"`,
+      `"${(row.manager_name || '').replace(/"/g, '""')}"`,
+      row.status || '',
+      `"${(row.remarks || '').replace(/"/g, '""')}"`,
+      `"${(row.supervisor_remarks || '').replace(/"/g, '""')}"`,
+      `"${(row.manager_remarks || '').replace(/"/g, '""')}"`,
+      `"${(row.employee_remarks || '').replace(/"/g, '""')}"`,
+      row.hr_decision || '',
+      `"${(row.hr_remarks || '').replace(/"/g, '""')}"`,
+      row.created_at ? new Date(row.created_at).toISOString() : '',
+      row.updated_at ? new Date(row.updated_at).toISOString() : ''
+    ];
+    csvRows.push(csvRow.join(','));
+  });
+
+  return csvRows.join('\n');
+}
+
+// =====================
+// CSV EXPORT FOR MANAGER
+// =====================
+async function exportCLForManager({ startDate, endDate, department, status, managerId }) {
+  console.log('CL Export for Manager params:', { startDate, endDate, department, status, managerId });
+  
+  let sql = `
+    SELECT 
+      ch.id as cl_id,
+      ch.status,
+      ch.created_at,
+      ch.updated_at,
+      e.employee_id,
+      e.name as employee_name,
+      p.title as position_title,
+      d.name as department_name,
+      s.name as supervisor_name,
+      am.name as am_name,
+      m.name as manager_name,
+      ch.remarks,
+      ch.supervisor_remarks,
+      ch.manager_remarks,
+      ch.employee_remarks,
+      ch.hr_decision,
+      ch.hr_remarks
+    FROM cl_headers ch
+    JOIN users e ON ch.employee_id = e.id
+    LEFT JOIN departments d ON ch.department_id = d.id
+    LEFT JOIN positions p ON e.position_id = p.id
+    LEFT JOIN users s ON ch.supervisor_id = s.id
+    LEFT JOIN users am ON e.am_id = am.id
+    LEFT JOIN users m ON ch.manager_id = m.id
+    WHERE 1 = 1
+  `;
+  
+  const params = [];
+  
+  // Filter by Manager's department employees
+  if (managerId) {
+    sql += ` AND (ch.manager_id = ? OR d.manager_id = ?)`;
+    params.push(managerId, managerId);
+  }
+  
+  if (startDate) {
+    sql += ` AND ch.created_at >= ?`;
+    params.push(startDate);
+  }
+  
+  if (endDate) {
+    sql += ` AND ch.created_at <= ?`;
+    params.push(endDate);
+  }
+  
+  if (department) {
+    sql += ` AND d.name = ?`;
+    params.push(department);
+  }
+  
+  if (status && status !== 'ALL') {
+    sql += ` AND ch.status = ?`;
+    params.push(status);
+  }
+  
+  sql += ` ORDER BY ch.created_at DESC`;
+  
+  const [rows] = await db.query(sql, params);
+  console.log(`Found ${rows.length} CL records for Manager export`);
+
+  if (rows.length === 0) {
+    return 'No data found for the specified criteria';
+  }
+
+  // Generate CSV
+  const headers = [
+    'CL ID', 'Employee ID', 'Employee Name', 'Position', 'Department',
+    'Supervisor', 'Assistant Manager', 'Manager', 'Status', 'General Remarks',
+    'Supervisor Remarks', 'Manager Remarks', 'Employee Remarks',
+    'HR Decision', 'HR Remarks', 'Created At', 'Updated At'
+  ];
+
+  const csvRows = [headers.join(',')];
+
+  rows.forEach(row => {
+    const csvRow = [
+      row.cl_id || '',
+      row.employee_id || '',
+      `"${(row.employee_name || '').replace(/"/g, '""')}"`,
+      `"${(row.position_title || '').replace(/"/g, '""')}"`,
+      `"${(row.department_name || '').replace(/"/g, '""')}"`,
+      `"${(row.supervisor_name || '').replace(/"/g, '""')}"`,
+      `"${(row.am_name || '').replace(/"/g, '""')}"`,
+      `"${(row.manager_name || '').replace(/"/g, '""')}"`,
+      row.status || '',
+      `"${(row.remarks || '').replace(/"/g, '""')}"`,
+      `"${(row.supervisor_remarks || '').replace(/"/g, '""')}"`,
+      `"${(row.manager_remarks || '').replace(/"/g, '""')}"`,
+      `"${(row.employee_remarks || '').replace(/"/g, '""')}"`,
+      row.hr_decision || '',
+      `"${(row.hr_remarks || '').replace(/"/g, '""')}"`,
+      row.created_at ? new Date(row.created_at).toISOString() : '',
+      row.updated_at ? new Date(row.updated_at).toISOString() : ''
+    ];
+    csvRows.push(csvRow.join(','));
+  });
+
+  return csvRows.join('\n');
+}
+
+// =====================
 // CSV EXPORT (for HR - all data)
 // =====================
 async function exportCL({ startDate, endDate, department, status }) {
@@ -2624,5 +2840,7 @@ module.exports = {
   hrReturn,
   getCLAuditTrail,
   exportCL,
-  exportCLForSupervisor
+  exportCLForSupervisor,
+  exportCLForAM,
+  exportCLForManager
 };

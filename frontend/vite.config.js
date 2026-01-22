@@ -12,7 +12,14 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss()],
     server: {
       port: Number(env.VITE_PORT) || 5173,
-      host: '0.0.0.0'
+      host: '0.0.0.0',
+      proxy: {
+        '/api': {
+          target: env.VITE_API_BASE_URL || 'http://10.10.1.243:4000',
+          changeOrigin: true,
+          secure: false,
+        }
+      }
     }
   }
 })
