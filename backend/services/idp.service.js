@@ -307,6 +307,28 @@ async function getIDPsPendingAM(amId) {
   return headers;
 }
 
+// Get all IDPs for AM grouped by status (similar to manager grouped)
+async function getIDPsGroupedByAM(amId) {
+  const [headers] = await db.query(
+    `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id,
+      COALESCE(p.title, '') AS position_title
+     FROM idp_headers h
+     JOIN users e ON h.employee_id = e.id
+     LEFT JOIN positions p ON e.position_id = p.id
+     WHERE h.am_id = ?
+     ORDER BY h.created_at DESC`,
+    [amId]
+  );
+
+  const grouped = {};
+  for (const header of headers) {
+    const status = header.status || 'UNKNOWN';
+    if (!grouped[status]) grouped[status] = [];
+    grouped[status].push(header);
+  }
+  return grouped;
+}
+
 // AM approves IDP and routes it to Manager
 async function amApprove(idpId, amId, remarks = '') {
   const conn = await db.getConnection();
@@ -2097,6 +2119,7 @@ module.exports = {
   managerReturnIDP,
   managerApprove,
   getIDPsPendingAM,
+  getIDPsGroupedByAM,
   amApprove,
   amReturnIDP,
   getIDPsForEmployee,

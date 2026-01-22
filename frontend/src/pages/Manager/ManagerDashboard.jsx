@@ -32,6 +32,57 @@ import {
   SCORING_GUIDE,
 } from '../Shared/idpConstants';
 
+// Helper functions
+function TextBox({ value }) {
+  return (
+    <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 shadow-sm">
+      {value || 'N/A'}
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <label className="block text-xs font-bold text-gray-600 mb-2">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function _areaColor(area) {
+  const safe = CRAYON_COLORS && typeof CRAYON_COLORS === 'object' ? CRAYON_COLORS : {};
+  if (safe[area]) return safe[area];
+
+  const key = String(area || 'Other');
+  const palette = [
+    { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100', dot: 'bg-indigo-400' },
+    { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-100', dot: 'bg-rose-400' },
+    { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-400' },
+    { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-400' },
+    { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-100', dot: 'bg-sky-400' },
+  ];
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 100000;
+  return palette[hash % palette.length];
+}
+
+function _getCompetencyCompletionStatus(item) {
+  const mainActivities = (item.development_activity && typeof item.development_activity === 'object') 
+    ? [item.development_activity] 
+    : (item.developmentActivities || []);
+  const extraTables = item.extraTables || [];
+
+  const allActivities = [...mainActivities, ...extraTables];
+  if (allActivities.length === 0) return 'empty';
+
+  const incomplete = allActivities.some(act => !act.completion_status || act.completion_status === 'NOT_STARTED');
+  if (incomplete) return 'pending';
+
+  const allCompleted = allActivities.every(act => act.completion_status === 'COMPLETED');
+  return allCompleted ? 'completed' : 'in_progress';
+}
+
 // Only these roles can access Manager dashboard
 const MANAGER_ROLES = ['Manager', 'HR', 'Admin'];
 
@@ -146,10 +197,10 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [searchQuery, setSearchQuery] = useState(''); // Search for employees
   
   // Proper employee setter function
-  const setSelectedEmployeeId = (id) => {
+  const setSelectedEmployeeId = useCallback((id) => {
     _setSelectedEmployeeId(id);
     setEmployeeSearchTerm(''); // Clear search when selecting specific employee
-  };
+  }, []);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [hasCompetenciesOnly, setHasCompetenciesOnly] = useState(false); // Filter: only employees with competencies
   // ✅ NEW: notifications + recent actions (right sidebar)
@@ -157,6 +208,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [recentActions, setRecentActions] = useState([]);
   const [notificationFilter, setNotificationFilter] = useState('ALL'); // 'ALL', 'CL', 'IDP'
   const [recentFilter, setRecentFilter] = useState('ALL'); // 'ALL', 'CL', 'IDP'
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [totalItems, setTotalItems] = useState(0);
 
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
@@ -218,83 +274,17 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }, [isAMDashboard]);
 
   // Helper: open IDP view in full page (using CreateIDPPage with viewOnly mode)
-  function openIdpView(idp) {
+  const openIdpView = useCallback((idp) => {
     const path = isAMDashboard ? `/am/idp/${idp.id}` : `/manager/idp/${idp.id}`;
     window.location.href = `${path}?viewOnly=true`;
-  }
+  }, [isAMDashboard]);
 
-  // Helper components for IDP modal
-  function TextBox({ value }) {
-    return (
-      <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 shadow-sm">
-        {value || 'N/A'}
-      </div>
-    );
-  }
+  const getCompetencyCompletionStatus = useCallback((item) => _getCompetencyCompletionStatus(item), []);
+  const areaColor = useCallback((area) => _areaColor(area), []);
 
-  function Field({ label, children }) {
-    return (
-      <div>
-        <label className="block text-xs font-bold text-gray-600 mb-2">{label}</label>
-        {children}
-      </div>
-    );
-  }
-
-  function _areaColor(area) {
-    const safe = CRAYON_COLORS && typeof CRAYON_COLORS === 'object' ? CRAYON_COLORS : {};
-    if (safe[area]) return safe[area];
-
-    const key = String(area || 'Other');
-    const palette = [
-      { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100', dot: 'bg-indigo-400' },
-      { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-100', dot: 'bg-rose-400' },
-      { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-400' },
-      { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-400' },
-      { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-100', dot: 'bg-sky-400' },
-    ];
-    let hash = 0;
-    for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 100000;
-    return palette[hash % palette.length];
-  }
-
-  function _getCompetencyCompletionStatus(item) {
-    const mainActivities = (item.development_activity && typeof item.development_activity === 'object') 
-      ? [item.development_activity] 
-      : (item.developmentActivities || []);
-    const extraTables = item.extraTables || [];
-    const activityType = mainActivities[0]?.type?.toLowerCase();
-    
-    let totalActivities = 0;
-    let completedActivities = 0;
-    
-    if (activityType === 'education') {
-      totalActivities = mainActivities.length;
-      completedActivities = mainActivities.filter(a => 
-        a.completionStatus === 'Completed' || a.status === 'Completed'
-      ).length;
-    } else if (activityType === 'experience' || activityType === 'exposure') {
-      totalActivities = extraTables.length;
-      completedActivities = extraTables.filter(t => 
-        t.completionStatus === 'Completed' || t.status === 'Completed'
-      ).length;
-    } else {
-      totalActivities = mainActivities.length;
-      completedActivities = mainActivities.filter(a => 
-        a.completionStatus === 'Completed' || a.status === 'Completed'
-      ).length;
-    }
-    
-    return {
-      completed: completedActivities,
-      total: totalActivities,
-      percentage: totalActivities > 0 ? Math.round((completedActivities / totalActivities) * 100) : 0,
-    };
-  }
-
-  function closeNotificationModal() {
+  const closeNotificationModal = useCallback(() => {
     setNotificationModalState({ open: false, notification: null });
-  }
+  }, []);
 
   // ==========================
   // LOAD DASHBOARD DATA (refactored into function)
@@ -336,11 +326,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       let deptSupervisors;
       if (isAMDashboard) {
         deptSupervisors = (allUsers || []).filter(
-          u => u.am_id === user.id && u.role === 'Supervisor'
+          u => u && user && user.id && u.am_id === user.id && u.role === 'Supervisor'
         );
       } else {
         deptSupervisors = (allUsers || []).filter(
-          u => u.department_id === user.department_id && u.role === 'Supervisor'
+          u => u && user && user.department_id && u.department_id === user.department_id && u.role === 'Supervisor'
         );
       }
       setSupervisors(deptSupervisors);
@@ -349,11 +339,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       let assignedEmployees;
       if (isAMDashboard) {
         assignedEmployees = (allUsers || []).filter(
-          u => u.am_id === user.id && u.role === 'Employee'
+          u => u && user && user.id && u.am_id === user.id && u.role === 'Employee'
         );
       } else {
         assignedEmployees = (allUsers || []).filter(
-          u => u.manager_id === user.id && u.role === 'Employee'
+          u => u && user && user.id && u.manager_id === user.id && u.role === 'Employee'
         );
       }
 
@@ -385,6 +375,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       // Map supervisor IDs to names for CL records so UI shows names instead of raw ids
       const userMap = {};
       (allUsers || []).forEach(u => {
+        if (!u) return; // Skip null/undefined users
         const display = u.name || u.full_name || ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.employee_id || u.id;
         userMap[u.id] = display;
       });
@@ -409,7 +400,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   useEffect(() => {
     if (!user) return;
     loadDashboardData();
-  }, [user, loadDashboardData]);
+  }, [user]);
 
   // Refresh data when returning to dashboard (page visibility)
   useEffect(() => {
@@ -421,7 +412,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [loadDashboardData]);
+  }, []);
 
   // ==========================
   // LOAD NOTIFICATIONS (polling)
@@ -501,7 +492,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   // ==========================
   // HELPERS
   // ==========================
-  function openModal(options) {
+  const openModal = useCallback((options) => {
     setModalState({
       open: true,
       title: options.title || '',
@@ -511,26 +502,26 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       cancelText: options.cancelText || 'Cancel',
       onConfirm: options.onConfirm || null,
     });
-  }
+  }, []);
 
-  function closeModal() {
+  const closeModal = useCallback(() => {
     setModalState((prev) => ({
       ...prev,
       open: false,
       onConfirm: null,
       showCancel: false,
     }));
-  }
+  }, []);
 
-  async function handleModalConfirm() {
+  const handleModalConfirm = useCallback(async () => {
     const fn = modalState.onConfirm;
     closeModal();
     if (fn) {
       await fn();
     }
-  }
+  }, [modalState.onConfirm, closeModal]);
 
-  function logout() {
+  const logout = useCallback(() => {
     openModal({
       title: 'Confirm Logout',
       message: 'Are you sure you want to logout? Any unsaved changes will be lost.',
@@ -542,9 +533,9 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         window.location.href = '/login';
       },
     });
-  }
+  }, [openModal]);
 
-  function goTo(url) {
+  const goTo = useCallback((url) => {
     // For AM dashboard, rewrite review links to AM review page
     if (isAMDashboard && url.startsWith('/cl/submissions/')) {
       const id = url.split('/').pop();
@@ -558,9 +549,9 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       return;
     }
     window.location.href = url;
-  }
+  }, [isAMDashboard]);
 
-  async function handleNotificationClick(n) {
+  const handleNotificationClick = useCallback(async (n) => {
     // Mark notification as read
     try {
       const token = localStorage.getItem('token');
@@ -581,7 +572,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       open: true,
       notification: n,
     });
-  }
+  }, []);
 
   async function handleMarkAllAsRead() {
     try {
@@ -616,7 +607,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     window.location.href = `${url}${separator}viewOnly=true`;
   }
 
-  async function proceedToNotificationLink(n) {
+  const proceedToNotificationLink = useCallback(async (n) => {
     setNotificationModalState({ open: false, notification: null });
     
     try {
@@ -642,7 +633,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     
     // Navigate to different page
     window.location.href = url;
-  }
+  }, []);
 
   const unreadCount = useMemo(() => {
     return (notifications || []).filter(
@@ -651,20 +642,40 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }, [notifications]);
 
   // Filter CLs by specific employee (if selected) or search term
-  const filterByEmployee = (items) => {
+  const filterByEmployee = useCallback((items) => {
     if (!selectedEmployeeId && !employeeSearchTerm.trim()) return items;
     
     return items.filter(item => {
       // If specific employee is selected, show only that employee's data
       if (selectedEmployeeId) {
-        return String(item.employee_id) === String(selectedEmployeeId);
+        // Find the selected employee by ID to get their name
+        const selectedEmp = employees.find(emp => 
+          String(emp.employee_id) === String(selectedEmployeeId) ||
+          String(emp.id) === String(selectedEmployeeId)
+        );
+        
+        if (selectedEmp) {
+          // Match by employee name (most reliable) or by ID
+          return (item.employee_name && item.employee_name === selectedEmp.name) ||
+                 String(item.employee_id) === String(selectedEmployeeId) ||
+                 String(item.id) === String(selectedEmployeeId);
+        } else {
+          // Fallback to ID matching only
+          return String(item.employee_id) === String(selectedEmployeeId) ||
+                 String(item.id) === String(selectedEmployeeId);
+        }
       }
       
       // If search term is provided, filter by employee search
       if (employeeSearchTerm.trim()) {
         const searchTerm = employeeSearchTerm.toLowerCase().trim();
         
-        // Find the employee for this item
+        // First try to match by employee_name directly
+        if (item.employee_name && item.employee_name.toLowerCase().includes(searchTerm)) {
+          return true;
+        }
+        
+        // Then try to find the employee in the employees list
         const employee = employees.find(emp => 
           String(emp.id) === String(item.employee_id) ||
           String(emp.employee_id) === String(item.employee_id)
@@ -678,12 +689,12 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       
       return true;
     });
-  };
+  }, [selectedEmployeeId, employeeSearchTerm, employees]);
 
-  const filteredPendingCL = filterByEmployee(pendingCL);
-  const approvedCLs = filterByEmployee(allCL.filter(item => item.manager_decision === 'APPROVED'));
+  const filteredPendingCL = useMemo(() => filterByEmployee(pendingCL), [filterByEmployee, pendingCL]);
+  const approvedCLs = useMemo(() => filterByEmployee(allCL.filter(item => item.manager_decision === 'APPROVED')), [filterByEmployee, allCL]);
   // Only show returned CLs that are still in DRAFT status (not yet resubmitted)
-  const returnedCLs = filterByEmployee(allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT'));
+  const returnedCLs = useMemo(() => filterByEmployee(allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT')), [filterByEmployee, allCL]);
 
   // Filter department CLs by status and employee (if selected) or search term
   const filteredDepartmentCLs = useMemo(() => {
@@ -754,6 +765,33 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     return `Competency Levelings${employeeSuffix}`;
   }, [activeSection, CL_STATUS_SECTIONS, isAMDashboard, selectedEmployeeId, employees]);
 
+  // Reset pagination when section or filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeSection, selectedEmployeeId, employeeSearchTerm]);
+
+  // Paginated data for current section
+  const paginatedData = useMemo(() => {
+    let dataToPage = [];
+    
+    if (activeSection === 'pending') {
+      dataToPage = filteredPendingCL;
+    } else if (activeSection === 'approved') {
+      dataToPage = approvedCLs;
+    } else if (activeSection === 'returned') {
+      dataToPage = returnedCLs;
+    } else if (activeSection === 'all') {
+      // Combine all data for "all" section
+      dataToPage = [...filteredPendingCL, ...returnedCLs, ...approvedCLs];
+    }
+    
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    setTotalItems(dataToPage.length);
+    
+    return dataToPage.slice(startIndex, endIndex);
+  }, [filteredPendingCL, approvedCLs, returnedCLs, activeSection, currentPage, itemsPerPage]);
+
   // Fetch pending IDPs for manager
   const [pendingIDPs, setPendingIDPs] = useState([]);
   useEffect(() => {
@@ -761,7 +799,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     async function fetchPendingIDPs() {
       try {
         // Fetch grouped IDPs for the manager so we can display approved/completed items
-        const endpoint = isAMDashboard ? '/api/idp/am/pending' : '/api/idp/manager/grouped';
+        const endpoint = isAMDashboard ? '/api/idp/am/grouped' : '/api/idp/manager/grouped';
         const grouped = await apiRequest(endpoint);
         // Flatten grouped object into an array for existing UI consumers
         const all = grouped ? Object.values(grouped).flat() : [];
@@ -807,14 +845,48 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       filtered[status] = idpByStatus[status].filter(idp => {
         // If specific employee is selected, show only that employee's data
         if (selectedEmployeeId) {
-          return String(idp.employee_id) === String(selectedEmployeeId);
+          // Debug logging
+          console.log('IDP Filtering - Selected Employee ID:', selectedEmployeeId);
+          console.log('IDP Data:', idp);
+          
+          // Find the selected employee by ID to get their name
+          const selectedEmp = employees.find(emp => 
+            String(emp.employee_id) === String(selectedEmployeeId) ||
+            String(emp.id) === String(selectedEmployeeId)
+          );
+          
+          console.log('Selected Employee Found:', selectedEmp);
+          
+          if (selectedEmp) {
+            // Match by employee name (most reliable) or by ID
+            const nameMatch = idp.employee_name && idp.employee_name === selectedEmp.name;
+            const idMatch1 = String(idp.employee_id) === String(selectedEmployeeId);
+            const idMatch2 = String(idp.id) === String(selectedEmployeeId);
+            
+            console.log('Name Match:', nameMatch, 'ID Match 1:', idMatch1, 'ID Match 2:', idMatch2);
+            
+            return nameMatch || idMatch1 || idMatch2;
+          } else {
+            // Fallback to ID matching only
+            const idMatch1 = String(idp.employee_id) === String(selectedEmployeeId);
+            const idMatch2 = String(idp.id) === String(selectedEmployeeId);
+            
+            console.log('Fallback ID Match 1:', idMatch1, 'ID Match 2:', idMatch2);
+            
+            return idMatch1 || idMatch2;
+          }
         }
         
         // If search term is provided, filter by employee search
         if (employeeSearchTerm.trim()) {
           const searchTerm = employeeSearchTerm.toLowerCase().trim();
           
-          // Find the employee for this IDP
+          // First try to match by employee_name directly
+          if (idp.employee_name && idp.employee_name.toLowerCase().includes(searchTerm)) {
+            return true;
+          }
+          
+          // Then try to find the employee in the employees list
           const employee = employees.find(emp => 
             String(emp.id) === String(idp.employee_id) ||
             String(emp.employee_id) === String(idp.employee_id)
@@ -849,17 +921,47 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const filteredPendingIDPs = useMemo(() => {
     if (!selectedEmployeeId && !employeeSearchTerm.trim()) return pendingIDPs;
     
+    console.log('Filtering Pending IDPs - Selected Employee ID:', selectedEmployeeId);
+    console.log('Pending IDPs Data:', pendingIDPs);
+    
     return pendingIDPs.filter(idp => {
       // If specific employee is selected, show only that employee's data
       if (selectedEmployeeId) {
-        return String(idp.employee_id) === String(selectedEmployeeId);
+        // Find the selected employee by ID to get their name
+        const selectedEmp = employees.find(emp => 
+          String(emp.employee_id) === String(selectedEmployeeId) ||
+          String(emp.id) === String(selectedEmployeeId)
+        );
+        
+        console.log('Pending IDPs - Selected Employee Found:', selectedEmp);
+        console.log('Current IDP:', idp);
+        
+        if (selectedEmp) {
+          // Match by employee name (most reliable) or by ID
+          const nameMatch = idp.employee_name && idp.employee_name === selectedEmp.name;
+          const idMatch1 = String(idp.employee_id) === String(selectedEmployeeId);
+          const idMatch2 = String(idp.id) === String(selectedEmployeeId);
+          
+          console.log('Pending IDPs - Name Match:', nameMatch, 'ID Match 1:', idMatch1, 'ID Match 2:', idMatch2);
+          
+          return nameMatch || idMatch1 || idMatch2;
+        } else {
+          // Fallback to ID matching only
+          return String(idp.employee_id) === String(selectedEmployeeId) ||
+                 String(idp.id) === String(selectedEmployeeId);
+        }
       }
       
       // If search term is provided, filter by employee search
       if (employeeSearchTerm.trim()) {
         const searchTerm = employeeSearchTerm.toLowerCase().trim();
         
-        // Find the employee for this IDP
+        // First try to match by employee_name directly
+        if (idp.employee_name && idp.employee_name.toLowerCase().includes(searchTerm)) {
+          return true;
+        }
+        
+        // Then try to find the employee in the employees list
         const employee = employees.find(emp => 
           String(emp.id) === String(idp.employee_id) ||
           String(emp.employee_id) === String(idp.employee_id)
@@ -1125,21 +1227,98 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-y-auto p-8">
-        <header className="flex items-center justify-between mb-6">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">{isAMDashboard ? 'Assistant Manager Dashboard' : 'Manager Dashboard'}</h1>
             <p className="text-gray-600">
               Welcome, {user.name} ({user.employee_id})
             </p>
           </div>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition"
-            title="Logout"
-          >
-            <ArrowRightOnRectangleIcon className="w-5 h-5" />
-            Logout
-          </button>
+          
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            {/* Employee Filter */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder={selectedEmployeeId 
+                  ? `Filtered: ${selectedEmployee?.name || 'Selected Employee'}`
+                  : "Search employee..."
+                }
+                value={employeeSearchTerm}
+                onChange={(e) => {
+                  setEmployeeSearchTerm(e.target.value);
+                  if (selectedEmployeeId) {
+                    setSelectedEmployeeId(null);
+                  }
+                }}
+                className="w-full sm:w-64 px-3 py-2 pl-9 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              {(employeeSearchTerm || selectedEmployeeId) && (
+                <button
+                  onClick={() => {
+                    setEmployeeSearchTerm('');
+                    setSelectedEmployeeId(null);
+                  }}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                >
+                  <XMarkIcon className="h-4 w-4 text-gray-400" />
+                </button>
+              )}
+              
+              {/* Search suggestions dropdown */}
+              {employeeSearchTerm && !selectedEmployeeId && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {employees
+                    .filter(emp => {
+                      const searchTerm = employeeSearchTerm.toLowerCase().trim();
+                      return (emp.name || '').toLowerCase().includes(searchTerm) ||
+                             String(emp.employee_id || '').toLowerCase().includes(searchTerm);
+                    })
+                    .slice(0, 10)
+                    .map((emp) => (
+                      <button
+                        key={emp.id}
+                        onClick={() => {
+                          // Use the ID that will match with the competency level data
+                          const employeeId = emp.employee_id || emp.id;
+                          console.log('Selecting employee:', emp.name, 'with ID:', employeeId);
+                          setSelectedEmployeeId(employeeId);
+                          setEmployeeSearchTerm('');
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{emp.name}</div>
+                            <div className="text-xs text-gray-500">
+                              ID: {emp.employee_id}
+                            </div>
+                          </div>
+                          <ChevronRightIcon className="h-4 w-4 text-gray-400" />
+                        </div>
+                      </button>
+                    ))}
+                  {employees.filter(emp => {
+                    const searchTerm = employeeSearchTerm.toLowerCase().trim();
+                    return (emp.name || '').toLowerCase().includes(searchTerm) ||
+                           String(emp.employee_id || '').toLowerCase().includes(searchTerm);
+                  }).length === 0 && (
+                    <div className="px-3 py-2 text-sm text-gray-500">No employees found</div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition"
+              title="Logout"
+            >
+              <ArrowRightOnRectangleIcon className="w-5 h-5" />
+              Logout
+            </button>
+          </div>
         </header>
 
         {error && (
@@ -1168,148 +1347,71 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
           />
         </section>
 
-        {/* Employee Filter */}
-        <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <div className="space-y-3">
-            <label className="text-sm font-medium text-gray-700">Filter by Employee:</label>
-            <div className="relative">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1 max-w-md">
-                  <input
-                    type="text"
-                    placeholder="Search employee name or employee ID..."
-                    value={employeeSearchTerm}
-                    onChange={(e) => {
-                      setEmployeeSearchTerm(e.target.value);
-                      // Clear specific employee selection when typing
-                      if (selectedEmployeeId) {
-                        setSelectedEmployeeId(null);
-                      }
-                    }}
-                    className="w-full px-3 py-2 pl-9 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  {(employeeSearchTerm || selectedEmployeeId) && (
-                    <button
-                      onClick={() => {
-                        setEmployeeSearchTerm('');
-                        setSelectedEmployeeId(null);
-                      }}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
-                    >
-                      <XMarkIcon className="h-4 w-4 text-gray-400" />
-                    </button>
-                  )}
-                </div>
-              </div>
-              
-              {/* Search suggestions dropdown */}
-              {employeeSearchTerm && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                  {employees
-                    .filter(emp => {
-                      const searchTerm = employeeSearchTerm.toLowerCase().trim();
-                      return (emp.name || '').toLowerCase().includes(searchTerm) ||
-                             String(emp.employee_id || '').toLowerCase().includes(searchTerm);
-                    })
-                    .slice(0, 10) // Limit to 10 suggestions
-                    .map((emp) => (
-                      <button
-                        key={emp.id}
-                        onClick={() => {
-                          setSelectedEmployeeId(emp.employee_id || emp.id);
-                          setEmployeeSearchTerm('');
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{emp.name}</div>
-                            <div className="text-xs text-gray-500">
-                              ID: {emp.employee_id}
-                            </div>
-                          </div>
-                          <ChevronRightIcon className="h-4 w-4 text-gray-400" />
-                        </div>
-                      </button>
-                    ))}
-                  {employees.filter(emp => {
-                    const searchTerm = employeeSearchTerm.toLowerCase().trim();
-                    return (emp.name || '').toLowerCase().includes(searchTerm) ||
-                           String(emp.employee_id || '').toLowerCase().includes(searchTerm);
-                  }).length === 0 && (
-                    <div className="px-3 py-2 text-sm text-gray-500">No employees found</div>
-                  )}
-                </div>
-              )}
-            </div>
-            
-            {/* Current filter display */}
-            {(selectedEmployeeId || employeeSearchTerm) && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-blue-600">
-                  {selectedEmployeeId 
-                    ? `Showing data for: ${selectedEmployee?.name || 'Selected Employee'}`
-                    : `Searching for: "${employeeSearchTerm}"`
-                  }
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* CONDITIONAL CONTENT BASED ON SECTION */}
         <section>
           <h2 className="text-xl font-semibold mb-3">{activeSectionLabel}</h2>
 
           {activeSection === 'all' ? (
             <>
-              {/* Pending Section */}
-
-              {filteredPendingCL.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{isAMDashboard ? 'For Approval by Assistant Manager' : 'For Approval by Manager'}</h3>
-                  <PendingTable data={filteredPendingCL} goTo={goTo} isAMDashboard={isAMDashboard} />
-                </div>
-              )}
-
-              {/* Returned Section */}
-              {returnedCLs.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Returned to Supervisor</h3>
-                  <HistoryTable data={returnedCLs} goTo={goTo} isAMDashboard={isAMDashboard} />
-                </div>
-              )}
-
-              {/* Approved Section */}
-              {approvedCLs.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{isAMDashboard ? 'Approved by Assistant Manager' : 'Approved by Manager'}</h3>
-                  <HistoryTable data={approvedCLs} goTo={goTo} isAMDashboard={isAMDashboard} />
-                </div>
-              )}
-
-              {pendingCL.length === 0 && returnedCLs.length === 0 && approvedCLs.length === 0 && (
+              {paginatedData.length === 0 ? (
                 <p className="text-gray-400 text-sm italic">No competency levelings found.</p>
+              ) : (
+                <>
+                  <PendingTable data={paginatedData} goTo={goTo} isAMDashboard={isAMDashboard} showSection={true} />
+                  <Pagination 
+                    currentPage={currentPage}
+                    setCurrentPage={setCurrentPage}
+                    totalItems={totalItems}
+                    itemsPerPage={itemsPerPage}
+                    setItemsPerPage={setItemsPerPage}
+                  />
+                </>
               )}
             </>
           ) : activeSection === 'pending' ? (
             filteredPendingCL.length === 0 ? (
               <p className="text-gray-400 text-sm italic">No pending CLs for manager approval.</p>
             ) : (
-              <PendingTable data={filteredPendingCL} goTo={goTo} />
+              <>
+                <PendingTable data={paginatedData} goTo={goTo} isAMDashboard={isAMDashboard} />
+                <Pagination 
+                  currentPage={currentPage}
+                  setCurrentPage={setCurrentPage}
+                  totalItems={totalItems}
+                  itemsPerPage={itemsPerPage}
+                  setItemsPerPage={setItemsPerPage}
+                />
+              </>
             )
           ) : activeSection === 'returned' ? (
             returnedCLs.length === 0 ? (
               <p className="text-gray-400 text-sm italic">No CLs returned to supervisor.</p>
             ) : (
-              <HistoryTable data={returnedCLs} goTo={goTo} />
+              <>
+                <HistoryTable data={paginatedData} goTo={goTo} isAMDashboard={isAMDashboard} />
+                <Pagination 
+                  currentPage={currentPage}
+                  setCurrentPage={setCurrentPage}
+                  totalItems={totalItems}
+                  itemsPerPage={itemsPerPage}
+                  setItemsPerPage={setItemsPerPage}
+                />
+              </>
             )
           ) : activeSection === 'approved' ? (
             approvedCLs.length === 0 ? (
               <p className="text-gray-400 text-sm italic">No CLs approved by {isAMDashboard ? 'assistant manager' : 'manager'}.</p>
             ) : (
-              <HistoryTable data={approvedCLs} goTo={goTo} />
+              <>
+                <HistoryTable data={paginatedData} goTo={goTo} isAMDashboard={isAMDashboard} />
+                <Pagination 
+                  currentPage={currentPage}
+                  setCurrentPage={setCurrentPage}
+                  totalItems={totalItems}
+                  itemsPerPage={itemsPerPage}
+                  setItemsPerPage={setItemsPerPage}
+                />
+              </>
             )
           ) : activeSection === 'department' ? (
             <>
@@ -3001,6 +3103,105 @@ function Modal({
             {confirmText}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Pagination({ 
+  currentPage, 
+  setCurrentPage, 
+  totalItems, 
+  itemsPerPage, 
+  setItemsPerPage 
+}) {
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  
+  const getPageNumbers = () => {
+    const pages = [];
+    const showEllipsis = totalPages > 7;
+    
+    if (!showEllipsis) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      if (currentPage <= 4) {
+        for (let i = 1; i <= 5; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 3) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        pages.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    return pages;
+  };
+  
+  if (totalPages <= 1) return null;
+  
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 px-4 py-3 bg-white border border-gray-200 rounded-lg">
+      <div className="flex items-center gap-2 text-sm text-gray-700">
+        <span>Show</span>
+        <select 
+          value={itemsPerPage} 
+          onChange={(e) => {
+            setItemsPerPage(Number(e.target.value));
+            setCurrentPage(1);
+          }}
+          className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          <option value={5}>5</option>
+          <option value={10}>10</option>
+          <option value={20}>20</option>
+          <option value={50}>50</option>
+        </select>
+        <span>entries</span>
+        <span className="ml-4">Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} entries</span>
+      </div>
+      
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => setCurrentPage(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        
+        {getPageNumbers().map((page, index) => (
+          page === '...' ? (
+            <span key={index} className="px-2 py-1 text-gray-500">...</span>
+          ) : (
+            <button
+              key={page}
+              onClick={() => setCurrentPage(page)}
+              className={`px-3 py-1 text-sm border rounded ${
+                currentPage === page
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {page}
+            </button>
+          )
+        ))}
+        
+        <button
+          onClick={() => setCurrentPage(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
       </div>
     </div>
   );

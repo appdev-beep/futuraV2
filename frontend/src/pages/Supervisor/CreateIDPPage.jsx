@@ -2672,35 +2672,20 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                             <div>
                                               <label className="block text-sm font-bold text-gray-800 mb-2">Total Hours of Exposure</label>
                                               {(() => {
-                                                const startDate = t.exposureStartDate ? new Date(t.exposureStartDate) : null;
-                                                
-                                                // Calculate end date from completed areas
+                                                // Calculate total hours by summing up all duration values from areas of exposure
                                                 const areas = t.areasOfExposure || [];
-                                                const completedAreas = areas.filter(a => a.status === 'Completed' && a.dateTime);
-                                                let endDate = null;
+                                                let totalHours = 0;
                                                 
-                                                if (completedAreas.length > 0) {
-                                                  const dates = completedAreas.map(a => {
-                                                    const dateTime = a.dateTime ? new Date(a.dateTime) : null;
-                                                    return dateTime;
-                                                  }).filter(d => d);
-                                                  
-                                                  if (dates.length > 0) {
-                                                    endDate = new Date(Math.max(...dates));
+                                                areas.forEach(area => {
+                                                  const duration = parseFloat(area.duration || 0);
+                                                  if (!isNaN(duration)) {
+                                                    totalHours += duration;
                                                   }
-                                                }
-                                                
-                                                let totalHours = '';
-                                                
-                                                if (startDate && endDate) {
-                                                  const diffInMs = endDate - startDate;
-                                                  const diffInHours = Math.round(diffInMs / (1000 * 60 * 60));
-                                                  totalHours = diffInHours >= 0 ? diffInHours : 0;
-                                                }
+                                                });
                                                 
                                                 return (
                                                   <div className="w-full bg-gray-100 rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300">
-                                                    {totalHours ? `${totalHours} hours` : 'Select dates to calculate'}
+                                                    {totalHours > 0 ? `${totalHours} hours` : '0 hours'}
                                                   </div>
                                                 );
                                               })()}

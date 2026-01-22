@@ -19,6 +19,13 @@ router.get(
   idpController.getAMPendingIDPs
 );
 
+// GET /api/idp/am/grouped (IDPs for AM, grouped by status)
+router.get(
+  '/am/grouped',
+  requireRole('AM', 'HR', 'Admin'),
+  idpController.getAMGroupedIDPs
+);
+
 // PUT /api/idp/:id/am/approve (AM approves IDP and routes to Manager)
 router.put(
   '/:id/am/approve',

@@ -67,6 +67,17 @@ async function getAMPendingIDPs(req, res, next) {
   }
 }
 
+// GET /api/idp/am/grouped
+async function getAMGroupedIDPs(req, res, next) {
+  try {
+    const amId = req.user.id;
+    const grouped = await idpService.getIDPsGroupedByAM(amId);
+    res.json(grouped);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // PUT /api/idp/:id/am/approve
 async function amApproveIDP(req, res, next) {
   try {
@@ -425,6 +436,7 @@ module.exports = {
   managerReturnIDP,
   managerApproveIDP,
   getAMPendingIDPs,
+  getAMGroupedIDPs,
   amApproveIDP,
   amReturnIDP,
   getEmployeeIDPs,
