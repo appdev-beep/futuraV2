@@ -696,22 +696,10 @@ function HRDashboard() {
     return filtered;
   }, [allIncomingCL, selectedDepartment, dateSearch]);
 
-  // Paginated CL data
-  const paginatedCLData = useMemo(() => {
-    const { currentPage, itemsPerPage } = clPagination;
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredIncomingCLs.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredIncomingCLs, clPagination]);
-
+  // Total pages calculation
   const totalCLPages = Math.ceil(filteredIncomingCLs.length / clPagination.itemsPerPage);
 
-  // Paginated IDP data
-  const paginatedIDPData = useMemo(() => {
-    const { currentPage, itemsPerPage } = idpPagination;
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredIncomingIDPs.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredIncomingIDPs, idpPagination]);
-
+  // Total pages calculation for IDP
   const totalIDPPages = Math.ceil(filteredIncomingIDPs.length / idpPagination.itemsPerPage);
 
   // Helper function to get paginated data for a specific CL status

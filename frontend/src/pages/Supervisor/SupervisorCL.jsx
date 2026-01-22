@@ -128,8 +128,6 @@ export default function SupervisorCL({
   summary,
   activeLabel,
   activeSection,
-  CL_STATUS_SECTIONS,
-  clByStatus,
   paginatedData,
   currentPage,
   setCurrentPage,
@@ -138,11 +136,6 @@ export default function SupervisorCL({
   totalItems,
   handleDeleteCL,
   goTo,
-  employeeSearchTerm,
-  setEmployeeSearchTerm,
-  selectedEmployee,
-  setSelectedEmployee,
-  allEmployees,
 }) {
   return (
     <>

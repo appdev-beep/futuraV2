@@ -191,7 +191,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [activeSection, setActiveSection] = useState('pending'); // 'pending', 'approved', 'returned', 'all', 'department', 'employees'
   const [departmentStatusFilter, setDepartmentStatusFilter] = useState('ALL'); // Filter for department tracking
   const [employees, setEmployees] = useState([]); // All employees in department
-  const [supervisors, setSupervisors] = useState([]); // All supervisors in department
 
   const [selectedEmployeeId, _setSelectedEmployeeId] = useState(null); // Selected employee to view
   const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
@@ -285,9 +284,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     window.location.href = `${path}?viewOnly=true`;
   }, [isAMDashboard]);
 
-  const getCompetencyCompletionStatus = useCallback((item) => _getCompetencyCompletionStatus(item), []);
-  const areaColor = useCallback((area) => _areaColor(area), []);
-
   const closeNotificationModal = useCallback(() => {
     setNotificationModalState({ open: false, notification: null });
   }, []);
@@ -327,19 +323,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
       // Fetch all users for mapping and filtering
       const allUsers = await apiRequest('/api/users');
-
-      // Get supervisors - for AM dashboard get those under this AM, for Manager get those in department
-      let deptSupervisors;
-      if (isAMDashboard) {
-        deptSupervisors = (allUsers || []).filter(
-          u => u && user && user.id && u.am_id === user.id && u.role === 'Supervisor'
-        );
-      } else {
-        deptSupervisors = (allUsers || []).filter(
-          u => u && user && user.department_id && u.department_id === user.department_id && u.role === 'Supervisor'
-        );
-      }
-      setSupervisors(deptSupervisors);
 
       // Get employees - only those assigned to this manager/AM
       let assignedEmployees;
@@ -406,7 +389,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   useEffect(() => {
     if (!user) return;
     loadDashboardData();
-  }, [user]);
+  }, [user, loadDashboardData]);
 
   // Refresh data when returning to dashboard (page visibility)
   useEffect(() => {
@@ -418,7 +401,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+  }, [loadDashboardData]);
 
   // ==========================
   // LOAD NOTIFICATIONS (polling)
@@ -1619,7 +1602,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
           ) : activeSection === 'employees' ? (
             <EmployeeCompetenciesView 
               employees={employees}
-              supervisors={supervisors}
               selectedEmployeeId={selectedEmployeeId}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
@@ -1631,7 +1613,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             />
           ) : activeSection === 'idp_pending' ? (
             <div className="mb-6">
-              <h2 className="text-xl font-semibold mb-3">IDPs For Your Approval{selectedSupervisor ? ` (${selectedSupervisor.name})` : ''}</h2>
+              <h2 className="text-xl font-semibold mb-3">IDPs For Your Approval{selectedEmployee ? ` (${selectedEmployee.name})` : ''}</h2>
               {filteredPendingIDPs.length === 0 ? (
                 <p className="text-gray-400 text-sm italic">No IDPs pending your approval.</p>
               ) : (
@@ -2474,7 +2456,7 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
 }
 
 // Employee Competencies View Component
-function EmployeeCompetenciesView({ employees, supervisors, selectedEmployeeId, searchQuery, setSearchQuery, viewMode, setViewMode, hasCompetenciesOnly, setHasCompetenciesOnly, goTo }) {
+function EmployeeCompetenciesView({ employees, selectedEmployeeId, searchQuery, setSearchQuery, viewMode, setViewMode, hasCompetenciesOnly, setHasCompetenciesOnly, goTo }) {
   // Filter employees by selected employee
   const employeesForDisplay = useMemo(() => {
     if (!selectedEmployeeId) return employees;

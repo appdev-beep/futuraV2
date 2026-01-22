@@ -456,19 +456,6 @@ function SupervisorDashboard() {
     }
   }
 
-  // Clear date search
-  function clearDateSearch() {
-    setDateSearch({ startDate: '', endDate: '', enabled: false });
-    setShowDateSearch(false);
-  }
-
-  // Apply date search
-  function applyDateSearch() {
-    if (dateSearch.startDate || dateSearch.endDate) {
-      setDateSearch(prev => ({ ...prev, enabled: true }));
-    }
-  }
-
   function logout() {
     openModal({
       title: 'Confirm Logout',
@@ -1215,9 +1202,6 @@ function SupervisorDashboard() {
             summary={filteredSummary}
             activeLabel={activeLabel}
             activeSection={activeSection}
-            CL_STATUS_SECTIONS={CL_STATUS_SECTIONS}
-            sectionCounts={sectionCounts}
-            clByStatus={filteredClByStatus}
             paginatedData={paginatedClData}
             currentPage={currentPage}
             setCurrentPage={setCurrentPage}
@@ -1226,12 +1210,6 @@ function SupervisorDashboard() {
             totalItems={totalItems}
             handleDeleteCL={handleDeleteCL}
             goTo={goTo}
-            setActiveSection={setActiveSection}
-            employeeSearchTerm={employeeSearchTerm}
-            setEmployeeSearchTerm={setEmployeeSearchTerm}
-            selectedEmployee={selectedEmployee}
-            setSelectedEmployee={setSelectedEmployee}
-            allEmployees={allEmployees}
           />
         )}
 
