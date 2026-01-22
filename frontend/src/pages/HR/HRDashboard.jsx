@@ -70,6 +70,7 @@ function HRDashboard() {
       async function fetchDepartments() {
         try {
           const deps = await apiRequest('/api/lookup/departments', { method: 'GET' });
+          console.log('Fetched departments:', deps);
           setAllDepartments(deps || []);
         } catch (err) {
           console.error('Failed to load departments', err);
@@ -141,7 +142,8 @@ function HRDashboard() {
     startDate: '',
     endDate: '',
     module: 'CL',
-    selectedStatus: 'ALL'
+    selectedStatus: 'ALL',
+    department: 'ALL'
   });
   const [allIncomingIDP, setAllIncomingIDP] = useState([]);
   const [idpLoading, setIdpLoading] = useState(false);
@@ -418,7 +420,8 @@ function HRDashboard() {
       startDate: thirtyDaysAgo,
       endDate: today,
       module: activeModule,
-      selectedStatus: 'ALL'
+      selectedStatus: 'ALL',
+      department: selectedDepartment
     });
   }
 
@@ -429,7 +432,8 @@ function HRDashboard() {
       startDate: '',
       endDate: '',
       module: 'CL',
-      selectedStatus: 'ALL'
+      selectedStatus: 'ALL',
+      department: 'ALL'
     });
   }
 
@@ -447,7 +451,7 @@ function HRDashboard() {
   }
 
   async function handleExportCSV() {
-    const { startDate, endDate, module, selectedStatus } = exportModal;
+    const { startDate, endDate, module, selectedStatus, department } = exportModal;
     
     if (!startDate || !endDate) {
       alert('Please select both start and end dates');
@@ -465,7 +469,7 @@ function HRDashboard() {
       const queryParams = new URLSearchParams({
         startDate,
         endDate,
-        department: selectedDepartment === 'ALL' ? 'ALL' : selectedDepartment,
+        department: department === 'ALL' ? 'ALL' : department,
         status: selectedStatus
       });
       
@@ -496,7 +500,7 @@ function HRDashboard() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${module}_Export_${selectedDepartment === 'ALL' ? 'All' : selectedDepartment}_${startDate}_${endDate}.csv`;
+      a.download = `${module}_Export_${department === 'ALL' ? 'All' : department}_${startDate}_${endDate}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -539,8 +543,13 @@ function HRDashboard() {
 
   // Get unique departments from incoming CLs
   const departments = useMemo(() => {
-    if (!allDepartments || allDepartments.length === 0) return [];
-    return allDepartments.map(d => d.name).sort();
+    if (!allDepartments || allDepartments.length === 0) {
+      console.log('No allDepartments available:', allDepartments);
+      return [];
+    }
+    const result = allDepartments.map(d => d.name).sort();
+    console.log('Computed departments:', result);
+    return result;
   }, [allDepartments]);
 
   const filteredDepartments = useMemo(() => {
@@ -1757,13 +1766,13 @@ function HRDashboard() {
 
       {/* Export Modal */}
       {exportModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-200 bg-opacity-50 backdrop-blur-sm">
           <div
             className="absolute inset-0"
             onClick={closeExportModal}
           />
 
-          <div className="relative z-50 bg-white rounded-lg shadow-xl border border-gray-300 max-w-md w-full">
+          <div className="relative z-50 bg-white rounded-lg shadow-xl border border-gray-300 max-w-lg w-full">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-800">Export Data</h3>
@@ -1778,13 +1787,13 @@ function HRDashboard() {
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-5">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Module</label>
                 <select
                   value={exportModal.module}
-                  onChange={(e) => setExportModal(prev => ({ ...prev, module: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  onChange={(e) => setExportModal(prev => ({ ...prev, module: e.target.value, selectedStatus: 'ALL' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
                 >
                   <option value="CL">Competency Leveling (CL)</option>
                   <option value="IDP">Individual Development Plan (IDP)</option>
@@ -1792,14 +1801,30 @@ function HRDashboard() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
-                <input
-                  type="text"
-                  value={selectedDepartment === 'ALL' ? 'All Departments' : selectedDepartment}
-                  readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600"
-                />
-                <p className="text-xs text-gray-500 mt-1">Export will use currently selected department filter</p>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Department
+                  <span className="text-xs text-gray-500 ml-2">(You can change this for export)</span>
+                </label>
+                <select
+                  value={exportModal.department}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, department: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
+                >
+                  <option value="ALL">All Departments</option>
+                  {departments && departments.length > 0 ? (
+                    departments.map(dept => (
+                      <option key={dept} value={dept}>
+                        {dept}
+                      </option>
+                    ))
+                  ) : (
+                    allDepartments && allDepartments.length > 0 && allDepartments.map(dept => (
+                      <option key={dept.id || dept.name} value={dept.name}>
+                        {dept.name}
+                      </option>
+                    ))
+                  )}
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1809,7 +1834,8 @@ function HRDashboard() {
                     type="date"
                     value={exportModal.startDate}
                     onChange={(e) => setExportModal(prev => ({ ...prev, startDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    max={exportModal.endDate || new Date().toISOString().split('T')[0]}
                   />
                 </div>
 
@@ -1819,7 +1845,9 @@ function HRDashboard() {
                     type="date"
                     value={exportModal.endDate}
                     onChange={(e) => setExportModal(prev => ({ ...prev, endDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    min={exportModal.startDate}
+                    max={new Date().toISOString().split('T')[0]}
                   />
                 </div>
               </div>
@@ -1829,7 +1857,7 @@ function HRDashboard() {
                 <select
                   value={exportModal.selectedStatus}
                   onChange={(e) => setExportModal(prev => ({ ...prev, selectedStatus: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
                 >
                   <option value="ALL">All Statuses</option>
                   {exportModal.module === 'CL' ? (
@@ -1846,18 +1874,25 @@ function HRDashboard() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
               <button
                 onClick={closeExportModal}
-                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
                 disabled={exportModal.loading}
               >
                 Cancel
               </button>
               <button
                 onClick={handleExportCSV}
-                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                disabled={exportModal.loading}
+                className={`px-6 py-2 text-sm text-white rounded-md transition-all flex items-center gap-2 ${
+                  exportModal.loading 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : !exportModal.startDate || !exportModal.endDate
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
+                }`}
+                disabled={exportModal.loading || !exportModal.startDate || !exportModal.endDate}
+                title={!exportModal.startDate || !exportModal.endDate ? 'Please select both start and end dates' : ''}
               >
                 {exportModal.loading ? (
                   <>
@@ -1883,7 +1918,7 @@ function HRDashboard() {
 
       {/* CL Details Modal */}
       {clDetailsModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-200 bg-opacity-50">
           <div
             className="absolute inset-0 backdrop-blur-sm"
             onClick={closeCLDetailsModal}
@@ -1920,8 +1955,8 @@ function HRDashboard() {
               {!clDetailsModal.loading && clDetailsModal.details && (
                 <div className="space-y-6">
                   {/* Basic Info */}
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Basic Information</h4>
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <h4 className="text-sm font-semibold text-blue-700 mb-3">Basic Information</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                       <div>
                         <span className="text-gray-600">CL ID:</span>
