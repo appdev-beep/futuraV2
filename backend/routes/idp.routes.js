@@ -152,6 +152,13 @@ router.get(
   idpController.getSupervisorIDPsGrouped
 );
 
+// GET /api/idp/supervisor/export (CSV export for supervisors)
+router.get(
+  '/supervisor/export',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  idpController.exportIDPForSupervisor
+);
+
 // HR incoming IDPs (filterable by department)
 router.get(
   '/hr/incoming',

@@ -93,6 +93,17 @@ function SupervisorDashboard() {
     notification: null,
   });
 
+  // Export modal state
+  const [exportModal, setExportModal] = useState({
+    open: false,
+    loading: false,
+    startDate: '',
+    endDate: '',
+    module: 'CL',
+    selectedStatus: 'ALL',
+    employee: 'ALL'
+  });
+
   // ...removed IDP creation modal state and logic. IDP creation is now handled only in CreateIDPPage.jsx
 
 
@@ -600,6 +611,112 @@ function SupervisorDashboard() {
     // Modal stays closed without refresh
   }
 
+  // Export functions
+  function openExportModal() {
+    const today = new Date().toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setExportModal({
+      open: true,
+      loading: false,
+      startDate: thirtyDaysAgo,
+      endDate: today,
+      module: activePage,
+      selectedStatus: 'ALL',
+      employee: selectedEmployee
+    });
+  }
+
+  function closeExportModal() {
+    setExportModal({
+      open: false,
+      loading: false,
+      startDate: '',
+      endDate: '',
+      module: 'CL',
+      selectedStatus: 'ALL',
+      employee: 'ALL'
+    });
+  }
+
+  async function handleExportCSV() {
+    const { startDate, endDate, module, selectedStatus, employee } = exportModal;
+    
+    if (!startDate || !endDate) {
+      alert('Please select both start and end dates');
+      return;
+    }
+
+    if (new Date(startDate) > new Date(endDate)) {
+      alert('Start date must be before end date');
+      return;
+    }
+
+    try {
+      setExportModal(prev => ({ ...prev, loading: true }));
+      
+      const queryParams = new URLSearchParams({
+        startDate,
+        endDate
+      });
+      
+      // Add status filter if not ALL
+      if (selectedStatus !== 'ALL') {
+        queryParams.set('status', selectedStatus);
+      }
+      
+      // Add employee filter if specific employee is selected
+      if (employee !== 'ALL') {
+        queryParams.set('employee_id', employee);
+      }
+      
+      // Try supervisor-specific export endpoints
+      const endpoint = module === 'CL' ? '/api/cl/supervisor/export' : '/api/idp/supervisor/export';
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}${endpoint}?${queryParams}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        let errorMessage = 'Export failed';
+        try {
+          const error = await response.json();
+          errorMessage = error.message || 'Export failed';
+        } catch {
+          errorMessage = `Export failed: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      const csvData = await response.text();
+      
+      // Create and download the file
+      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const employeeLabel = employee !== 'ALL' 
+        ? allEmployees.find(emp => 
+            String(emp.employee_id) === String(employee) ||
+            String(emp.employee_code) === String(employee) ||
+            String(emp.id) === String(employee)
+          )?.name || 'Employee'
+        : 'AllEmployees';
+      a.download = `${module}_Export_${employeeLabel}_${startDate}_${endDate}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      closeExportModal();
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + error.message);
+    } finally {
+      setExportModal(prev => ({ ...prev, loading: false }));
+    }
+  }
+
   async function handleMarkAllAsRead() {
     try {
       const token = localStorage.getItem('token');
@@ -1003,6 +1120,17 @@ function SupervisorDashboard() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
                 {dateSearch.enabled ? 'Date Filter Active' : 'Search by Date'}
+              </button>
+              
+              <button
+                onClick={openExportModal}
+                className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white
+                           text-sm hover:bg-blue-700 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export CSV
               </button>
             </div>
             
@@ -1422,6 +1550,150 @@ function SupervisorDashboard() {
         onNotificationClick={handleNotificationClick}
         onClose={() => setShowFullNotifications(false)}
       />
+
+      {/* Export Modal */}
+      {exportModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-200 bg-opacity-50 backdrop-blur-sm">
+          <div
+            className="absolute inset-0"
+            onClick={closeExportModal}
+          />
+
+          <div className="relative z-50 bg-white rounded-lg shadow-xl border border-gray-300 max-w-lg w-full">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800">Export Data</h3>
+              <button
+                onClick={closeExportModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Module</label>
+                <select
+                  value={exportModal.module}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, module: e.target.value, selectedStatus: 'ALL' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
+                >
+                  <option value="CL">Competency Leveling (CL)</option>
+                  <option value="IDP">Individual Development Plan (IDP)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Employee
+                  <span className="text-xs text-gray-500 ml-2">(Filter by specific employee or all)</span>
+                </label>
+                <select
+                  value={exportModal.employee || selectedEmployee}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, employee: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
+                >
+                  <option value="ALL">All Employees</option>
+                  {allEmployees.map(emp => (
+                    <option key={emp.id} value={emp.employee_id || emp.employee_code || emp.id}>
+                      {emp.name} ({emp.employee_id || emp.employee_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                  <input
+                    type="date"
+                    value={exportModal.startDate}
+                    onChange={(e) => setExportModal(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    max={exportModal.endDate || new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                  <input
+                    type="date"
+                    value={exportModal.endDate}
+                    onChange={(e) => setExportModal(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    min={exportModal.startDate}
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Status Filter</label>
+                <select
+                  value={exportModal.selectedStatus}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, selectedStatus: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
+                >
+                  <option value="ALL">All Statuses</option>
+                  {exportModal.module === 'CL' ? (
+                    CL_STATUS_SECTIONS.map(section => (
+                      <option key={section.key} value={section.key}>{section.label}</option>
+                    ))
+                  ) : (
+                    IDP_STATUS_SECTIONS.map(section => (
+                      <option key={section.key} value={section.key}>{section.label}</option>
+                    ))
+                  )}
+                </select>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={closeExportModal}
+                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
+                disabled={exportModal.loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExportCSV}
+                className={`px-6 py-2 text-sm text-white rounded-md transition-all flex items-center gap-2 ${
+                  exportModal.loading 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : !exportModal.startDate || !exportModal.endDate
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
+                }`}
+                disabled={exportModal.loading || !exportModal.startDate || !exportModal.endDate}
+                title={!exportModal.startDate || !exportModal.endDate ? 'Please select both start and end dates' : ''}
+              >
+                {exportModal.loading ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Export CSV
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

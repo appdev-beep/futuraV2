@@ -1454,7 +1454,242 @@ async function resubmitToManager(id) {
 }
 
 // =====================
-// CSV EXPORT
+// CSV EXPORT (for Supervisors - only their employees)
+// =====================
+async function exportIDPForSupervisor({ startDate, endDate, department, status, supervisorId }) {
+  console.log('IDP Export for Supervisor Query Params:', { startDate, endDate, department, status, supervisorId });
+  
+  // First, let's check if there are any IDPs for this supervisor
+  const [totalCount] = await db.query(
+    'SELECT COUNT(*) as count FROM idp_headers WHERE supervisor_id = ?', 
+    [supervisorId]
+  );
+  console.log('Total IDPs for supervisor in database:', totalCount[0]?.count || 0);
+  
+  if (totalCount[0]?.count === 0) {
+    return generateEmptyIDPCSV('No IDPs found for this supervisor');
+  }
+  
+  // Get comprehensive IDP data including all related tables, filtered by supervisor
+  let sql = `
+    SELECT 
+      ih.id as idp_id,
+      ih.status,
+      ih.created_at,
+      ih.updated_at,
+      ih.review_period,
+      ih.next_review_date,
+      e.employee_id,
+      e.name as employee_name,
+      e.email as employee_email,
+      d.name as department_name,
+      p.title as position_title,
+      s.name as supervisor_name,
+      m.name as manager_name,
+      am.name as am_name,
+      ih.manager_remarks,
+      ih.am_remarks,
+      ii.id as item_id,
+      ii.competency_id,
+      c.name as competency_name,
+      c.competency_area,
+      ii.target_level,
+      ii.timeline_months,
+      ii.goal,
+      ii.action_plan,
+      ii.target_date,
+      ii.status as item_status,
+      ii.development_action
+    FROM idp_headers ih
+    JOIN users e ON ih.employee_id = e.id
+    LEFT JOIN users s ON ih.supervisor_id = s.id
+    LEFT JOIN users m ON ih.manager_id = m.id
+    LEFT JOIN users am ON ih.am_id = am.id
+    JOIN departments d ON ih.department_id = d.id
+    JOIN positions p ON e.position_id = p.id
+    LEFT JOIN idp_items ii ON ih.id = ii.idp_header_id
+    LEFT JOIN competencies c ON ii.competency_id = c.id
+    WHERE ih.supervisor_id = ?
+  `;
+  
+  const params = [supervisorId];
+  
+  // Add filters based on provided parameters
+  if (startDate && endDate) {
+    sql += ' AND DATE(ih.created_at) >= DATE(?) AND DATE(ih.created_at) <= DATE(?)';
+    params.push(startDate, endDate);
+  }
+  
+  if (department && department !== 'ALL') {
+    sql += ' AND d.name = ?';
+    params.push(department);
+  }
+  
+  if (status && status !== 'ALL') {
+    sql += ' AND ih.status = ?';
+    params.push(status);
+  }
+  
+  sql += ' ORDER BY ih.created_at DESC, ih.id, ii.id';
+  
+  console.log('IDP Export for Supervisor SQL:', sql);
+  console.log('IDP Export for Supervisor params:', params);
+  
+  const [rows] = await db.query(sql, params);
+  
+  console.log(`IDP Export for Supervisor found ${rows.length} rows`);
+  
+  if (rows.length === 0) {
+    return generateEmptyIDPCSV(`No IDP data found for supervisor criteria - Start: ${startDate || 'N/A'}, End: ${endDate || 'N/A'}, Dept: ${department || 'ALL'}, Status: ${status || 'ALL'}`);
+  }
+  
+  // Process the results similar to the main export function
+  const idpMap = new Map();
+  
+  rows.forEach(row => {
+    const idpId = row.idp_id;
+    
+    if (!idpMap.has(idpId)) {
+      idpMap.set(idpId, {
+        header: {
+          idp_id: row.idp_id,
+          status: row.status,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          review_period: row.review_period,
+          next_review_date: row.next_review_date,
+          employee_id: row.employee_id,
+          employee_name: row.employee_name,
+          employee_email: row.employee_email,
+          department_name: row.department_name,
+          position_title: row.position_title,
+          supervisor_name: row.supervisor_name,
+          manager_name: row.manager_name,
+          am_name: row.am_name,
+          manager_remarks: row.manager_remarks || '',
+          am_remarks: row.am_remarks || ''
+        },
+        items: []
+      });
+    }
+    
+    if (row.item_id) {
+      idpMap.get(idpId).items.push({
+        competency_name: row.competency_name || '',
+        competency_area: row.competency_area || '',
+        target_level: row.target_level || '',
+        timeline_months: row.timeline_months || '',
+        goal: row.goal || '',
+        action_plan: row.action_plan || '',
+        target_date: row.target_date || '',
+        item_status: row.item_status || '',
+        development_action: row.development_action || ''
+      });
+    }
+  });
+  
+  const csvRows = [];
+  
+  // Headers
+  csvRows.push([
+    'Section',
+    'IDP ID',
+    'Status',
+    'Employee ID',
+    'Employee Name',
+    'Department',
+    'Position',
+    'Supervisor',
+    'Manager',
+    'Assistant Manager',
+    'Created Date',
+    'Updated Date',
+    'Review Period',
+    'Next Review Date',
+    'Competency Name',
+    'Competency Area',
+    'Target Level',
+    'Timeline (Months)',
+    'Goal',
+    'Action Plan',
+    'Target Date',
+    'Item Status',
+    'Development Action',
+    'Manager Remarks',
+    'AM Remarks'
+  ].join(','));
+  
+  idpMap.forEach((idp, idpId) => {
+    const h = idp.header;
+    
+    if (idp.items.length === 0) {
+      // IDP with no items
+      csvRows.push([
+        '"Header"',
+        `"${h.idp_id}"`,
+        `"${h.status}"`,
+        `"${h.employee_id}"`,
+        `"${h.employee_name}"`,
+        `"${h.department_name}"`,
+        `"${h.position_title}"`,
+        `"${h.supervisor_name || ''}"`,
+        `"${h.manager_name || ''}"`,
+        `"${h.am_name || ''}"`,
+        `"${h.created_at ? new Date(h.created_at).toLocaleDateString() : ''}"`,
+        `"${h.updated_at ? new Date(h.updated_at).toLocaleDateString() : ''}"`,
+        `"${h.review_period || ''}"`,
+        `"${h.next_review_date ? new Date(h.next_review_date).toLocaleDateString() : ''}"`,
+        `"No competencies"`,
+        `""`,
+        `""`,
+        `""`,
+        `""`,
+        `""`,
+        `""`,
+        `""`,
+        `""`,
+        `"${h.manager_remarks.replace(/"/g, '""')}"`,
+        `"${h.am_remarks.replace(/"/g, '""')}"`
+      ].join(','));
+    } else {
+      // IDP with competency items
+      idp.items.forEach((item, idx) => {
+        csvRows.push([
+          idx === 0 ? '"Header"' : '"Item"',
+          `"${h.idp_id}"`,
+          `"${h.status}"`,
+          `"${h.employee_id}"`,
+          `"${h.employee_name}"`,
+          `"${h.department_name}"`,
+          `"${h.position_title}"`,
+          `"${h.supervisor_name || ''}"`,
+          `"${h.manager_name || ''}"`,
+          `"${h.am_name || ''}"`,
+          `"${h.created_at ? new Date(h.created_at).toLocaleDateString() : ''}"`,
+          `"${h.updated_at ? new Date(h.updated_at).toLocaleDateString() : ''}"`,
+          `"${h.review_period || ''}"`,
+          `"${h.next_review_date ? new Date(h.next_review_date).toLocaleDateString() : ''}"`,
+          `"${item.competency_name}"`,
+          `"${item.competency_area}"`,
+          `"${item.target_level}"`,
+          `"${item.timeline_months}"`,
+          `"${item.goal.replace(/"/g, '""')}"`,
+          `"${item.action_plan.replace(/"/g, '""')}"`,
+          `"${item.target_date ? new Date(item.target_date).toLocaleDateString() : ''}"`,
+          `"${item.item_status}"`,
+          `"${item.development_action.replace(/"/g, '""')}"`,
+          idx === 0 ? `"${h.manager_remarks.replace(/"/g, '""')}"` : '""',
+          idx === 0 ? `"${h.am_remarks.replace(/"/g, '""')}"` : '""'
+        ].join(','));
+      });
+    }
+  });
+  
+  return csvRows.join('\n');
+}
+
+// =====================
+// CSV EXPORT (for HR - all data)
 // =====================
 async function exportIDP({ startDate, endDate, department, status }) {
   console.log('IDP Export Query Params:', { startDate, endDate, department, status });
@@ -2131,4 +2366,5 @@ module.exports = {
   hrForceCycleComplete,
   hrReturn,
   exportIDP,
+  exportIDPForSupervisor,
 };

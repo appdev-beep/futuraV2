@@ -2116,7 +2116,246 @@ async function getManagerDepartmentCL(managerId) {
 }
 
 // =====================
-// CSV EXPORT
+// CSV EXPORT (for Supervisors - only their employees)
+// =====================
+async function exportCLForSupervisor({ startDate, endDate, department, status, supervisorId }) {
+  console.log('CL Export for Supervisor params:', { startDate, endDate, department, status, supervisorId });
+  
+  let sql = `
+    SELECT 
+      ch.id as cl_id,
+      ch.status,
+      ch.created_at,
+      ch.updated_at,
+      e.employee_id,
+      e.name as employee_name,
+      e.email as employee_email,
+      d.name as department_name,
+      p.title as position_title,
+      s.name as supervisor_name,
+      m.name as manager_name,
+      hr.name as hr_name,
+      ch.supervisor_remarks,
+      ch.manager_remarks,
+      ch.hr_remarks,
+      ci.competency_id,
+      c.name as competency_name,
+      ci.mplr_level,
+      ci.assigned_level,
+      ci.weight,
+      ci.score,
+      ci.justification,
+      ROUND(
+        (SELECT AVG(score) FROM cl_items WHERE cl_header_id = ch.id), 2
+      ) as total_score
+    FROM cl_headers ch
+    JOIN users e ON ch.employee_id = e.id
+    LEFT JOIN users s ON ch.supervisor_id = s.id  
+    LEFT JOIN users m ON ch.manager_id = m.id
+    LEFT JOIN users hr ON ch.hr_id = hr.id
+    JOIN departments d ON ch.department_id = d.id
+    JOIN positions p ON e.position_id = p.id
+    LEFT JOIN cl_items ci ON ch.id = ci.cl_header_id
+    LEFT JOIN competencies c ON ci.competency_id = c.id
+    WHERE ch.supervisor_id = ?
+  `;
+  
+  const params = [supervisorId];
+  
+  // Only add date filter if dates are provided
+  if (startDate && endDate) {
+    sql += ' AND DATE(ch.created_at) >= DATE(?) AND DATE(ch.created_at) <= DATE(?)';
+    params.push(startDate, endDate);
+  }
+  
+  if (department && department !== 'ALL') {
+    sql += ' AND d.name = ?';
+    params.push(department);
+  }
+  
+  if (status && status !== 'ALL') {
+    sql += ' AND ch.status = ?';
+    params.push(status);
+  }
+  
+  sql += ' ORDER BY ch.created_at DESC, ch.id, ci.id';
+  
+  console.log('CL Export for Supervisor SQL:', sql);
+  console.log('CL Export for Supervisor params:', params);
+  
+  const [rows] = await db.query(sql, params);
+  
+  console.log(`CL Export for Supervisor found ${rows.length} rows`);
+  
+  // If no data found, return CSV with headers and a note
+  if (rows.length === 0) {
+    const headers = [
+      'Section',
+      'CL ID',
+      'Status', 
+      'Employee ID',
+      'Employee Name',
+      'Department',
+      'Position',
+      'Supervisor',
+      'Manager',
+      'HR Representative',
+      'Created Date',
+      'Updated Date',
+      'Competency Name',
+      'Target Level',
+      'Assigned Level',
+      'Weight',
+      'Score',
+      'Justification',
+      'Total Score',
+      'Supervisor Remarks',
+      'Manager Remarks',
+      'HR Remarks'
+    ];
+    
+    return [
+      headers.join(','),
+      `"No CL data found for the selected criteria","","","","","","","","","","","","","","","","","","","","",""`,
+      `"Search Period: ${startDate || 'N/A'} to ${endDate || 'N/A'}","","","","","","","","","","","","","","","","","","","","",""`
+    ].join('\n');
+  }
+  
+  // Group by CL header to organize data properly
+  const clMap = new Map();
+  
+  rows.forEach(row => {
+    const clId = row.cl_id;
+    
+    if (!clMap.has(clId)) {
+      clMap.set(clId, {
+        header: {
+          cl_id: row.cl_id,
+          status: row.status,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          employee_id: row.employee_id,
+          employee_name: row.employee_name,
+          employee_email: row.employee_email,
+          department_name: row.department_name,
+          position_title: row.position_title,
+          supervisor_name: row.supervisor_name,
+          manager_name: row.manager_name,
+          hr_name: row.hr_name,
+          supervisor_remarks: row.supervisor_remarks || '',
+          manager_remarks: row.manager_remarks || '',
+          hr_remarks: row.hr_remarks || '',
+          total_score: row.total_score
+        },
+        items: []
+      });
+    }
+    
+    if (row.competency_id) {
+      clMap.get(clId).items.push({
+        competency_name: row.competency_name || '',
+        mplr_level: row.mplr_level || '',
+        assigned_level: row.assigned_level || '',
+        weight: row.weight || '',
+        score: row.score || '',
+        justification: row.justification || ''
+      });
+    }
+  });
+  
+  const csvRows = [];
+  
+  // Headers
+  csvRows.push([
+    'Section',
+    'CL ID',
+    'Status', 
+    'Employee ID',
+    'Employee Name',
+    'Department',
+    'Position',
+    'Supervisor',
+    'Manager',
+    'HR Representative',
+    'Created Date',
+    'Updated Date',
+    'Competency Name',
+    'Target Level',
+    'Assigned Level',
+    'Weight',
+    'Score',
+    'Justification',
+    'Total Score',
+    'Supervisor Remarks',
+    'Manager Remarks',
+    'HR Remarks'
+  ].join(','));
+  
+  clMap.forEach((cl, clId) => {
+    const h = cl.header;
+    
+    if (cl.items.length === 0) {
+      // CL with no competency items
+      csvRows.push([
+        '"Header"',
+        `"${h.cl_id}"`,
+        `"${h.status}"`,
+        `"${h.employee_id}"`,
+        `"${h.employee_name}"`,
+        `"${h.department_name}"`,
+        `"${h.position_title}"`,
+        `"${h.supervisor_name || ''}"`,
+        `"${h.manager_name || ''}"`,
+        `"${h.hr_name || ''}"`,
+        `"${h.created_at ? new Date(h.created_at).toLocaleDateString() : ''}"`,
+        `"${h.updated_at ? new Date(h.updated_at).toLocaleDateString() : ''}"`,
+        `"No competencies"`,
+        `""`,
+        `""`,
+        `""`,
+        `""`,
+        `""`,
+        `"${h.total_score || ''}"`,
+        `"${h.supervisor_remarks.replace(/"/g, '""')}"`,
+        `"${h.manager_remarks.replace(/"/g, '""')}"`,
+        `"${h.hr_remarks.replace(/"/g, '""')}"`
+      ].join(','));
+    } else {
+      // CL with competency items
+      cl.items.forEach((item, idx) => {
+        csvRows.push([
+          idx === 0 ? '"Header"' : '"Item"',
+          `"${h.cl_id}"`,
+          `"${h.status}"`,
+          `"${h.employee_id}"`,
+          `"${h.employee_name}"`,
+          `"${h.department_name}"`,
+          `"${h.position_title}"`,
+          `"${h.supervisor_name || ''}"`,
+          `"${h.manager_name || ''}"`,
+          `"${h.hr_name || ''}"`,
+          `"${h.created_at ? new Date(h.created_at).toLocaleDateString() : ''}"`,
+          `"${h.updated_at ? new Date(h.updated_at).toLocaleDateString() : ''}"`,
+          `"${item.competency_name}"`,
+          `"${item.mplr_level}"`,
+          `"${item.assigned_level}"`,
+          `"${item.weight}"`,
+          `"${item.score}"`,
+          `"${item.justification.replace(/"/g, '""')}"`,
+          idx === 0 ? `"${h.total_score || ''}"` : '""',
+          idx === 0 ? `"${h.supervisor_remarks.replace(/"/g, '""')}"` : '""',
+          idx === 0 ? `"${h.manager_remarks.replace(/"/g, '""')}"` : '""',
+          idx === 0 ? `"${h.hr_remarks.replace(/"/g, '""')}"` : '""'
+        ].join(','));
+      });
+    }
+  });
+  
+  return csvRows.join('\n');
+}
+
+// =====================
+// CSV EXPORT (for HR - all data)
 // =====================
 async function exportCL({ startDate, endDate, department, status }) {
   console.log('CL Export params:', { startDate, endDate, department, status });
@@ -2384,5 +2623,6 @@ module.exports = {
   hrApprove,
   hrReturn,
   getCLAuditTrail,
-  exportCL
+  exportCL,
+  exportCLForSupervisor
 };

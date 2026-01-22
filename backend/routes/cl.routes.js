@@ -68,6 +68,13 @@ router.get(
   clController.getSupervisorPending
 );
 
+// GET /api/cl/supervisor/export (CSV export for supervisors)
+router.get(
+  '/supervisor/export',
+  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  clController.exportCLForSupervisor
+);
+
 // =====================================
 // MANAGER DASHBOARD ROUTES
 // =====================================
