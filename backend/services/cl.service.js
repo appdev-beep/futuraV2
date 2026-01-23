@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { logInfo } = require('../utils/logger');
 const { logRecentAction } = require('./recentActions.service');
-const { sendCLNotificationEmail } = require('./email.service');
+const { sendCLNotificationEmail, sendEmail, getSupervisorEmail } = require('./email.service');
 const { createNotification } = require('./notification.service');
 
 
@@ -195,6 +195,62 @@ async function create(payload) {
       });
     } catch (e) {
       console.error('[CL SERVICE] Failed to send creation notification:', e);
+    }
+
+    // Also notify the next reviewer (AM -> Manager). HR is already notified by sendCLNotificationEmail when actionType === 'CREATED'.
+    try {
+      const [userRow] = await db.query(`SELECT am_id, manager_id FROM users WHERE id = ? LIMIT 1`, [payload.employee_id]);
+      if (userRow && userRow.length) {
+        const { am_id, manager_id } = userRow[0];
+
+        if (am_id) {
+          const [amRows] = await db.query(`SELECT id, name, email FROM users WHERE id = ? LIMIT 1`, [am_id]);
+          if (amRows && amRows.length && amRows[0].email) {
+            const am = amRows[0];
+            const html = `
+              <h3 style="color: #0b61ff;">Action Required: New CL Assigned for Review</h3>
+              <p style="color: #0b2b5f;">Dear ${am.name || 'Assistant Manager'},</p>
+              <p style="color: #0b2b5f;">A new Competency Leveling (CL) form <strong>#${clId}</strong> has been created for ${employeeName} (${employeeCode}) and has been routed to you for review.</p>
+              <p style="color: #0b2b5f;">Please review the CL at your earliest convenience.</p>
+              <hr/>
+              <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+            `;
+
+            const text = `Dear ${am.name || 'Assistant Manager'},\n\nA new Competency Leveling (CL) form (#${clId}) has been created for ${employeeName} (${employeeCode}) and has been routed to you for review.\n\nPlease review the CL at your earliest convenience.\n\nRegards,\nFutura System`;
+
+            sendEmail({ to: am.email, subject: `CL #${clId} Assigned for Review`, text, html })
+              .then(r => { if (r) console.log(`[EMAIL] Sent AM assign CL #${clId} to ${am.email}`); })
+              .catch(e => console.error('[EMAIL] AM assign notify error:', e.message));
+
+            await createNotification({ recipient_id: am.id, message: `CL #${clId} for ${employeeName} has been created and assigned to you for review.`, module: 'CL' }).catch(err => console.error('Failed to create AM notification:', err));
+          }
+        } else if (manager_id) {
+          const [mgrRows] = await db.query(`SELECT id, name, email FROM users WHERE id = ? LIMIT 1`, [manager_id]);
+          if (mgrRows && mgrRows.length && mgrRows[0].email) {
+            const mgr = mgrRows[0];
+            const html = `
+              <h3 style="color: #0b61ff;">Action Required: New CL Assigned for Review</h3>
+              <p style="color: #0b2b5f;">Dear ${mgr.name || 'Manager'},</p>
+              <p style="color: #0b2b5f;">A new Competency Leveling (CL) form <strong>#${clId}</strong> has been created for ${employeeName} (${employeeCode}) and has been routed to you for review.</p>
+              <p style="color: #0b2b5f;">Please review the CL at your earliest convenience.</p>
+              <hr/>
+              <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+            `;
+
+            const text = `Dear ${mgr.name || 'Manager'},\n\nA new Competency Leveling (CL) form (#${clId}) has been created for ${employeeName} (${employeeCode}) and has been routed to you for review.\n\nPlease review the CL at your earliest convenience.\n\nRegards,\nFutura System`;
+
+            sendEmail({ to: mgr.email, subject: `CL #${clId} Assigned for Review`, text, html })
+              .then(r => { if (r) console.log(`[EMAIL] Sent Manager assign CL #${clId} to ${mgr.email}`); })
+              .catch(e => console.error('[EMAIL] Manager assign notify error:', e.message));
+
+            await createNotification({ recipient_id: mgr.id, message: `CL #${clId} for ${employeeName} has been created and assigned to you for review.`, module: 'CL' }).catch(err => console.error('Failed to create Manager notification:', err));
+          }
+        } else {
+          // No AM or Manager assigned: HR were already notified via sendCLNotificationEmail
+        }
+      }
+    } catch (e) {
+      console.error('[CL SERVICE] Failed to notify next reviewer on create:', e.message);
     }
 
     return { id: clId };
@@ -1230,6 +1286,7 @@ async function amApprove(id, approverId, remarks) {
     // Send notifications and log action
     if (clRows.length > 0) {
       const { employee_id, employee_name, employee_code, manager_id, am_name } = clRows[0];
+      const currentDateTime = new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
       
       // Send email notification to employee
       await sendCLNotificationEmail({
@@ -1250,6 +1307,47 @@ async function amApprove(id, approverId, remarks) {
         message: `CL #${id} has been approved by Assistant Manager ${am_name || 'AM'}. Please review and approve.`,
         module: 'CL',
       }).catch(err => console.error('Failed to create employee notification:', err));
+
+      // Send email notification to supervisor as well
+      try {
+        const supervisorInfo = await getSupervisorEmail(id);
+        if (supervisorInfo && supervisorInfo.email) {
+          const supHtml = `
+            <h3 style="color: #0b61ff;">Notification: CL Approved by Assistant Manager</h3>
+            <p style="color: #0b2b5f;">Dear ${supervisorInfo.name || 'Supervisor'},</p>
+            <p style="color: #0b2b5f;">Please be informed that CL #${id} for ${employee_name} (${employee_code}) has been approved by Assistant Manager ${am_name || 'AM'} and is now pending further action.</p>
+            <p style="color: #0b2b5f;">Submitted Date & Time: ${currentDateTime}</p>
+            <hr/>
+            <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+          `;
+
+          const supText =
+            `Dear ${supervisorInfo.name || 'Supervisor'},\n\n` +
+            `CL #${id} for ${employee_name} (${employee_code}) has been approved by Assistant Manager ${am_name || 'AM'} and is now pending your review.\n\n` +
+            `Submitted Date & Time: ${currentDateTime}\n\n` +
+            `Regards,\nFutura System`;
+
+          sendEmail({
+            to: supervisorInfo.email,
+            subject: `CL #${id} Approved by Assistant Manager`,
+            text: supText,
+            html: supHtml,
+          })
+            .then(r => { if (r) console.log(`[EMAIL] Sent supervisor notify CL #${id} to ${supervisorInfo.email}`); })
+            .catch(e => console.error('[EMAIL] Supervisor notify error:', e.message));
+
+          // also create in-app notification for supervisor
+          if (supervisorInfo.id) {
+            await createNotification({
+              recipient_id: supervisorInfo.id,
+              message: `CL #${id} for ${employee_name} has been approved by Assistant Manager ${am_name || 'AM'}.`,
+              module: 'CL',
+            }).catch(err => console.error('Failed to create supervisor notification:', err));
+          }
+        }
+      } catch (e) {
+        console.error('[CL SERVICE] Failed to notify supervisor on AM approve:', e.message);
+      }
 
       // Notify manager that CL is pending their review
       if (manager_id) {
