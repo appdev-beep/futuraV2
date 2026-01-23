@@ -995,6 +995,38 @@ async function managerApprove(id, approverId, remarks) {
         description: `CL #${id}`,
         url: `/cl/submissions/${id}`,
       }).catch(err => console.error('Failed to log recent action:', err));
+
+      // Notify supervisor by email and in-app
+      try {
+        const supervisor = await getSupervisorEmail(id);
+        if (supervisor && supervisor.email) {
+          const supSubject = `CL #${id} Approved by Manager`;
+          const supHtml = `
+            <h3 style="color: #0b61ff;">CL Approved by Manager</h3>
+            <p style="color: #0b2b5f;">Hello <strong>${supervisor.name}</strong>,</p>
+            <p style="color: #0b2b5f;">Please be informed that CL <strong>#${id}</strong> for <strong>${employee_name} (${employee_code})</strong> has been approved by Manager <strong>${managerRows[0].name}</strong>.</p>
+            ${remarks ? `<p style="color: #0b2b5f;"><strong>Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
+            <p style="color: #0b2b5f;">No action is required from you at this time.</p>
+            <hr/>
+            <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+          `;
+
+          const supText = `CL #${id} Approved by Manager\n\n` +
+            `Hello ${supervisor.name},\n\n` +
+            `Please be informed that CL #${id} for ${employee_name} (${employee_code}) has been approved by Manager ${managerRows[0].name}.\n\n` +
+            (remarks ? `Remarks: ${remarks}\n\n` : '') +
+            `No action is required from you at this time.`;
+
+          await sendEmail({ to: supervisor.email, subject: supSubject, text: supText, html: supHtml })
+            .then(r => { if (r) console.log(`[EMAIL] Sent Manager-approval notify CL #${id} to supervisor ${supervisor.email}`); })
+            .catch(e => console.error('[EMAIL] Supervisor notify error (managerApprove):', e.message));
+
+          await createNotification({ recipient_id: supervisor.id, message: `CL #${id} has been approved by Manager ${managerRows[0].name}.`, module: 'CL' })
+            .catch(err => console.error('Failed to create supervisor notification after manager approve:', err));
+        }
+      } catch (e) {
+        console.error('[CL SERVICE] Failed to notify supervisor after manager approve:', e.message);
+      }
     }
 
     return { success: true, message: 'Manager approved CL, moved to Employee' };
@@ -1078,6 +1110,37 @@ async function managerReturn(id, approverId, remarks) {
         message: `CL #${id} was returned by Manager ${managerRows[0].name}. Reason: ${remarks || 'No reason provided'}`,
         module: 'CL'
       }).catch(err => console.error('Failed to create notification:', err));
+
+      // Also send a formal email to the supervisor
+      try {
+        const supervisor = await getSupervisorEmail(id);
+        if (supervisor && supervisor.email) {
+          const supSubject = `Action Required: CL #${id} Returned by Manager`;
+          const supHtml = `
+            <h3 style="color: #0b61ff;">CL Returned by Manager</h3>
+            <p style="color: #0b2b5f;">Hello <strong>${supervisor.name}</strong>,</p>
+            <p style="color: #0b2b5f;">Please be informed that CL <strong>#${id}</strong> has been returned to you by Manager <strong>${managerRows[0].name}</strong> for revision.</p>
+            <p style="color: #0b2b5f;"><strong>Employee:</strong> ${clRows[0]?.employee_name} (${clRows[0]?.employee_code})</p>
+            ${remarks ? `<p style="color: #0b2b5f;"><strong>Manager Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
+            <p style="color: #0b2b5f;">Please review the remarks, update the form as necessary, and resubmit when ready.</p>
+            <hr/>
+            <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+          `;
+
+          const supText = `CL #${id} Returned by Manager\n\n` +
+            `Hello ${supervisor.name},\n\n` +
+            `Please be informed that CL #${id} has been returned to you by Manager ${managerRows[0].name} for revision.\n\n` +
+            `Employee: ${clRows[0]?.employee_name} (${clRows[0]?.employee_code})\n\n` +
+            (remarks ? `Manager Remarks: ${remarks}\n\n` : '') +
+            `Please review the remarks, update the form as necessary, and resubmit when ready.`;
+
+          await sendEmail({ to: supervisor.email, subject: supSubject, text: supText, html: supHtml })
+            .then(r => { if (r) console.log(`[EMAIL] Sent Manager-return notify CL #${id} to supervisor ${supervisor.email}`); })
+            .catch(e => console.error('[EMAIL] Supervisor notify error (managerReturn):', e.message));
+        }
+      } catch (e) {
+        console.error('[CL SERVICE] Failed to email supervisor after manager return:', e.message);
+      }
     }
     
     // Log recent action
@@ -1543,6 +1606,65 @@ async function employeeApprove(id, approverId, remarks) {
       }).catch(err => console.error('Failed to create notification:', err));
     }
 
+    // Notify supervisor by email and in-app, and notify all HR users by email
+    try {
+      const supervisor = await getSupervisorEmail(id);
+      if (supervisor && supervisor.email) {
+        const supSubject = `CL #${id} Approved by Employee`;
+        const supHtml = `
+          <h3 style="color: #0b61ff;">CL Approved by Employee</h3>
+          <p style="color: #0b2b5f;">Hello <strong>${supervisor.name}</strong>,</p>
+          <p style="color: #0b2b5f;">Please be informed that CL <strong>#${id}</strong> has been approved by the employee and is now pending HR approval.</p>
+          <p style="color: #0b2b5f;"><strong>Employee:</strong> ${empRows[0].employee_name} (${empRows[0].employee_code})</p>
+          ${remarks ? `<p style="color: #0b2b5f;"><strong>Employee Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
+          <p style="color: #0b2b5f;">Please review the submission if needed.</p>
+          <hr/>
+          <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+        `;
+
+        const supText = `CL #${id} Approved by Employee\n\n` +
+          `Hello ${supervisor.name},\n\n` +
+          `Please be informed that CL #${id} has been approved by the employee and is now pending HR approval.\n\n` +
+          `Employee: ${empRows[0].employee_name} (${empRows[0].employee_code})\n\n` +
+          (remarks ? `Employee Remarks: ${remarks}\n\n` : '') +
+          `Please review the submission if needed.`;
+
+        await sendEmail({ to: supervisor.email, subject: supSubject, text: supText, html: supHtml })
+          .then(r => { if (r) console.log(`[EMAIL] Sent employee-approval notify CL #${id} to supervisor ${supervisor.email}`); })
+          .catch(e => console.error('[EMAIL] Supervisor notify error (employeeApprove):', e.message));
+
+        await createNotification({ recipient_id: supervisor.id, message: `CL #${id} has been approved by the employee and is pending HR.`, module: 'CL' })
+          .catch(err => console.error('Failed to create supervisor notification after employee approve:', err));
+      }
+
+      // Email all HR users
+      const [hrEmailRows] = await db.query(`SELECT id, email, name FROM users WHERE role = 'HR' AND is_active = 1`);
+      if (hrEmailRows && hrEmailRows.length) {
+        const hrSubject = `CL #${id} Pending HR Approval`;
+        const hrHtml = `
+          <h3 style="color: #0b61ff;">CL Pending HR Approval</h3>
+          <p style="color: #0b2b5f;">Hello,</p>
+          <p style="color: #0b2b5f;">CL <strong>#${id}</strong> for <strong>${empRows[0].employee_name} (${empRows[0].employee_code})</strong> has been approved by the employee and requires HR review.</p>
+          <p style="color: #0b2b5f;">Please log in to the system to review and take necessary action.</p>
+          <hr/>
+          <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+        `;
+
+        const hrText = `CL #${id} Pending HR Approval\n\n` +
+          `CL #${id} for ${empRows[0].employee_name} (${empRows[0].employee_code}) has been approved by the employee and requires HR review.`;
+
+        for (const hr of hrEmailRows) {
+          if (hr.email) {
+            sendEmail({ to: hr.email, subject: hrSubject, text: hrText, html: hrHtml })
+              .then(r => { if (r) console.log(`[EMAIL] Sent HR notify CL #${id} to ${hr.email}`); })
+              .catch(e => console.error('[EMAIL] HR notify error (employeeApprove):', e.message));
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[CL SERVICE] Failed to notify supervisor/HR after employee approve:', e.message);
+    }
+
     // Log recent action
     if (empRows.length > 0) {
       const { employee_name } = empRows[0];
@@ -1640,6 +1762,39 @@ async function employeeReturn(id, approverId, remarks) {
         description: `CL #${id}`,
         url: `/cl/employee/review/${id}`,
       }).catch(err => console.error('Failed to log recent action:', err));
+    }
+
+    // Notify supervisor by email and in-app that employee returned the CL
+    try {
+      const supervisor = await getSupervisorEmail(id);
+      const actorNameRow = empRows[0];
+      if (supervisor && supervisor.email && clRows.length > 0 && actorNameRow) {
+        const supSubject = `Action Required: CL #${id} Returned by Employee`;
+        const supHtml = `
+          <h3 style="color: #0b61ff;">CL Returned by Employee</h3>
+          <p style="color: #0b2b5f;">Hello <strong>${supervisor.name}</strong>,</p>
+          <p style="color: #0b2b5f;">Please be informed that CL <strong>#${id}</strong> for <strong>${clRows[0].employee_name} (${clRows[0].employee_code})</strong> has been returned by the employee <strong>${actorNameRow.name}</strong>.</p>
+          ${remarks ? `<p style="color: #0b2b5f;"><strong>Employee Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
+          <p style="color: #0b2b5f;">Please review and make necessary revisions.</p>
+          <hr/>
+          <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+        `;
+
+        const supText = `CL #${id} Returned by Employee\n\n` +
+          `Hello ${supervisor.name},\n\n` +
+          `Please be informed that CL #${id} for ${clRows[0].employee_name} (${clRows[0].employee_code}) has been returned by the employee ${actorNameRow.name}.\n\n` +
+          (remarks ? `Employee Remarks: ${remarks}\n\n` : '') +
+          `Please review and make necessary revisions.`;
+
+        await sendEmail({ to: supervisor.email, subject: supSubject, text: supText, html: supHtml })
+          .then(r => { if (r) console.log(`[EMAIL] Sent employee-return notify CL #${id} to supervisor ${supervisor.email}`); })
+          .catch(e => console.error('[EMAIL] Supervisor notify error (employeeReturn):', e.message));
+
+        await createNotification({ recipient_id: supervisor.id, message: `CL #${id} has been returned by the employee ${actorNameRow.name}.`, module: 'CL' })
+          .catch(err => console.error('Failed to create supervisor notification after employee return:', err));
+      }
+    } catch (e) {
+      console.error('[CL SERVICE] Failed to notify supervisor after employee return:', e.message);
     }
 
     return { success: true, message: 'Employee returned CL to Supervisor' };
