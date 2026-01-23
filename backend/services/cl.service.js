@@ -166,6 +166,37 @@ async function create(payload) {
     }
 
     await conn.commit();
+    // Notify employee (and HR via email.service when actionType === 'CREATED')
+    try {
+      const [empRows] = await db.query(
+        `SELECT name, employee_id FROM users WHERE id = ? LIMIT 1`,
+        [payload.employee_id]
+      );
+      const [supRows] = await db.query(
+        `SELECT name FROM users WHERE id = ? LIMIT 1`,
+        [payload.supervisor_id]
+      );
+
+      const employeeName = empRows && empRows.length ? empRows[0].name : '';
+      const employeeCode = empRows && empRows.length ? empRows[0].employee_id : '';
+      const supervisorName = supRows && supRows.length ? supRows[0].name : '';
+
+      // fire-and-forget but await to log errors if any
+      await sendCLNotificationEmail({
+        clId,
+        employeeId: payload.employee_id,
+        actionType: 'CREATED',
+        actorName: supervisorName || 'Supervisor',
+        actorRole: 'Supervisor',
+        employeeName,
+        employeeCode,
+        remarks: null,
+        requiresEmployeeAction: false,
+      });
+    } catch (e) {
+      console.error('[CL SERVICE] Failed to send creation notification:', e);
+    }
+
     return { id: clId };
   } catch (err) {
     await conn.rollback();
