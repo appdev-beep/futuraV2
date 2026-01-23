@@ -2104,7 +2104,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                     value={exportModal.startDate}
                     onChange={(e) => setExportModal(prev => ({ ...prev, startDate: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                    max={exportModal.endDate || new Date().toISOString().split('T')[0]}
+                    max={new Date().toISOString().split('T')[0]}
                   />
                 </div>
 

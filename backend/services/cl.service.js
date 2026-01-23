@@ -2422,7 +2422,121 @@ async function exportCLForAM({ startDate, endDate, department, status, amId }) {
   const [rows] = await db.query(sql, params);
   console.log(`Found ${rows.length} CL records for AM export`);
 
+  // If no CL rows were found, check whether this AM actually has any assigned employees.
   if (rows.length === 0) {
+    try {
+      const [empRows] = await db.query(`SELECT COUNT(*) as cnt FROM users WHERE am_id = ?`, [amId]);
+      const count = (empRows && empRows[0] && empRows[0].cnt) ? empRows[0].cnt : 0;
+      if (count === 0) {
+        // No employees assigned to this AM — return CSV explaining the situation
+        const headers = ['Message'];
+        const csv = [headers.join(','), `"No employees are assigned to Assistant Manager ID ${amId}. Please assign employees to this AM before exporting."`].join('\n');
+        return csv;
+      }
+    } catch (e) {
+      // ignore and fall through to generic message
+      console.error('Error checking employees for AM', e.message);
+    }
+
+    // At this point there are employees assigned to the AM, but no CL rows matched.
+    // Try a fallback: export CLs by the AM's department (matches what AM dashboard shows).
+    try {
+      const [deptRows] = await db.query(`SELECT department_id FROM users WHERE id = ? LIMIT 1`, [amId]);
+      const amDept = deptRows && deptRows[0] ? deptRows[0].department_id : null;
+      if (amDept) {
+        console.log('AM export fallback: searching CLs by department', { amId, amDept });
+        let fallbackSql = `
+          SELECT 
+            ch.id as cl_id,
+            ch.status,
+            ch.created_at,
+            ch.updated_at,
+            e.employee_id,
+            e.name as employee_name,
+            p.title as position_title,
+            d.name as department_name,
+            s.name as supervisor_name,
+            am.name as am_name,
+            m.name as manager_name,
+            ch.remarks,
+            ch.supervisor_remarks,
+            ch.manager_remarks,
+            ch.employee_remarks,
+            ch.hr_decision,
+            ch.hr_remarks
+          FROM cl_headers ch
+          JOIN users e ON ch.employee_id = e.id
+          LEFT JOIN departments d ON ch.department_id = d.id
+          LEFT JOIN positions p ON e.position_id = p.id
+          LEFT JOIN users s ON ch.supervisor_id = s.id
+          LEFT JOIN users am ON e.am_id = am.id
+          LEFT JOIN users m ON ch.manager_id = m.id
+          WHERE e.department_id = ?
+        `;
+
+        const fallbackParams = [amDept];
+
+        if (startDate) {
+          fallbackSql += ` AND DATE(ch.created_at) >= DATE(?)`;
+          fallbackParams.push(startDate);
+        }
+        if (endDate) {
+          fallbackSql += ` AND DATE(ch.created_at) <= DATE(?)`;
+          fallbackParams.push(endDate);
+        }
+        if (department) {
+          fallbackSql += ` AND d.name = ?`;
+          fallbackParams.push(department);
+        }
+        if (status && status !== 'ALL') {
+          fallbackSql += ` AND ch.status = ?`;
+          fallbackParams.push(status);
+        }
+
+        fallbackSql += ` ORDER BY ch.created_at DESC`;
+        const [fallbackRows] = await db.query(fallbackSql, fallbackParams);
+        console.log(`Found ${fallbackRows.length} CL records for AM export using department fallback`);
+        if (fallbackRows.length === 0) {
+          return 'No data found for the specified criteria';
+        }
+
+        // Build a simple CSV for fallbackRows (reuse AM headers)
+        const headers = [
+          'CL ID', 'Employee ID', 'Employee Name', 'Position', 'Department',
+          'Supervisor', 'Assistant Manager', 'Manager', 'Status', 'General Remarks',
+          'Supervisor Remarks', 'Manager Remarks', 'Employee Remarks',
+          'HR Decision', 'HR Remarks', 'Created At', 'Updated At'
+        ];
+        const csvRows = [headers.join(',')];
+        fallbackRows.forEach(row => {
+          const csvRow = [
+            row.cl_id || '',
+            row.employee_id || '',
+            `"${(row.employee_name || '').replace(/"/g, '""')}"`,
+            `"${(row.position_title || '').replace(/"/g, '""')}"`,
+            `"${(row.department_name || '').replace(/"/g, '""')}"`,
+            `"${(row.supervisor_name || '').replace(/"/g, '""')}"`,
+            `"${(row.am_name || '').replace(/"/g, '""')}"`,
+            `"${(row.manager_name || '').replace(/"/g, '""')}"`,
+            row.status || '',
+            `"${(row.remarks || '').replace(/"/g, '""')}"`,
+            `"${(row.supervisor_remarks || '').replace(/"/g, '""')}"`,
+            `"${(row.manager_remarks || '').replace(/"/g, '""')}"`,
+            `"${(row.employee_remarks || '').replace(/"/g, '""')}"`,
+            row.hr_decision || '',
+            `"${(row.hr_remarks || '').replace(/"/g, '""')}"`,
+            row.created_at ? new Date(row.created_at).toISOString() : '',
+            row.updated_at ? new Date(row.updated_at).toISOString() : ''
+          ];
+          csvRows.push(csvRow.join(','));
+        });
+
+        return csvRows.join('\n');
+      }
+    } catch (e) {
+      console.error('AM export department fallback failed', e.message);
+    }
+
     return 'No data found for the specified criteria';
   }
 
@@ -2499,19 +2613,20 @@ async function exportCLForManager({ startDate, endDate, department, status, mana
   
   const params = [];
   
-  // Filter by Manager's department employees
+  // Filter by Manager: include CLs where the CL was assigned to this manager,
+  // or the employee's manager is this manager, or the department's manager is this manager.
   if (managerId) {
-    sql += ` AND (ch.manager_id = ? OR d.manager_id = ?)`;
-    params.push(managerId, managerId);
+    sql += ` AND (ch.manager_id = ? OR e.manager_id = ? OR d.manager_id = ?)`;
+    params.push(managerId, managerId, managerId);
   }
-  
+
   if (startDate) {
-    sql += ` AND ch.created_at >= ?`;
+    sql += ` AND DATE(ch.created_at) >= DATE(?)`;
     params.push(startDate);
   }
-  
+
   if (endDate) {
-    sql += ` AND ch.created_at <= ?`;
+    sql += ` AND DATE(ch.created_at) <= DATE(?)`;
     params.push(endDate);
   }
   

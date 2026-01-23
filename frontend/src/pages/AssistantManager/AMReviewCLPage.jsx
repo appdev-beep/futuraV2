@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import { exportCLToCSV } from '../../utils/exportUtils';
 import Modal from '../../components/Modal';
 import { displayStatus } from '../../utils/statusHelper';
 
@@ -34,26 +35,9 @@ function AMReviewCLPage() {
   };
 
   const handleExportCSV = () => {
+    if (!cl || !cl.items) return;
     try {
-      const rows = (cl.items || []).map(it => ({
-        competency: it.competency_name,
-        mplr: it.required_level,
-        assigned_level: it.assigned_level,
-        weight: Number(it.weight || 0).toFixed(2),
-        score: Number(it.score || 0).toFixed(2),
-        justification: it.justification || ''
-      }));
-      const columns = Object.keys(rows[0] || {});
-      const csv = [columns.join(',')].concat(rows.map(r => columns.map(c => `"${String(r[c] || '')}"`).join(','))).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `CL_${cl.id || 'export'}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      exportCLToCSV(cl, { filename: `CL_${cl.id || 'export'}.csv` });
     } catch (err) {
       console.error('Export CSV failed', err);
       showModal('Export Failed', 'Unable to export CSV.');

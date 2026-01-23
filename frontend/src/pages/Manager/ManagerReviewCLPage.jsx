@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import { exportCLToCSV } from '../../utils/exportUtils';
 import Modal from '../../components/Modal';
 import { displayStatus } from '../../utils/statusHelper';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -135,55 +136,12 @@ function ManagerReviewCLPage() {
   // ==========================
   function handleExportCSV() {
     if (!cl || !cl.items) return;
-
-    const BOM = '\uFEFF';
-    let csvContent = BOM;
-
-    // Header info
-    csvContent += `CL Review #${cl.id}\n`;
-    csvContent += `Employee Name,${cl.employee_name || 'N/A'}\n`;
-    csvContent += `Employee ID,${cl.employee_id || 'N/A'}\n`;
-    csvContent += `Position,${cl.position_title || 'N/A'}\n`;
-    csvContent += `Department,${cl.department_name || 'N/A'}\n`;
-    csvContent += `Supervisor,${cl.supervisor_name || 'N/A'}\n`;
-    csvContent += `Status,${displayStatus(cl.status)}\n`;
-    csvContent += `\n`;
-
-    // Compute score
-    const totalScore = (cl.items || []).reduce((sum, it) => sum + (Number(it.score) || 0), 0);
-    const getProficiencyLevel = (score) => {
-      if (score >= 4.5) return { level: 5, name: 'Expert' };
-      if (score >= 3.5) return { level: 4, name: 'Advanced' };
-      if (score >= 2.5) return { level: 3, name: 'Intermediate' };
-      if (score >= 1.5) return { level: 2, name: 'Novice' };
-      return { level: 1, name: 'Fundamental Awareness' };
-    };
-    const proficiency = getProficiencyLevel(totalScore);
-
-    csvContent += `Total Score,${totalScore.toFixed(2)}\n`;
-    csvContent += `Proficiency Level,Level ${proficiency.level} - ${proficiency.name}\n`;
-    csvContent += `\n`;
-
-    // Table header
-    csvContent += `Competency,MPLR,Assigned Level,Weight (%),Score,Comments\n`;
-
-    // Table rows
-    cl.items.forEach((item) => {
-      const competency = (item.competency_name || '').replace(/,/g, ';');
-      const mplr = item.required_level || '';
-      const assigned = item.assigned_level || '';
-      const weight = Number(item.weight || 0).toFixed(2);
-      const score = Number(item.score || 0).toFixed(2);
-      const comments = (item.justification || '').replace(/,/g, ';').replace(/\n/g, ' ');
-
-      csvContent += `${competency},${mplr},${assigned},${weight},${score},${comments}\n`;
-    });
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `CL_Review_${cl.id}_${cl.employee_name || 'Employee'}.csv`;
-    link.click();
+    try {
+      exportCLToCSV(cl, { filename: `CL_Review_${cl.id}_${cl.employee_name || 'Employee'}.csv` });
+    } catch (e) {
+      console.error('Export CSV failed', e);
+      alert('Failed to export CSV.');
+    }
   }
 
   function handleExportPDF() {
