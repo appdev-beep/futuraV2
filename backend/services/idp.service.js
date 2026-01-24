@@ -3,6 +3,7 @@ const { db } = require('../config/db');
 const { logInfo } = require('../utils/logger');
 const { logRecentAction } = require('./recentActions.service');
 const { createNotification } = require('./notification.service');
+const { sendIDPCreationEmail, getUserEmail, getHREmails } = require('./email.service');
 
 // Return IDP header + items
 async function getById(id) {
@@ -151,6 +152,15 @@ async function create(payload) {
   );
   const idpId = result.insertId;
   logInfo('Created IDP header', { idpId });
+  // Notify via centralized email service (non-blocking)
+  try {
+    const nextReviewerId = (employee.has_am && employee.am_id) ? employee.am_id : employee.manager_id;
+    sendIDPCreationEmail({ idpId, employeeId: payload.employee_id, supervisorId: payload.supervisor_id, nextReviewerId })
+      .catch((e) => console.error('[EMAIL] sendIDPCreationEmail error:', e && e.message ? e.message : e));
+  } catch (e) {
+    console.error('[EMAIL] Failed to schedule IDP creation email:', e && e.message ? e.message : e);
+  }
+
   return { id: idpId };
 }
 
@@ -2548,6 +2558,15 @@ async function createWithItems(payload) {
       description: `Supervisor created IDP for employee ${payload.employeeId}`,
       url: `/supervisor/idp/view/${idpId}`
     });
+
+    // Asynchronously notify via centralized email service (non-blocking)
+    try {
+      const nextReviewerId = amId || managerId || null;
+      sendIDPCreationEmail({ idpId, employeeId: payload.employeeId, supervisorId: payload.supervisorId, nextReviewerId })
+        .catch((e) => console.error('[EMAIL] sendIDPCreationEmail (createWithItems) error:', e && e.message ? e.message : e));
+    } catch (e) {
+      console.error('[EMAIL] Failed to schedule IDP creation email (createWithItems):', e && e.message ? e.message : e);
+    }
 
     return { id: idpId };
   } catch (err) {

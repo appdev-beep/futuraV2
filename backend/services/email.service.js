@@ -5,9 +5,9 @@ const { db } = require('../config/db');
 // Use a real mailbox as sender (Gmail requires authenticated "from" to be valid)
 const notifier = process.env.NOTIFIER_EMAIL || process.env.SMTP_USER || 'notification.alert@equicomservices.com';
 
-// -----------------------------
-// Helpers
-// -----------------------------
+
+
+// Helper
 const toBool = (val, defaultVal = false) => {
   if (val === undefined || val === null) return defaultVal;
   const s = String(val).trim().toLowerCase();
@@ -184,6 +184,16 @@ async function sendCLNotificationEmail({
       dateStyle: 'full',
       timeStyle: 'short',
     });
+
+    // Debug: list intended recipients similar to CL logging
+    try {
+      const hrEmails = (hrUsers || []).map((h) => h.email).filter(Boolean);
+      console.log(
+        `[EMAIL] IDP#${idpId} | employee: ${employee.email || 'n/a'}${employee.name ? ` (${employee.name})` : ''} | reviewer: ${nextReviewer && nextReviewer.email ? `${nextReviewer.email}${nextReviewer.name ? ` (${nextReviewer.name})` : ''}` : 'none'} | supervisor: ${supervisor && supervisor.email ? `${supervisor.email}${supervisor.name ? ` (${supervisor.name})` : ''}` : 'none'} | HR count: ${hrEmails.length}${hrEmails.length ? ` | HR: ${hrEmails.join(',')}` : ''}`
+      );
+    } catch (e) {
+      console.log('[EMAIL] IDP recipient debug log failed:', e && e.message ? e.message : e);
+    }
 
     switch (actionType) {
       case 'CREATED':
@@ -471,6 +481,42 @@ async function sendCLNotificationEmail({
       });
     }
 
+    // For APPROVED (by HR or other approver), notify the supervisor as well
+    if (actionType === 'APPROVED' && supervisor) {
+      try {
+        const supervisorSubject = `CL #${clId} for ${employeeInfo} Has Been Approved by ${actorRole}`;
+        const supervisorHtmlContent = `
+          <h3>CL Form Approved - Supervisor Notice</h3>
+          <p>Dear ${supervisor.name},</p>
+          <p>The CL form <strong>#${clId}</strong> for <strong>${employeeInfo}</strong> has been approved by ${actorName} (${actorRole}).</p>
+          <p><strong>Date & Time:</strong> ${currentDateTime}</p>
+          ${remarks ? `<p><strong>Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
+          ${requiresEmployeeAction ? `<p><strong>Note:</strong> The employee is required to review/approve the form.</p>` : ''}
+          <p>Regards,<br/>Futura System</p>
+          <hr/>
+          <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+        `;
+
+        const supervisorTextContent =
+          `CL Form Approved - Supervisor Notice\n\n` +
+          `Dear ${supervisor.name},\n\n` +
+          `The CL form #${clId} for ${employeeInfo} has been approved by ${actorName} (${actorRole}).\n\n` +
+          `Date & Time: ${currentDateTime}\n` +
+          (remarks ? `Remarks: ${remarks}\n\n` : '\n') +
+          (requiresEmployeeAction ? `Note: The employee is required to review/approve the form.\n\n` : '') +
+          `Regards,\nFutura System`;
+
+        await sendEmail({
+          to: supervisor.email,
+          subject: supervisorSubject,
+          text: supervisorTextContent,
+          html: supervisorHtmlContent,
+        });
+      } catch (e) {
+        console.log('[EMAIL] Failed to notify supervisor on APPROVED:', e.message);
+      }
+    }
+
     // For FINAL_APPROVED, also send to supervisor
     if (actionType === 'FINAL_APPROVED' && supervisor) {
       const supervisorSubject = `CL #${clId} for ${employeeInfo} Has Been Approved and Locked`;
@@ -693,9 +739,101 @@ async function sendPasswordChangeEmail({ name, email, employeeId }) {
   }
 }
 
+// =====================================================
+// SEND IDP CREATION EMAILS
+// =====================================================
+async function sendIDPCreationEmail({ idpId, employeeId, supervisorId = null, nextReviewerId = null }) {
+  try {
+    const employee = await getUserEmail(employeeId);
+    if (!employee) {
+      console.error(`[EMAIL] IDP#${idpId} employee ${employeeId} not found`);
+      return null;
+    }
+
+    const supervisor = supervisorId ? await getUserEmail(supervisorId) : null;
+    const nextReviewer = nextReviewerId ? await getUserEmail(nextReviewerId) : null;
+    const hrUsers = await getHREmails();
+
+    const currentDateTime = new Date().toLocaleString('en-US', {
+      dateStyle: 'full',
+      timeStyle: 'short',
+    });
+
+    // Employee notification
+    try {
+      const subject = `Your Individual Development Plan Has Been Created - IDP #${idpId}`;
+      const html = `
+        <h3 style="color:#0b61ff;">IDP Created</h3>
+        <p>Dear ${employee.name},</p>
+        <p>Your Individual Development Plan <strong>#${idpId}</strong> has been created${supervisor ? ` by ${supervisor.name}` : ''}.</p>
+        <p><strong>Date & Time:</strong> ${currentDateTime}</p>
+        <p>Please review the IDP in the system and follow any next steps assigned.</p>
+        <p>Regards,<br/>Futura System</p>
+      `;
+      const text = `Your Individual Development Plan #${idpId} has been created${supervisor ? ` by ${supervisor.name}` : ''} on ${currentDateTime}. Please review it in the system.`;
+      const r = await sendEmail({ to: employee.email, subject, text, html });
+      if (r) console.log(`[EMAIL] Sent IDP#${idpId} to employee ${employee.email}`);
+      else console.log(`[EMAIL] Failed sending IDP#${idpId} to employee ${employee.email}`);
+    } catch (e) {
+      console.error('[EMAIL] IDP employee notify failed:', e && e.message ? e.message : e);
+    }
+
+    // Next reviewer notification
+    if (nextReviewer && nextReviewer.email) {
+      try {
+        const subject = `Action Required: Review IDP #${idpId} for ${employee.name}`;
+        const html = `
+          <h3 style="color:#0b61ff;">IDP Review Assigned</h3>
+          <p>Dear ${nextReviewer.name},</p>
+          <p>An Individual Development Plan <strong>#${idpId}</strong> for ${employee.name} has been submitted and requires your review.</p>
+          <p><strong>Submitted by:</strong> ${supervisor ? supervisor.name : 'Supervisor'}</p>
+          <p><strong>Date & Time:</strong> ${currentDateTime}</p>
+          <p>Please log in to the system to review and take the appropriate action.</p>
+          <p>Regards,<br/>Futura System</p>
+        `;
+        const text = `IDP #${idpId} for ${employee.name} requires your review. Submitted by ${supervisor ? supervisor.name : 'Supervisor'} on ${currentDateTime}.`;
+        const r = await sendEmail({ to: nextReviewer.email, subject, text, html });
+        if (r) console.log(`[EMAIL] Sent IDP#${idpId} to reviewer ${nextReviewer.email}`);
+        else console.log(`[EMAIL] Failed sending IDP#${idpId} to reviewer ${nextReviewer.email}`);
+      } catch (e) {
+        console.error('[EMAIL] IDP reviewer notify failed:', e && e.message ? e.message : e);
+      }
+    }
+
+    // HR notifications
+    if (hrUsers && hrUsers.length) {
+      const subject = `Notification: New IDP Created - IDP #${idpId}`;
+      for (const hr of hrUsers) {
+        try {
+          const recipientName = hr.name || 'HR Team';
+          const html = `
+            <h3 style="color:#0b61ff;">New IDP Created</h3>
+            <p>Dear ${recipientName},</p>
+            <p>This is to inform you that a new Individual Development Plan <strong>#${idpId}</strong> for ${employee.name} has been created${supervisor ? ` by ${supervisor.name}` : ''} on ${currentDateTime}.</p>
+            <p>Please review if necessary.</p>
+            <p>Regards,<br/>Futura System</p>
+          `;
+          const text = `New IDP Created - IDP #${idpId} for ${employee.name} created${supervisor ? ` by ${supervisor.name}` : ''} on ${currentDateTime}.`;
+          const r = await sendEmail({ to: hr.email, subject, text, html });
+          if (r) console.log(`[EMAIL] Sent IDP#${idpId} HR notify to ${hr.email}`);
+          else console.log(`[EMAIL] Failed IDP#${idpId} HR notify to ${hr.email}`);
+        } catch (e) {
+          console.error('[EMAIL] IDP HR notify failed:', e && e.message ? e.message : e);
+        }
+      }
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[EMAIL] sendIDPCreationEmail error:', err && err.message ? err.message : err);
+    return null;
+  }
+}
+
 module.exports = {
   sendEmail,
   sendCLNotificationEmail,
+  sendIDPCreationEmail,
   sendWelcomeEmail,
   sendPasswordChangeEmail,
   getUserEmail,
