@@ -92,6 +92,15 @@ router.post(
   idpController.createWithItems
 );
 
+// DEV: debug endpoint to trigger IDP creation email for a single IDP (Admin only, disabled in production)
+if (process.env.NODE_ENV !== 'production') {
+  router.post(
+    '/debug/:id/send-email',
+    requireRole('Admin'),
+    idpController.debugSendIDPEmail
+  );
+}
+
 // PUT /api/idp/:id (update IDP items)
 router.put(
   '/:id',

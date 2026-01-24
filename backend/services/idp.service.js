@@ -213,6 +213,45 @@ async function managerReturnIDP(idpId, managerId, remarks) {
           module: 'IDP',
         }).catch(() => {});
       }
+      // Email notify supervisor and employee about return
+      try {
+        const sup = supervisorId ? await getUserEmail(supervisorId) : null;
+        const emp = employeeId ? await getUserEmail(employeeId) : null;
+
+        if (emp && emp.email) {
+          const subjEmp = `Your Individual Development Plan #${idpId} Has Been Returned for Revision`;
+          const htmlEmp = `
+            <h3 style="color:#0b61ff;">IDP Returned for Revision</h3>
+            <p>Dear ${emp.name},</p>
+            <p>Your Individual Development Plan <strong>#${idpId}</strong> has been returned by ${managerName} for revision.</p>
+            <p><strong>Remarks:</strong> ${remarks || 'No remarks provided'}</p>
+            <p>Please review and update the IDP accordingly.</p>
+            <p>Regards,<br/>Futura System</p>
+          `;
+          const textEmp = `Your IDP #${idpId} has been returned by ${managerName}. Remarks: ${remarks || 'No remarks provided'}`;
+          sendEmail({ to: emp.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+            .then((r) => console.log(`[EMAIL] Manager return -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+            .catch((e) => console.error('[EMAIL] Manager return -> failed sending to employee:', e && e.message ? e.message : e));
+        }
+
+        if (sup && sup.email) {
+          const subjSup = `IDP #${idpId} Has Been Returned by Manager`;
+          const htmlSup = `
+            <h3 style="color:#0b61ff;">IDP Returned by Manager</h3>
+            <p>Dear ${sup.name},</p>
+            <p>IDP <strong>#${idpId}</strong> for ${emp ? emp.name : 'an employee'} has been returned by ${managerName} for revision.</p>
+            <p><strong>Remarks:</strong> ${remarks || 'No remarks provided'}</p>
+            <p>Please review and coordinate the revisions as needed.</p>
+            <p>Regards,<br/>Futura System</p>
+          `;
+          const textSup = `IDP #${idpId} has been returned by ${managerName}. Remarks: ${remarks || 'No remarks provided'}`;
+          sendEmail({ to: sup.email, subject: subjSup, text: textSup, html: htmlSup })
+            .then((r) => console.log(`[EMAIL] Manager return -> sent to supervisor ${sup.email}: ${r ? r.messageId : 'no-info'}`))
+            .catch((e) => console.error('[EMAIL] Manager return -> failed sending to supervisor:', e && e.message ? e.message : e));
+        }
+      } catch (e) {
+        console.error('[EMAIL] Manager return notify error:', e && e.message ? e.message : e);
+      }
     } catch (notifErr) {
       // swallow notification/log errors
       console.error('Failed to log/notify on manager return:', notifErr.message || notifErr);
@@ -271,6 +310,43 @@ async function managerApprove(idpId, managerId, remarks = '') {
           message: `Your IDP #${idpId} has been approved by ${managerName}.`,
           module: 'IDP',
         }).catch(() => {});
+      }
+      // Email notify employee and supervisor about manager approval
+      try {
+        const emp = employeeId ? await getUserEmail(employeeId) : null;
+        const supId = header.supervisor_id || null;
+        const sup = supId ? await getUserEmail(supId) : null;
+
+        if (emp && emp.email) {
+          const subjEmp = `Your Individual Development Plan #${idpId} Has Been Approved by Manager`;
+          const htmlEmp = `
+            <h3 style="color:#0b61ff;">IDP Approved by Manager</h3>
+            <p>Dear ${emp.name},</p>
+            <p>Your Individual Development Plan <strong>#${idpId}</strong> has been approved by ${managerName}.</p>
+            <p>Please acknowledge the IDP in the system.</p>
+            <p>Regards,<br/>Futura System</p>
+          `;
+          const textEmp = `Your IDP #${idpId} has been approved by ${managerName}. Please acknowledge it in the system.`;
+          sendEmail({ to: emp.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+            .then((r) => console.log(`[EMAIL] Manager approve -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+            .catch((e) => console.error('[EMAIL] Manager approve -> failed sending to employee:', e && e.message ? e.message : e));
+        }
+
+        if (sup && sup.email) {
+          const subjSup = `IDP #${idpId} Approved by Manager`;
+          const htmlSup = `
+            <h3 style="color:#0b61ff;">IDP Approved by Manager</h3>
+            <p>Dear ${sup.name},</p>
+            <p>IDP <strong>#${idpId}</strong> for ${emp ? emp.name : 'an employee'} has been approved by ${managerName}.</p>
+            <p>Regards,<br/>Futura System</p>
+          `;
+          const textSup = `IDP #${idpId} for ${emp ? emp.name : 'an employee'} has been approved by ${managerName}.`;
+          sendEmail({ to: sup.email, subject: subjSup, text: textSup, html: htmlSup })
+            .then((r) => console.log(`[EMAIL] Manager approve -> sent to supervisor ${sup.email}: ${r ? r.messageId : 'no-info'}`))
+            .catch((e) => console.error('[EMAIL] Manager approve -> failed sending to supervisor:', e && e.message ? e.message : e));
+        }
+      } catch (e) {
+        console.error('[EMAIL] Manager approve notify error:', e && e.message ? e.message : e);
       }
     } catch (notifErr) {
       console.error('Failed to log/notify on manager approve:', notifErr.message || notifErr);
@@ -385,6 +461,43 @@ async function amApprove(idpId, amId, remarks = '') {
           message: `IDP #${idpId} for ${employeeName} has been approved by AM and requires your review.`,
           module: 'IDP',
         }).catch(() => {});
+      }
+      // Email notify employee and supervisor about AM approval
+      try {
+        const emp = employeeId ? await getUserEmail(employeeId) : null;
+        const supId = header.supervisor_id || null;
+        const sup = supId ? await getUserEmail(supId) : null;
+
+        const subjectEmp = `Your Individual Development Plan #${idpId} Has Been Approved by Assistant Manager`;
+        const htmlEmp = `
+          <h3 style="color:#0b61ff;">IDP Approved by Assistant Manager</h3>
+          <p>Dear ${emp ? emp.name : 'Employee'},</p>
+          <p>Your Individual Development Plan <strong>#${idpId}</strong> has been approved by Assistant Manager ${amName}.</p>
+          <p>The plan has been forwarded to the manager for the next level of approval.</p>
+          <p>Regards,<br/>Futura System</p>
+        `;
+        const textEmp = `Your IDP #${idpId} has been approved by Assistant Manager ${amName} and forwarded to manager for review.`;
+        if (emp && emp.email) {
+          sendEmail({ to: emp.email, subject: subjectEmp, text: textEmp, html: htmlEmp })
+            .then((r) => console.log(`[EMAIL] AM approve -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+            .catch((e) => console.error('[EMAIL] AM approve -> failed sending to employee:', e && e.message ? e.message : e));
+        }
+
+        if (sup && sup.email) {
+          const subjectSup = `IDP #${idpId} Approved by Assistant Manager`;
+          const htmlSup = `
+            <h3 style="color:#0b61ff;">IDP Approved by Assistant Manager</h3>
+            <p>Dear ${sup.name},</p>
+            <p>IDP <strong>#${idpId}</strong> for ${emp ? emp.name : 'an employee'} has been approved by Assistant Manager ${amName} and is now routed to the manager for further approval.</p>
+            <p>Regards,<br/>Futura System</p>
+          `;
+          const textSup = `IDP #${idpId} for ${emp ? emp.name : 'an employee'} has been approved by Assistant Manager ${amName} and routed to manager for review.`;
+          sendEmail({ to: sup.email, subject: subjectSup, text: textSup, html: htmlSup })
+            .then((r) => console.log(`[EMAIL] AM approve -> sent to supervisor ${sup.email}: ${r ? r.messageId : 'no-info'}`))
+            .catch((e) => console.error('[EMAIL] AM approve -> failed sending to supervisor:', e && e.message ? e.message : e));
+        }
+      } catch (e) {
+        console.error('[EMAIL] AM approve notify error:', e && e.message ? e.message : e);
       }
       // Email notify manager (next reviewer)
       try {
@@ -922,6 +1035,53 @@ async function submit(id) {
           message: `IDP #${id} for ${employeeName} ${isResubmission ? 'resubmitted' : 'submitted'} by ${supervisorName} is awaiting your approval`,
           module: 'IDP'
         }).catch(() => {});
+      }
+
+      // Email notifications for supervisor resubmit to AM: notify AM and employee
+      try {
+        if (shouldNotify && String(nextStatus).toUpperCase() === 'PENDING_AM') {
+          // Notify AM via email
+          if (amId) {
+            const amUser = await getUserEmail(amId);
+            if (amUser && amUser.email) {
+              const subject = `Action Required: IDP #${id} Resubmitted and Awaiting Your Review`;
+              const html = `
+                <h3 style="color:#0b61ff;">IDP Resubmitted</h3>
+                <p>Dear ${amUser.name},</p>
+                <p>IDP <strong>#${id}</strong> for ${employeeName} has been resubmitted by ${supervisorName} and is now assigned to you for review.</p>
+                <p>Please log in to the system to review and take the appropriate action.</p>
+                <p>Regards,<br/>Futura System</p>
+              `;
+              const text = `IDP #${id} for ${employeeName} has been resubmitted by ${supervisorName} and is now assigned to you for review.`;
+              sendEmail({ to: amUser.email, subject, text, html })
+                .then((r) => console.log(`[EMAIL] Resubmit -> sent to AM ${amUser.email}: ${r ? r.messageId : 'no-info'}`))
+                .catch((e) => console.error('[EMAIL] Resubmit -> failed sending to AM:', e && e.message ? e.message : e));
+            }
+          }
+
+          // Notify employee via email
+          try {
+            const empUser = await getUserEmail(header.employee_id);
+            if (empUser && empUser.email) {
+              const subjEmp = `Your IDP #${id} Has Been Resubmitted`;
+              const htmlEmp = `
+                <h3 style="color:#0b61ff;">IDP Resubmitted</h3>
+                <p>Dear ${empUser.name},</p>
+                <p>Your Individual Development Plan <strong>#${id}</strong> has been resubmitted by ${supervisorName} and is now pending review by Assistant Manager.</p>
+                <p>Please review any remarks and update if needed.</p>
+                <p>Regards,<br/>Futura System</p>
+              `;
+              const textEmp = `Your IDP #${id} has been resubmitted by ${supervisorName} and is now pending review by Assistant Manager.`;
+              sendEmail({ to: empUser.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+                .then((r) => console.log(`[EMAIL] Resubmit -> sent to employee ${empUser.email}: ${r ? r.messageId : 'no-info'}`))
+                .catch((e) => console.error('[EMAIL] Resubmit -> failed sending to employee:', e && e.message ? e.message : e));
+            }
+          } catch (e) {
+            console.error('[EMAIL] Resubmit -> failed to notify employee:', e && e.message ? e.message : e);
+          }
+        }
+      } catch (e) {
+        console.error('[EMAIL] Resubmit email notify error:', e && e.message ? e.message : e);
       }
     } else {
       console.log(`[IDP SUBMIT DEBUG] FOR_COMPLETION update - no notifications sent to approvers`);

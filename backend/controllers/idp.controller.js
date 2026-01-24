@@ -543,6 +543,7 @@ module.exports = {
   exportIDPForSupervisor,
   exportIDPForAM,
   exportIDPForManager,
+  debugSendIDPEmail,
 };
 
 // POST /api/idp/create
@@ -566,6 +567,29 @@ async function createWithItems(req, res, next) {
     });
 
     res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DEV DEBUG: trigger IDP creation emails for a given IDP id (admin only, NOT for production)
+async function debugSendIDPEmail(req, res, next) {
+  try {
+    if (process.env.NODE_ENV === 'production') return res.status(403).json({ message: 'Forbidden in production' });
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid IDP id' });
+
+    const idp = await idpService.getById(id);
+    if (!idp || !idp.header) return res.status(404).json({ message: 'IDP not found' });
+
+    const header = idp.header;
+    const employeeId = header.employee_id;
+    const supervisorId = header.supervisor_id || null;
+    const nextReviewerId = header.am_id || header.manager_id || null;
+
+    const emailService = require('../services/email.service');
+    const result = await emailService.sendIDPCreationEmail({ idpId: id, employeeId, supervisorId, nextReviewerId });
+    res.json({ success: !!result });
   } catch (err) {
     next(err);
   }
