@@ -1003,19 +1003,20 @@ async function managerApprove(id, approverId, remarks) {
           const supSubject = `CL #${id} Approved by Manager`;
           const supHtml = `
             <h3 style="color: #0b61ff;">CL Approved by Manager</h3>
-            <p style="color: #0b2b5f;">Hello <strong>${supervisor.name}</strong>,</p>
-            <p style="color: #0b2b5f;">Please be informed that CL <strong>#${id}</strong> for <strong>${employee_name} (${employee_code})</strong> has been approved by Manager <strong>${managerRows[0].name}</strong>.</p>
-            ${remarks ? `<p style="color: #0b2b5f;"><strong>Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
-            <p style="color: #0b2b5f;">No action is required from you at this time.</p>
-            <hr/>
-            <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+              <p style="color: #0b2b5f;">Dear ${supervisor.name},</p>
+              <p style="color: #0b2b5f;">Please be informed that CL <strong>#${id}</strong> for <strong>${employee_name} (${employee_code})</strong> has been approved by Manager <strong>${managerRows[0].name}</strong>.</p>
+              ${remarks ? `<p style="color: #0b2b5f;"><strong>Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
+              <p style="color: #0b2b5f;">No action is required from you at this time.</p>
+              <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
+              <hr/>
+              <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
           `;
 
           const supText = `CL #${id} Approved by Manager\n\n` +
-            `Hello ${supervisor.name},\n\n` +
+            `Dear ${supervisor.name},\n\n` +
             `Please be informed that CL #${id} for ${employee_name} (${employee_code}) has been approved by Manager ${managerRows[0].name}.\n\n` +
             (remarks ? `Remarks: ${remarks}\n\n` : '') +
-            `No action is required from you at this time.`;
+            `No action is required from you at this time.\n\nRegards,\nFutura System`;
 
           await sendEmail({ to: supervisor.email, subject: supSubject, text: supText, html: supHtml })
             .then(r => { if (r) console.log(`[EMAIL] Sent Manager-approval notify CL #${id} to supervisor ${supervisor.email}`); })
@@ -1118,21 +1119,22 @@ async function managerReturn(id, approverId, remarks) {
           const supSubject = `Action Required: CL #${id} Returned by Manager`;
           const supHtml = `
             <h3 style="color: #0b61ff;">CL Returned by Manager</h3>
-            <p style="color: #0b2b5f;">Hello <strong>${supervisor.name}</strong>,</p>
+            <p style="color: #0b2b5f;">Dear ${supervisor.name},</p>
             <p style="color: #0b2b5f;">Please be informed that CL <strong>#${id}</strong> has been returned to you by Manager <strong>${managerRows[0].name}</strong> for revision.</p>
             <p style="color: #0b2b5f;"><strong>Employee:</strong> ${clRows[0]?.employee_name} (${clRows[0]?.employee_code})</p>
             ${remarks ? `<p style="color: #0b2b5f;"><strong>Manager Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
             <p style="color: #0b2b5f;">Please review the remarks, update the form as necessary, and resubmit when ready.</p>
+            <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
             <hr/>
             <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
           `;
 
           const supText = `CL #${id} Returned by Manager\n\n` +
-            `Hello ${supervisor.name},\n\n` +
+            `Dear ${supervisor.name},\n\n` +
             `Please be informed that CL #${id} has been returned to you by Manager ${managerRows[0].name} for revision.\n\n` +
             `Employee: ${clRows[0]?.employee_name} (${clRows[0]?.employee_code})\n\n` +
             (remarks ? `Manager Remarks: ${remarks}\n\n` : '') +
-            `Please review the remarks, update the form as necessary, and resubmit when ready.`;
+            `Please review the remarks, update the form as necessary, and resubmit when ready.\n\nRegards,\nFutura System`;
 
           await sendEmail({ to: supervisor.email, subject: supSubject, text: supText, html: supHtml })
             .then(r => { if (r) console.log(`[EMAIL] Sent Manager-return notify CL #${id} to supervisor ${supervisor.email}`); })
@@ -1613,21 +1615,22 @@ async function employeeApprove(id, approverId, remarks) {
         const supSubject = `CL #${id} Approved by Employee`;
         const supHtml = `
           <h3 style="color: #0b61ff;">CL Approved by Employee</h3>
-          <p style="color: #0b2b5f;">Hello <strong>${supervisor.name}</strong>,</p>
+          <p style="color: #0b2b5f;">Dear ${supervisor.name},</p>
           <p style="color: #0b2b5f;">Please be informed that CL <strong>#${id}</strong> has been approved by the employee and is now pending HR approval.</p>
           <p style="color: #0b2b5f;"><strong>Employee:</strong> ${empRows[0].employee_name} (${empRows[0].employee_code})</p>
           ${remarks ? `<p style="color: #0b2b5f;"><strong>Employee Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
           <p style="color: #0b2b5f;">Please review the submission if needed.</p>
+          <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
           <hr/>
           <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
         `;
 
         const supText = `CL #${id} Approved by Employee\n\n` +
-          `Hello ${supervisor.name},\n\n` +
+          `Dear ${supervisor.name},\n\n` +
           `Please be informed that CL #${id} has been approved by the employee and is now pending HR approval.\n\n` +
           `Employee: ${empRows[0].employee_name} (${empRows[0].employee_code})\n\n` +
           (remarks ? `Employee Remarks: ${remarks}\n\n` : '') +
-          `Please review the submission if needed.`;
+          `Please review the submission if needed.\n\nRegards,\nFutura System`;
 
         await sendEmail({ to: supervisor.email, subject: supSubject, text: supText, html: supHtml })
           .then(r => { if (r) console.log(`[EMAIL] Sent employee-approval notify CL #${id} to supervisor ${supervisor.email}`); })
@@ -1772,19 +1775,20 @@ async function employeeReturn(id, approverId, remarks) {
         const supSubject = `Action Required: CL #${id} Returned by Employee`;
         const supHtml = `
           <h3 style="color: #0b61ff;">CL Returned by Employee</h3>
-          <p style="color: #0b2b5f;">Hello <strong>${supervisor.name}</strong>,</p>
+          <p style="color: #0b2b5f;">Dear ${supervisor.name},</p>
           <p style="color: #0b2b5f;">Please be informed that CL <strong>#${id}</strong> for <strong>${clRows[0].employee_name} (${clRows[0].employee_code})</strong> has been returned by the employee <strong>${actorNameRow.name}</strong>.</p>
           ${remarks ? `<p style="color: #0b2b5f;"><strong>Employee Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
           <p style="color: #0b2b5f;">Please review and make necessary revisions.</p>
+          <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
           <hr/>
           <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
         `;
 
         const supText = `CL #${id} Returned by Employee\n\n` +
-          `Hello ${supervisor.name},\n\n` +
+          `Dear ${supervisor.name},\n\n` +
           `Please be informed that CL #${id} for ${clRows[0].employee_name} (${clRows[0].employee_code}) has been returned by the employee ${actorNameRow.name}.\n\n` +
           (remarks ? `Employee Remarks: ${remarks}\n\n` : '') +
-          `Please review and make necessary revisions.`;
+          `Please review and make necessary revisions.\n\nRegards,\nFutura System`;
 
         await sendEmail({ to: supervisor.email, subject: supSubject, text: supText, html: supHtml })
           .then(r => { if (r) console.log(`[EMAIL] Sent employee-return notify CL #${id} to supervisor ${supervisor.email}`); })
@@ -1982,6 +1986,35 @@ async function hrReturn(id, approverId, remarks) {
         message: `CL #${id} was returned by HR ${hrRows[0].name}. Reason: ${remarks || 'No reason provided'}`,
         module: 'CL'
       }).catch(err => console.error('Failed to create notification:', err));
+
+      // Also send a formal email to the supervisor
+      try {
+        const supervisor = await getSupervisorEmail(id);
+        if (supervisor && supervisor.email) {
+          const supSubject = `Action Required: CL #${id} Returned by HR`;
+          const supHtml = `
+            <h3 style="color: #0b61ff;">CL Returned by HR</h3>
+            <p style="color: #0b2b5f;">Dear ${supervisor.name || 'Supervisor'},</p>
+            <p style="color: #0b2b5f;">Please be informed that CL <strong>#${id}</strong> for <strong>${clRows[0]?.employee_name} (${clRows[0]?.employee_code})</strong> has been returned to you by HR <strong>${hrRows[0].name}</strong> for revision.</p>
+            ${remarks ? `<p style="color: #0b2b5f;"><strong>HR Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
+            <p style="color: #0b2b5f;">Kindly review the remarks, update the form as necessary, and resubmit when ready.</p>
+            <hr/>
+            <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+          `;
+
+          const supText = `CL #${id} Returned by HR\n\n` +
+            `Dear ${supervisor.name || 'Supervisor'},\n\n` +
+            `Please be informed that CL #${id} for ${clRows[0]?.employee_name} (${clRows[0]?.employee_code}) has been returned to you by HR ${hrRows[0].name} for revision.\n\n` +
+            (remarks ? `HR Remarks: ${remarks}\n\n` : '') +
+            `Kindly review the remarks, update the form as necessary, and resubmit when ready.`;
+
+          await sendEmail({ to: supervisor.email, subject: supSubject, text: supText, html: supHtml })
+            .then(r => { if (r) console.log(`[EMAIL] Sent HR-return notify CL #${id} to supervisor ${supervisor.email}`); })
+            .catch(e => console.error('[EMAIL] Supervisor notify error (hrReturn):', e.message));
+        }
+      } catch (e) {
+        console.error('[CL SERVICE] Failed to email supervisor after HR return:', e.message);
+      }
     }
 
     // Log recent action

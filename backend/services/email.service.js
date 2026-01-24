@@ -190,81 +190,84 @@ async function sendCLNotificationEmail({
         subject = `Your Competency Leveling Form Has Been Created - CL #${clId}`;
         htmlContent = `
               <h3 style="color: #0b61ff;">Competency Leveling Form Created</h3>
-              <p style="color: #0b2b5f;">Hello <strong>${employee.name}</strong>,</p>
+              <p style="color: #0b2b5f;">Dear ${employee.name},</p>
               <p style="color: #0b2b5f;">Your Competency Leveling form <strong>#${clId}</strong> has been successfully created by your supervisor.</p>
               <p style="color: #0b2b5f;"><strong>Employee:</strong> ${employeeInfo}</p>
               <p style="color: #0b2b5f;"><strong>Created by:</strong> ${actorName} (${actorRole})</p>
               <p style="color: #0b2b5f;"><strong>Date & Time:</strong> ${currentDateTime}</p>
               <p style="color: #0b2b5f;"><strong>Status:</strong> The form is now under review process.</p>
               <p style="color: #0b2b5f;">You will receive notifications as your form progresses through the approval workflow.</p>
+              <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
               <hr/>
               <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
             `;
         textContent =
           `Your Competency Leveling Form Has Been Created\n\n` +
-          `Hello ${employee.name},\n\n` +
+          `Dear ${employee.name},\n\n` +
           `Your Competency Leveling form #${clId} has been successfully created by your supervisor.\n\n` +
           `Created by: ${actorName} (${actorRole})\n` +
           `Date & Time: ${currentDateTime}\n` +
           `Status: The form is now under review process.\n\n` +
-          `You will receive notifications as your form progresses through the approval workflow.`;
+          `You will receive notifications as your form progresses through the approval workflow.\n\nRegards,\nFutura System`;
         break;
 
       case 'RESUBMITTED':
         subject = `Your CL Form #${clId} Has Been Resubmitted for Review`;
         htmlContent = `
           <h3 style="color: #0b61ff;">CL Form Resubmitted</h3>
-          <p style="color: #0b2b5f;">Hello <strong>${employee.name}</strong>,</p>
+          <p style="color: #0b2b5f;">Dear ${employee.name},</p>
           <p style="color: #0b2b5f;">Your CL form <strong>#${clId}</strong> has been revised and resubmitted by your supervisor.</p>
           <p style="color: #0b2b5f;"><strong>Resubmitted by:</strong> ${actorName} (${actorRole})</p>
           <p style="color: #0b2b5f;"><strong>Date & Time:</strong> ${currentDateTime}</p>
           ${remarks ? `<p style="color: #0b2b5f;"><strong>Supervisor Notes:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
           <p style="color: #0b2b5f;"><strong>Status:</strong> The form is now back in the approval workflow.</p>
           <p style="color: #0b2b5f;">You will receive notifications as your form progresses through the approval process.</p>
+          <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
           <hr/>
           <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
         `;
         textContent =
           `Your CL Form Has Been Resubmitted for Review\n\n` +
-          `Hello ${employee.name},\n\n` +
+          `Dear ${employee.name},\n\n` +
           `Your CL form #${clId} has been revised and resubmitted by your supervisor.\n\n` +
           `Resubmitted by: ${actorName} (${actorRole})\n` +
           `Date & Time: ${currentDateTime}\n` +
           (remarks ? `Supervisor Notes: ${remarks}\n\n` : '\n') +
           `Status: The form is now back in the approval workflow.\n\n` +
-          `You will receive notifications as your form progresses through the approval process.`;
+          `You will receive notifications as your form progresses through the approval process.\n\nRegards,\nFutura System`;
         break;
 
       case 'RETURNED':
         subject = `Your CL Form #${clId} Has Been Returned for Revision`;
         htmlContent = `
           <h3 style="color: #0b61ff;">CL Form Returned for Revision</h3>
-          <p style="color: #0b2b5f;">Hello <strong>${employee.name}</strong>,</p>
+          <p style="color: #0b2b5f;">Dear ${employee.name},</p>
           <p style="color: #0b2b5f;">Your CL form <strong>#${clId}</strong> has been returned for revision.</p>
           <p style="color: #0b2b5f;"><strong>Employee:</strong> ${employeeInfo}</p>
           <p style="color: #0b2b5f;"><strong>Returned by:</strong> ${actorName} (${actorRole})</p>
           <p style="color: #0b2b5f;"><strong>Date & Time:</strong> ${currentDateTime}</p>
           ${remarks ? `<p style="color: #0b2b5f;"><strong>Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
           <p style="color: #0b2b5f;">Your supervisor will revise the form and resubmit it.</p>
+          <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
           <hr/>
           <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
         `;
         textContent =
           `Your CL Form Has Been Returned for Revision\n\n` +
-          `Hello ${employee.name},\n\n` +
+          `Dear ${employee.name},\n\n` +
           `Your CL form #${clId} has been returned for revision.\n\n` +
           `Employee: ${employeeInfo}\n` +
           `Returned by: ${actorName} (${actorRole})\n` +
           `Date & Time: ${currentDateTime}\n` +
           (remarks ? `Remarks: ${remarks}\n\n` : '\n') +
-          `Your supervisor will revise the form and resubmit it.`;
+          `Your supervisor will revise the form and resubmit it.\n\nRegards,\nFutura System`;
         break;
 
       case 'APPROVED':
         subject = `Your CL Form #${clId} Has Been Approved by ${actorRole}`;
         htmlContent = `
           <h3 style="color: #0b61ff;">CL Form Approved</h3>
-          <p style="color: #0b2b5f;">Hello <strong>${employee.name}</strong>,</p>
+          <p style="color: #0b2b5f;">Dear ${employee.name},</p>
           <p style="color: #0b2b5f;">Good news! Your CL form <strong>#${clId}</strong> has been approved by ${actorRole}.</p>
           <p style="color: #0b2b5f;"><strong>Approved by:</strong> ${actorName} (${actorRole})</p>
           <p style="color: #0b2b5f;"><strong>Date & Time:</strong> ${currentDateTime}</p>
@@ -274,46 +277,48 @@ async function sendCLNotificationEmail({
               ? `<p style="color: #0b2b5f;"><strong>⚠️ Action Required:</strong> Your form now requires <strong>your review and approval</strong>. Please log in to the system to review and approve your CL form.</p>`
               : `<p style="color: #0b2b5f;"><strong>Status:</strong> Your form is now proceeding to the next approval stage.</p>`
           }
+          <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
           <hr/>
           <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
         `;
         textContent =
           `Your CL Form Has Been Approved by ${actorRole}\n\n` +
-          `Hello ${employee.name},\n\n` +
+          `Dear ${employee.name},\n\n` +
           `Good news! Your CL form #${clId} has been approved by ${actorRole}.\n\n` +
           `Approved by: ${actorName} (${actorRole})\n` +
           `Date & Time: ${currentDateTime}\n` +
           (remarks ? `Remarks: ${remarks}\n\n` : '\n') +
           (requiresEmployeeAction
             ? `Action Required: Your form now requires your review and approval. Please log in to the system to review and approve your CL form.`
-            : `Status: Your form is now proceeding to the next approval stage.`);
+            : `Status: Your form is now proceeding to the next approval stage.`) + `\n\nRegards,\nFutura System`;
         break;
 
       case 'FINAL_APPROVED':
         subject = `Congratulations! CL #${clId} Has Been Fully Approved and Locked`;
         htmlContent = `
           <h3 style="color: #0b61ff;">CL Form Final Approval</h3>
-          <p style="color: #0b2b5f;">Hello <strong>${employee.name}</strong>,</p>
-          <p style="color: #0b2b5f;">Congratulations! Your CL form <strong>#${clId}</strong> has been fully approved by HR and is now <strong>locked</strong>.</p>
+          <p style="color: #0b2b5f;">Dear ${employee.name},</p>
+          <p style="color: #0b2b5f;">Congratulations. Your CL form <strong>#${clId}</strong> has been fully approved by HR and is now <strong>locked</strong>.</p>
           <p style="color: #0b2b5f;"><strong>Employee:</strong> ${employeeInfo}</p>
           <p style="color: #0b2b5f;"><strong>Approved by:</strong> ${actorName} (${actorRole})</p>
           <p style="color: #0b2b5f;"><strong>Date & Time:</strong> ${currentDateTime}</p>
           ${remarks ? `<p style="color: #0b2b5f;"><strong>Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
           <p style="color: #0b2b5f;"><strong>✅ Status:</strong> The competency assessment is now finalized and locked. No further changes can be made.</p>
           <p style="color: #0b2b5f;"><strong>📋 Next Steps:</strong> You can now proceed to create the Individual Development Plan (IDP).</p>
+          <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
           <hr/>
           <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
         `;
         textContent =
           `Congratulations! CL Form Has Been Fully Approved and Locked\n\n` +
-          `Hello ${employee.name},\n\n` +
+          `Dear ${employee.name},\n\n` +
           `Your CL form #${clId} has been fully approved by HR and is now locked.\n\n` +
           `Employee: ${employeeInfo}\n` +
           `Approved by: ${actorName} (${actorRole})\n` +
           `Date & Time: ${currentDateTime}\n` +
           (remarks ? `Remarks: ${remarks}\n\n` : '\n') +
           `Status: The competency assessment is now finalized and locked. No further changes can be made.\n` +
-          `Next Steps: You can now proceed to create the Individual Development Plan (IDP).`;
+          `Next Steps: You can now proceed to create the Individual Development Plan (IDP).\n\nRegards,\nFutura System`;
         break;
 
       default:
@@ -382,28 +387,81 @@ async function sendCLNotificationEmail({
       });
     }
 
+      // For RESUBMITTED, also notify all HR users
+      if (actionType === 'RESUBMITTED') {
+        try {
+          const hrNotifyUsers = await getHREmails();
+          if (hrNotifyUsers.length > 0) console.log(`[EMAIL] Notifying ${hrNotifyUsers.length} HR user(s) about resubmission`);
+
+          const hrSubject = `Notification: CL Form Resubmitted - CL #${clId}`;
+
+          hrNotifyUsers.forEach((hr) => {
+            const recipientName = hr.name || 'HR Team';
+
+            const hrHtml = `
+              <h3 style="color: #0b61ff;">Notification: CL Form Resubmitted</h3>
+              <p style="color: #0b2b5f;">Dear ${recipientName},</p>
+              <p style="color: #0b2b5f;">This is to inform you that Competency Leveling (CL) form <strong>#${clId}</strong> for ${employeeInfo} has been resubmitted and is now back in the approval workflow.</p>
+              <table style="width:100%; border-collapse: collapse; color: #0b2b5f;">
+                <tr><td style="padding:4px 8px; font-weight:600;">CL Number:</td><td style="padding:4px 8px;">#${clId}</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:600;">Employee:</td><td style="padding:4px 8px;">${employeeInfo}</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:600;">Resubmitted By:</td><td style="padding:4px 8px;">${actorName} (${actorRole})</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:600;">Date & Time:</td><td style="padding:4px 8px;">${currentDateTime}</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:600;">Status:</td><td style="padding:4px 8px;">In approval workflow</td></tr>
+              </table>
+              ${remarks ? `<p style="color: #0b2b5f;"><strong>Supervisor Notes:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
+              <p style="color: #0b2b5f;">Please review the form at your earliest convenience and take any necessary action according to HR procedures.</p>
+              <hr/>
+              <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
+            `;
+
+            const hrText =
+              `Notification: CL Form Resubmitted\n\n` +
+              `Dear ${recipientName},\n\n` +
+              `This is to inform you that Competency Leveling (CL) form (#${clId}) for ${employeeInfo} has been resubmitted by ${actorName} (${actorRole}) on ${currentDateTime}.\n\n` +
+              `Status: In approval workflow.\n\n` +
+              `Please review the form at your earliest convenience and take any necessary action according to HR procedures.\n\nRegards,\nFutura System`;
+
+            sendEmail({
+              to: hr.email,
+              subject: hrSubject,
+              text: hrText,
+              html: hrHtml,
+            })
+              .then((r) => {
+                if (r) console.log(`[EMAIL] Sent HR resubmit notify CL #${clId} to ${hr.email}`);
+                else console.log(`[EMAIL] Failed HR resubmit notify CL #${clId} to ${hr.email}`);
+              })
+              .catch((e) => console.log(`[EMAIL] HR resubmit notify error ${hr.email}:`, e.message));
+          });
+        } catch (e) {
+          console.log('[EMAIL] Error fetching HR emails for resubmission notification:', e.message);
+        }
+      }
+
     // For RETURNED, also send to supervisor
     if (actionType === 'RETURNED' && supervisor) {
       const supervisorSubject = `CL #${clId} for ${employeeInfo} Has Been Returned`;
       const supervisorHtmlContent = `
         <h3>CL Form Returned for Revision</h3>
-        <p>Hello <strong>${supervisor.name}</strong>,</p>
+        <p style="color: #0b2b5f;">Dear ${supervisor.name},</p>
         <p>The CL form <strong>#${clId}</strong> for <strong>${employeeInfo}</strong> has been returned for revision.</p>
         <p><strong>Returned by:</strong> ${actorName} (${actorRole})</p>
         <p><strong>Date & Time:</strong> ${currentDateTime}</p>
         ${remarks ? `<p><strong>Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
         <p><strong>⚠️ Action Required:</strong> Please review the remarks and make necessary revisions to the form.</p>
+        <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
         <hr/>
         <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
       `;
       const supervisorTextContent =
         `CL Form Returned for Revision\n\n` +
-        `Hello ${supervisor.name},\n\n` +
+        `Dear ${supervisor.name},\n\n` +
         `The CL form #${clId} for ${employeeInfo} has been returned for revision.\n\n` +
         `Returned by: ${actorName} (${actorRole})\n` +
         `Date & Time: ${currentDateTime}\n` +
         (remarks ? `Remarks: ${remarks}\n\n` : '\n') +
-        `Action Required: Please review the remarks and make necessary revisions to the form.`;
+        `Action Required: Please review the remarks and make necessary revisions to the form.\n\nRegards,\nFutura System`;
 
       await sendEmail({
         to: supervisor.email,
@@ -418,25 +476,26 @@ async function sendCLNotificationEmail({
       const supervisorSubject = `CL #${clId} for ${employeeInfo} Has Been Approved and Locked`;
       const supervisorHtmlContent = `
         <h3>CL Form Final Approval - Supervisor Notice</h3>
-        <p>Hello <strong>${supervisor.name}</strong>,</p>
+        <p>Dear ${supervisor.name},</p>
         <p>The CL form <strong>#${clId}</strong> for <strong>${employeeInfo}</strong> that you submitted has been fully approved by HR and is now <strong>locked</strong>.</p>
         <p><strong>Approved by:</strong> ${actorName} (${actorRole})</p>
         <p><strong>Date & Time:</strong> ${currentDateTime}</p>
         ${remarks ? `<p><strong>Remarks:</strong><br/>${remarks.replace(/\n/g, '<br/>')}</p>` : ''}
         <p><strong>✅ Status:</strong> The competency assessment is now finalized and locked. No further changes can be made.</p>
         <p><strong>📋 Next Steps:</strong> The employee can now proceed to create their Individual Development Plan (IDP).</p>
+        <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
         <hr/>
         <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura CL System.</p>
       `;
       const supervisorTextContent =
         `CL Form Final Approval - Supervisor Notice\n\n` +
-        `Hello ${supervisor.name},\n\n` +
+        `Dear ${supervisor.name},\n\n` +
         `The CL form #${clId} for ${employeeInfo} that you submitted has been fully approved by HR and is now locked.\n\n` +
         `Approved by: ${actorName} (${actorRole})\n` +
         `Date & Time: ${currentDateTime}\n` +
         (remarks ? `Remarks: ${remarks}\n\n` : '\n') +
         `Status: Finalized and locked. No further changes can be made.\n` +
-        `Next Steps: The employee can now proceed to create their Individual Development Plan (IDP).`;
+        `Next Steps: The employee can now proceed to create their Individual Development Plan (IDP).\n\nRegards,\nFutura System`;
 
       await sendEmail({
         to: supervisor.email,
@@ -477,7 +536,7 @@ async function sendWelcomeEmail({
 
     const htmlContent = `
       <h2 style="color: #0b61ff; text-align: center;">Welcome to Futura!</h2>
-      <p style="color: #0b2b5f;">Hello <strong>${name}</strong>,</p>
+      <p style="color: #0b2b5f;">Dear ${name},</p>
       <p style="color: #0b2b5f;">Your employee account has been successfully created by HR. Below are your account details and login credentials:</p>
 
       <div style="background-color: #ffffff; border: 1px solid #0b61ff; border-radius: 8px; padding: 20px; margin: 20px 0;">
@@ -514,7 +573,7 @@ async function sendWelcomeEmail({
       </div>
 
       <p style="color: #0b2b5f;">If you have any questions or need assistance, please contact the HR department or your supervisor.</p>
-      <p style="color: #0b2b5f;">Welcome to the team!</p>
+      <p style="color: #0b2b5f;">Regards,<br/>Futura HR</p>
 
       <hr/>
       <p style="font-size: 12px; color: #0b2b5f;">This is an automated notification from Futura HR System. Please do not reply to this email.</p>
@@ -522,7 +581,7 @@ async function sendWelcomeEmail({
 
     const textContent =
       `Welcome to Futura!\n\n` +
-      `Hello ${name},\n\n` +
+      `Dear ${name},\n\n` +
       `Your employee account has been successfully created by HR. Below are your account details and login credentials:\n\n` +
       `Account Information:\n` +
       `- Employee ID: ${employeeId}\n` +
@@ -544,7 +603,7 @@ async function sendWelcomeEmail({
       `2. Complete your profile information if needed\n` +
       `3. Familiarize yourself with the Competency Leveling (CL) and Individual Development Plan (IDP) systems\n` +
       `4. Contact your supervisor or HR if you need assistance\n\n` +
-      `Welcome to the team!`;
+      `Welcome to the team!\n\nRegards,\nFutura HR`;
 
     const result = await sendEmail({
       to: email,
@@ -576,7 +635,7 @@ async function sendPasswordChangeEmail({ name, email, employeeId }) {
 
     const htmlContent = `
       <h2 style="color: #0b61ff;">Password Changed Successfully</h2>
-      <p style="color: #0b2b5f;">Hello <strong>${name}</strong>,</p>
+      <p style="color: #0b2b5f;">Dear ${name},</p>
       <p style="color: #0b2b5f;">Your password has been successfully changed for your Futura account.</p>
 
       <div style="background-color: #ffffff; border: 1px solid #0b61ff; border-radius: 8px; padding: 20px; margin: 20px 0;">
@@ -599,13 +658,15 @@ async function sendPasswordChangeEmail({ name, email, employeeId }) {
         </ul>
       </div>
 
+      <p style="color: #0b2b5f;">Regards,<br/>Futura System</p>
+
       <hr/>
       <p style="font-size: 12px; color: #0b2b5f;">This is an automated security notification from Futura System. Please do not reply to this email.</p>
     `;
 
     const textContent =
       `Password Changed Successfully - Security Alert\n\n` +
-      `Hello ${name},\n\n` +
+      `Dear ${name},\n\n` +
       `Your password has been successfully changed for your Futura account.\n\n` +
       `Change Details:\n` +
       `- Employee ID: ${employeeId}\n` +
@@ -616,7 +677,7 @@ async function sendPasswordChangeEmail({ name, email, employeeId }) {
       `- If you did NOT make this change, contact HR or IT immediately\n` +
       `- Never share your password with anyone\n` +
       `- Use a strong, unique password\n` +
-      `- Change your password regularly\n`;
+      `- Change your password regularly\n\nRegards,\nFutura System`;
 
     const result = await sendEmail({
       to: email,
