@@ -30,4 +30,10 @@ router.get('/managers/:departmentId', lookupController.getManagersByDepartment);
 // GET /api/lookup/ams/:departmentId
 router.get('/ams/:departmentId', lookupController.getAMsByDepartment);
 
+// GET /api/lookup/review-periods
+router.get('/review-periods', lookupController.getReviewPeriods);
+
+// POST /api/lookup/review-periods (allow only Admin or HR to add centrally)
+router.post('/review-periods', requireRole('Admin', 'HR'), lookupController.createReviewPeriod);
+
 module.exports = router;

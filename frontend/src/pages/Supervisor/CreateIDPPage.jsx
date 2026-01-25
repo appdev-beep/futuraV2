@@ -19,7 +19,7 @@ import {
 function ModalShell({ title, onClose, children, maxWidth = 'max-w-lg' }) {
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} aria-hidden="true" />
+      <div className="absolute inset-0 bg-blue-900/60" onClick={onClose} aria-hidden="true" />
       <div className="relative h-full w-full flex items-center justify-center p-4">
         <div className={`w-full ${maxWidth} bg-white rounded-xl border-0 shadow-2xl overflow-hidden`}>
           <div className="flex items-start justify-between px-5 py-4 border-b border-gray-200">
@@ -75,7 +75,7 @@ function BlackButton({ onClick, disabled, label, className = '' }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center justify-center px-4 py-2 rounded-lg bg-black text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold focus:outline-none focus:ring-2 focus:ring-black/10 ${className}`}
+      className={`inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-800 text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold focus:outline-none focus:ring-2 focus:ring-blue-700/10 ${className}`}
     >
       {label}
     </button>
@@ -289,18 +289,51 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
   function addNewReviewPeriod() {
     const v = (newReviewPeriod || '').toString().trim();
     if (!v) return;
+
+    // Avoid duplicates locally
     if (reviewPeriods.includes(v)) {
       setNewReviewPeriod('');
       setShowAddReview(false);
       setIdpData(prev => ({ ...prev, reviewPeriod: v }));
       return;
     }
-    const next = [...reviewPeriods, v];
-    setReviewPeriods(next);
-    try { localStorage.setItem('reviewPeriods', JSON.stringify(next)); } catch {}
-    setIdpData(prev => ({ ...prev, reviewPeriod: v }));
-    setNewReviewPeriod('');
-    setShowAddReview(false);
+
+    // Try to persist centrally
+    (async () => {
+      try {
+        const created = await apiRequest('/api/lookup/review-periods', { method: 'POST', body: { name: v } });
+        // If API returns created object, refresh list from server
+        try {
+          const list = await apiRequest('/api/lookup/review-periods');
+          if (Array.isArray(list) && list.length) {
+            setReviewPeriods(list);
+            setIdpData(prev => ({ ...prev, reviewPeriod: v }));
+            try { localStorage.setItem('reviewPeriods', JSON.stringify(list)); } catch {}
+          } else {
+            // fallback
+            const next = [...reviewPeriods, v];
+            setReviewPeriods(next);
+            setIdpData(prev => ({ ...prev, reviewPeriod: v }));
+            try { localStorage.setItem('reviewPeriods', JSON.stringify(next)); } catch {}
+          }
+        } catch (e) {
+          // server created but fetch failed — apply locally
+          const next = [...reviewPeriods, v];
+          setReviewPeriods(next);
+          setIdpData(prev => ({ ...prev, reviewPeriod: v }));
+          try { localStorage.setItem('reviewPeriods', JSON.stringify(next)); } catch {}
+        }
+      } catch (err) {
+        // If API call fails (no permission or offline), persist locally
+        const next = [...reviewPeriods, v];
+        setReviewPeriods(next);
+        setIdpData(prev => ({ ...prev, reviewPeriod: v }));
+        try { localStorage.setItem('reviewPeriods', JSON.stringify(next)); } catch {}
+      } finally {
+        setNewReviewPeriod('');
+        setShowAddReview(false);
+      }
+    })();
   }
 
   function normalizeDate(value) {
@@ -1437,7 +1470,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           <p className="text-red-600 font-semibold">Employee not found</p>
           <button
             onClick={() => navigate('/supervisor')}
-            className="mt-4 inline-flex items-center justify-center px-4 py-2 rounded-md bg-black text-white focus:outline-none focus:ring-2 focus:ring-black/10"
+            className="mt-4 inline-flex items-center justify-center px-4 py-2 rounded-md bg-blue-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-700/10"
           >
             Back to Dashboard
           </button>
@@ -1449,7 +1482,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
   return (
     <div className="min-h-screen bg-gray-50 text-black">
       {/* Header */}
-      <div className="border-b bg-black sticky top-0 z-40">
+      <div className="border-b bg-blue-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-start sm:items-center gap-3 min-w-0">
@@ -1503,7 +1536,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         {/* Scoring Guide Modal */}
         {showScoringGuide && (
           <div className="fixed inset-0 z-50">
-            <div className="absolute inset-0 bg-black/60" onClick={() => setShowScoringGuide(false)} aria-hidden="true" />
+            <div className="absolute inset-0 bg-blue-900/60" onClick={() => setShowScoringGuide(false)} aria-hidden="true" />
             <div className="relative h-full w-full flex items-center justify-center p-4">
               <div className="w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl bg-white rounded-xl border border-gray-100">
                 <div className="flex justify-between items-center px-5 py-4 border-b border-gray-200">
@@ -1562,7 +1595,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                   const el = document.getElementById(`item-${first.itemIndex}`);
                   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }}
-                className="px-4 py-2 rounded-md bg-black text-white"
+                className="px-4 py-2 rounded-md bg-blue-800 text-white"
               >
                 Go to first missing
               </button>
@@ -1577,7 +1610,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowValidationErrorModal(false)}
-                className="px-4 py-2 rounded-md bg-black text-white font-semibold"
+                className="px-4 py-2 rounded-md bg-blue-800 text-white font-semibold"
               >
                 Close
               </button>
@@ -1601,7 +1634,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               <button
                 onClick={confirmAndSubmitIDP}
                 disabled={saving}
-                className="px-4 py-2 rounded-md bg-black text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+                className="px-4 py-2 rounded-md bg-blue-800 text-white disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
               >
                 {saving ? 'Submitting...' : 'Confirm & Submit'}
               </button>
@@ -1634,7 +1667,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                   const el = document.getElementById(`item-${first.itemIndex}`);
                   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }}
-                className="px-4 py-2 rounded-md bg-black text-white"
+                className="px-4 py-2 rounded-md bg-blue-800 text-white"
               >
                 Go to first missing
               </button>
@@ -1851,7 +1884,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 
                 <button
                   onClick={() => setShowScoringGuide(true)}
-                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white focus:outline-none focus:ring-2 focus:ring-black/10"
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-700/10"
                 >
                   <InformationCircleIcon className="h-5 w-5" />
                   View Scoring Guide
@@ -1945,7 +1978,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               
               <button
                 onClick={() => setShowScoringGuide(true)}
-                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white focus:outline-none focus:ring-2 focus:ring-black/10"
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-700/10"
               >
                 <InformationCircleIcon className="h-5 w-5" />
                 View Scoring Guide
@@ -1965,7 +1998,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               </div>
               <button
                 onClick={() => setShowScoringGuide(true)}
-                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black text-white focus:outline-none focus:ring-2 focus:ring-black/10"
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-700/10"
               >
                 <InformationCircleIcon className="h-5 w-5" />
                 View Scoring Guide
@@ -2057,6 +2090,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 {idpData.items.map((item, itemIndex) => {
                   const activity = (item.developmentActivities || [])[0];
                   const chip = areaColor(item.developmentArea);
+                  const nameLower = String(item.competencyName || item.name || '').toLowerCase();
                   const isExpOrExposure = !!activity && ['experience', 'exposure'].includes(String(activity.type || '').toLowerCase());
                   const competencyStatus = getCompetencyCompletionStatus(item);
                   
@@ -2097,26 +2131,24 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                       className={`rounded-xl ${viewOnly ? 'border-0 shadow-lg' : 'border-2 border-gradient-to-r from-blue-200 to-purple-200 shadow-lg transition-all duration-300'} bg-gradient-to-br from-gray-50 to-white overflow-hidden transform transition-transform duration-200`}
                     >
                       {/* Card header */}
-                      <div className={`px-4 py-4 bg-gradient-to-r from-blue-50 via-white to-purple-50 ${viewOnly ? 'border-0' : 'border-b-2 border-gray-200'}`}>
+                      <div className={`px-4 py-4 bg-blue-800 text-white ${viewOnly ? 'border-0' : 'border-b-2 border-blue-700'}`}>
                         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-base font-semibold text-black">{item.competencyName}</span>
-                              <span
-                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold border ${chip.bg} ${chip.text} ${chip.border}`}
-                              >
-                                <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
+                              <span className="text-base font-semibold text-white">{item.competencyName}</span>
+                              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold bg-white/10 border border-white/20 text-white">
+                                <span className="h-1.5 w-1.5 rounded-full bg-white" />
                                 {item.developmentArea}
                               </span>
                             </div>
-                            <div className="mt-1 text-sm text-gray-600">
-                              Current level <span className="font-semibold text-gray-900">{item.currentLevel}</span> → Target level{' '}
-                              <span className="font-semibold text-gray-900">{item.targetLevel}</span>
+                            <div className="mt-1 text-sm text-white/90">
+                              Current level <span className="font-semibold text-white">{item.currentLevel}</span> → Target level{' '}
+                              <span className="font-semibold text-white">{item.targetLevel}</span>
                             </div>
                           </div>
 
                           <div className="flex items-center gap-3">
-                            <span className="text-sm font-bold text-gray-700 px-3 py-2 rounded-lg bg-gray-50 border border-gray-100">
+                            <span className="px-3 py-2 rounded-lg font-bold text-sm text-white bg-white/10 border border-white/20">
                               {totalActivities} {totalActivities === 1 ? 'Activity' : 'Activities'}
                             </span>
                             
@@ -2151,16 +2183,14 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                 </svg>
                                 {/* Center percentage text */}
                                 <div className="absolute inset-0 flex items-center justify-center">
-                                  <span className={`text-xs font-bold ${
-                                    totalActivities === 0 ? 'text-gray-400' :
-                                    overallCompletion === 100 ? 'text-emerald-600' :
-                                    overallCompletion > 0 ? 'text-blue-600' : 'text-gray-500'
-                                  }`}>
+                                  <span className="text-xs font-bold text-white">
                                     {totalActivities === 0 ? '0%' : `${overallCompletion}%`}
                                   </span>
                                 </div>
                               </div>
-                              <StatusBadge status={competencyStatus} />
+                              <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full text-sm font-bold bg-white/10 border border-white/20 text-white">
+                                {competencyStatus}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -2553,16 +2583,16 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                               <table className="w-full border-collapse">
                                 <thead>
                                   {item.extraTables.map((t, ti) => (
-                                    <tr key={`${ti}-quarter-header`} className="bg-gray-700 text-white">
+                                    <tr key={`${ti}-quarter-header`} className="bg-blue-800 text-white">
                                       <td colSpan="7" className="border border-gray-300 px-4 py-3">
                                         <span className="text-base font-bold">{t.quarter || `Q${ti + 1}`}</span>
                                       </td>
                                     </tr>
                                   ))[0] || null}
-                                  <tr className="bg-gray-800 text-white">
+                                  <tr className="bg-blue-900 text-white">
                                     <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Activity</th>
                                     <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Target Date</th>
-                                    <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Completion Date</th>
+                                    <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Actual Completion Date</th>
                                     <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Status</th>
                                     <th className="border border-gray-300 px-4 py-2 text-left text-sm font-bold">Score</th>
                                     <th className="border border-gray-300 px-4 py-2 text-center text-sm font-bold">Proof</th>
@@ -2573,7 +2603,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   {item.extraTables.map((t, ti) => (
                                     <React.Fragment key={`${itemIndex}-table-${ti}`}>
                                       {ti > 0 && (
-                                        <tr key={`${ti}-row0`} className="bg-gray-700 text-white">
+                                        <tr key={`${ti}-row0`} className="bg-blue-800 text-white">
                                           <td colSpan="7" className="border border-gray-300 px-4 py-3">
                                             <span className="text-base font-bold">{t.quarter || `Q${ti + 1}`}</span>
                                           </td>
@@ -2802,7 +2832,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                   });
                                                   updateIdpData(`items.${itemIndex}.extraTables.${ti}.areasOfExposure`, [...(t.areasOfExposure || [])]);
                                                 }}
-                                                className="text-xs bg-black text-white px-2 py-1 rounded"
+                                                className="text-xs bg-blue-800 text-white px-2 py-1 rounded"
                                               >
                                                 + Add Area
                                               </button>

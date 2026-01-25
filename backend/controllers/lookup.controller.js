@@ -83,3 +83,37 @@ module.exports = {
   getManagersByDepartment,
   getAMsByDepartment
 };
+
+// GET /api/lookup/review-periods
+async function getReviewPeriods(req, res, next) {
+  try {
+    const rows = await lookupService.getReviewPeriods();
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/lookup/review-periods
+async function createReviewPeriod(req, res, next) {
+  try {
+    const { name } = req.body || {};
+    if (!name || !String(name).trim()) return res.status(400).json({ message: 'Name is required' });
+    const created = await lookupService.addReviewPeriod(String(name).trim());
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  getDepartments,
+  getPositions,
+  getCompetencies,
+  getAppraisalCycles,
+  getSupervisorsByDepartment,
+  getManagersByDepartment,
+  getAMsByDepartment,
+  getReviewPeriods,
+  createReviewPeriod
+};

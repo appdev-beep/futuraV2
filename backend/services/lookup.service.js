@@ -171,6 +171,34 @@ async function getAMsByDepartment(departmentId) {
   return rows;
 }
 
+/**
+ * Get review periods used for IDP reviewPeriod dropdown
+ * Returns: [{ id, name }]
+ */
+async function getReviewPeriods() {
+  const [rows] = await db.query(
+    `
+    SELECT id, name
+    FROM review_periods
+    WHERE is_active = 1
+    ORDER BY id ASC
+    `
+  );
+  // Return array of names for backward compatibility with frontend
+  return rows.map(r => r.name);
+}
+
+/**
+ * Add a new review period
+ */
+async function addReviewPeriod(name) {
+  const [result] = await db.query(
+    `INSERT INTO review_periods (name, is_active, created_at) VALUES (?, 1, NOW())`,
+    [name]
+  );
+  return { id: result.insertId, name };
+}
+
 module.exports = {
   getDepartments,
   getPositions,
