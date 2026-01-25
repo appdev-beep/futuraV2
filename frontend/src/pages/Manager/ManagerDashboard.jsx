@@ -1,5 +1,5 @@
 // src/pages/Manager/ManagerDashboard.jsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, Fragment } from 'react';
 import { apiRequest } from '../../api/client';
 import { displayStatus } from '../../utils/statusHelper';
 import {
@@ -23,6 +23,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ExclamationTriangleIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import {
   COMPLETION_STATUS_OPTIONS,
@@ -129,6 +130,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [departmentStatusFilter, setDepartmentStatusFilter] = useState('ALL'); // Filter for department tracking
   const [employees, setEmployees] = useState([]); // All employees in department
   const [supervisors, setSupervisors] = useState([]); // All supervisors in department
+  const [selectedEmployee, setSelectedEmployee] = useState('ALL');
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+  // Date search state (restore from Supervisor dashboard)
+  const [dateSearch, setDateSearch] = useState({ startDate: '', endDate: '', enabled: false });
+  const [showDateSearch, setShowDateSearch] = useState(false);
 
   const [expandedSupervisors, setExpandedSupervisors] = useState({}); // Track which supervisors are expanded
   const [selectedSupervisorId, setSelectedSupervisorId] = useState(null); // Selected supervisor to view employees
@@ -147,6 +153,9 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   });
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  // Export modal/state for CSV export (used by header Export CSV)
+  const [exportModal, setExportModal] = useState({ open: false, loading: false, startDate: '', endDate: '', module: 'CL', selectedStatus: 'ALL', employee: 'ALL' });
 
   const [showFullNotifications, setShowFullNotifications] = useState(false);
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
@@ -322,23 +331,46 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         setAllCL(clAll || []);
         setDepartmentCLs(deptCLs || []);
 
-        // Fetch all users and filter by department
-        const allUsers = await apiRequest('/api/users');
+        // Fetch users and filter by assignment to avoid calling non-existent assigned endpoints
+        let deptEmployees = [];
+        try {
+          const allUsers = await apiRequest('/api/users');
+          // Get supervisors in the department
+          const deptSupervisors = (allUsers || []).filter(
+            u => u.department_id === user.department_id && u.role === 'Supervisor'
+          );
+          setSupervisors(deptSupervisors);
 
-        // Get supervisors in the department
-        const deptSupervisors = (allUsers || []).filter(
-          u => u.department_id === user.department_id && u.role === 'Supervisor'
-        );
-        setSupervisors(deptSupervisors);
+          // For AM/Manager dashboards, prefer users explicitly assigned to the current AM/Manager
+          if (isAMDashboard) {
+            deptEmployees = (allUsers || []).filter(u => String(u.am_id) === String(user.id));
+            if (!deptEmployees || deptEmployees.length === 0) {
+              deptEmployees = (allUsers || []).filter(
+                u => u.department_id === user.department_id && u.role === 'Employee'
+              );
+            }
+          } else {
+            deptEmployees = (allUsers || []).filter(u => String(u.manager_id) === String(user.id));
+            if (!deptEmployees || deptEmployees.length === 0) {
+              deptEmployees = (allUsers || []).filter(
+                u => u.department_id === user.department_id && u.role === 'Employee'
+              );
+            }
+          }
+        } catch (err) {
+          deptEmployees = [];
+        }
 
-        // Get employees in the department
-        const deptEmployees = (allUsers || []).filter(
-          u => u.department_id === user.department_id && u.role === 'Employee'
-        );
+        // Ensure deptEmployees only contains employees assigned to this AM/Manager
+        if (isAMDashboard) {
+          deptEmployees = (deptEmployees || []).filter(u => String(u.am_id) === String(user.id));
+        } else {
+          deptEmployees = (deptEmployees || []).filter(u => String(u.manager_id) === String(user.id));
+        }
 
-        // Enrich with competency data
+        // Enrich with competency data (preserve previous enrichment behavior)
         const enriched = await Promise.all(
-          deptEmployees.map(async (emp) => {
+          (deptEmployees || []).map(async (emp) => {
             try {
               const resp = await apiRequest(`/api/cl/employee/${emp.id}/competencies`);
               const competencyCount = (resp?.competencies || []).length;
@@ -361,7 +393,14 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         );
 
         setEmployees(enriched);
-        // Map supervisor IDs to names for CL records so UI shows names instead of raw ids
+        // Ensure we have a user list for mapping supervisor IDs to names
+        let allUsers = [];
+        try {
+          allUsers = await apiRequest('/api/users');
+        } catch (err) {
+          // ignore - mapping will fallback to ids
+          allUsers = [];
+        }
         const userMap = {};
         (allUsers || []).forEach(u => {
           const display = u.name || u.full_name || ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.employee_id || u.id;
@@ -514,6 +553,83 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     window.location.href = `${url}${separator}viewOnly=true`;
   }
 
+  // Date search helpers (copied from Supervisor behavior)
+  function clearDateSearch() {
+    setDateSearch({ startDate: '', endDate: '', enabled: false });
+    setShowDateSearch(false);
+  }
+
+  function applyDateSearch() {
+    if (dateSearch.startDate || dateSearch.endDate) {
+      setDateSearch(prev => ({ ...prev, enabled: true }));
+    }
+  }
+
+  function openExportModal() {
+    const today = new Date().toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setExportModal({ open: true, loading: false, startDate: thirtyDaysAgo, endDate: today, module: 'CL', selectedStatus: 'ALL', employee: selectedEmployee });
+  }
+
+  function closeExportModal() {
+    setExportModal({ open: false, loading: false, startDate: '', endDate: '', module: 'CL', selectedStatus: 'ALL', employee: 'ALL' });
+  }
+
+  async function handleExportCSV() {
+    const { startDate, endDate, module, selectedStatus, employee } = exportModal;
+    if (!startDate || !endDate) {
+      alert('Please select both start and end dates');
+      return;
+    }
+    if (new Date(startDate) > new Date(endDate)) {
+      alert('Start date must be before end date');
+      return;
+    }
+
+    try {
+      setExportModal(prev => ({ ...prev, loading: true }));
+      const queryParams = new URLSearchParams({ startDate, endDate });
+      if (selectedStatus !== 'ALL') queryParams.set('status', selectedStatus);
+      if (employee !== 'ALL') queryParams.set('employee_id', employee);
+
+      // Choose endpoint depending on AM vs Manager
+      const endpointBase = isAMDashboard ? '/api' : '/api';
+      const endpoint = module === 'CL'
+        ? (isAMDashboard ? '/api/cl/am/export' : '/api/cl/manager/export')
+        : (isAMDashboard ? '/api/idp/am/export' : '/api/idp/manager/export');
+
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}${endpoint}?${queryParams}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+
+      if (!response.ok) {
+        let errorMessage = 'Export failed';
+        try { const error = await response.json(); errorMessage = error.message || errorMessage; } catch {}
+        throw new Error(errorMessage);
+      }
+
+      const csvData = await response.text();
+      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const employeeLabel = employee !== 'ALL'
+        ? (employees.find(emp => String(emp.employee_id) === String(employee) || String(emp.employee_code) === String(employee) || String(emp.id) === String(employee))?.name || 'Employee')
+        : 'AllEmployees';
+      a.download = `${module}_Export_${employeeLabel}_${startDate}_${endDate}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      closeExportModal();
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + (error.message || error));
+    } finally {
+      setExportModal(prev => ({ ...prev, loading: false }));
+    }
+  }
+
   async function proceedToNotificationLink(n) {
     setNotificationModalState({ open: false, notification: null });
     
@@ -548,34 +664,69 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     ).length;
   }, [notifications]);
 
-  // Filter CLs by section and supervisor (if selected)
-  const filterBySupervisor = (items) => {
-    if (!selectedSupervisorId) return items;
-    // Filter by supervisor_id field or by employee's supervisor_id
-    return items.filter(item => {
-      if (item.supervisor_id === selectedSupervisorId) return true;
-      // Fallback: check if the employee's supervisor matches
-      const emp = employees.find(e => e.id === item.employee_id);
-      return emp && emp.supervisor_id === selectedSupervisorId;
-    });
+  // Apply selected supervisor / employee / search / date filters to a flat CL list
+  const applyCLFilters = (items) => {
+    let results = items || [];
+    // Filter by supervisor if selected
+    if (selectedSupervisorId) {
+      results = results.filter(item => {
+        if (item.supervisor_id === selectedSupervisorId) return true;
+        const emp = employees.find(e => e.id === item.employee_id);
+        return emp && emp.supervisor_id === selectedSupervisorId;
+      });
+    }
+
+    // Helper to compare item -> employee identity across possible fields
+    const matchesEmployee = (item, val) => {
+      if (!val && val !== 0) return false;
+      const v = String(val).toLowerCase();
+      return (String(item.employee_id || '').toLowerCase() === v)
+        || (String(item.employee_code || '').toLowerCase() === v)
+        || (String(item.employee?.id || '').toLowerCase() === v);
+    };
+
+    // Employee filter: selectedEmployee overrides search
+    if (selectedEmployee && selectedEmployee !== 'ALL') {
+      results = results.filter(item => matchesEmployee(item, selectedEmployee));
+    } else if (employeeSearchTerm && employeeSearchTerm.trim()) {
+      const search = employeeSearchTerm.toLowerCase().trim();
+      const emp = employees.find(emp => ((emp.name || '').toLowerCase().includes(search) || (emp.employee_id || '').toLowerCase().includes(search) || (emp.employee_code || '').toLowerCase().includes(search)));
+      if (emp) {
+        // match by any identifier (id, employee_id, employee_code)
+        const keys = [String(emp.id), String(emp.employee_id || ''), String(emp.employee_code || '')];
+        results = results.filter(item => keys.some(k => matchesEmployee(item, k)));
+      } else {
+        results = results.filter(item => (item.employee_name || '').toLowerCase().includes(search) || String(item.employee_id || '').toLowerCase().includes(search) || String(item.employee_code || '').toLowerCase().includes(search));
+      }
+    }
+
+    // Apply date filtering if enabled
+    if (dateSearch && dateSearch.enabled && (dateSearch.startDate || dateSearch.endDate)) {
+      const startDate = dateSearch.startDate ? new Date(dateSearch.startDate) : null;
+      const endDate = dateSearch.endDate ? new Date(dateSearch.endDate + 'T23:59:59') : null;
+      results = results.filter(item => {
+        const itemDate = new Date(item.created_at || item.submitted_at || item.updated_at || Date.now());
+        if (startDate && itemDate < startDate) return false;
+        if (endDate && itemDate > endDate) return false;
+        return true;
+      });
+    }
+
+    return results;
   };
 
-  const filteredPendingCL = filterBySupervisor(pendingCL);
-  const approvedCLs = filterBySupervisor(allCL.filter(item => item.manager_decision === 'APPROVED'));
+  const filteredPendingCL = applyCLFilters(pendingCL);
+  const approvedCLs = applyCLFilters(allCL.filter(item => item.manager_decision === 'APPROVED'));
   // Only show returned CLs that are still in DRAFT status (not yet resubmitted)
-  const returnedCLs = filterBySupervisor(allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT'));
+  const returnedCLs = applyCLFilters(allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT'));
 
   // Filter department CLs by status and supervisor (if selected)
   const filteredDepartmentCLs = useMemo(() => {
-    let items = departmentCLs;
-    if (selectedSupervisorId) {
-      items = items.filter(item => item.supervisor_id === selectedSupervisorId);
-    }
-    if (departmentStatusFilter === 'ALL') {
-      return items;
-    }
+    // Apply same employee + supervisor + date filters as other CL lists, then filter by department status
+    let items = applyCLFilters(departmentCLs || []);
+    if (departmentStatusFilter === 'ALL') return items;
     return items.filter(item => item.status === departmentStatusFilter);
-  }, [departmentCLs, departmentStatusFilter, selectedSupervisorId]);
+  }, [departmentCLs, departmentStatusFilter, selectedSupervisorId, selectedEmployee, employeeSearchTerm, employees, dateSearch]);
 
   const sectionCounts = useMemo(() => {
     return {
@@ -598,18 +749,19 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     const supervisorSuffix = supervisor ? ` (${supervisor.name})` : '';
     if (activeSection === 'all') return `All Competency Levelings${supervisorSuffix}`;
     if (activeSection === 'idp_all') return `All IDPs${supervisorSuffix}`;
-    if (activeSection === 'idp_pending_manager') return `${isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}${supervisorSuffix}`;
+    if (activeSection === 'idp_pending_am') return `For Approval by AM${supervisorSuffix}`;
+    if (activeSection === 'idp_pending_manager') return `For Approval by Manager${supervisorSuffix}`;
     if (activeSection === 'idp_pending_hr') return `For Approval by HR${supervisorSuffix}`;
     if (activeSection === 'idp_for_completion') return `For Completion${supervisorSuffix}`;
-    if (activeSection === 'idp_approved') return `Manager Approved IDPs${supervisorSuffix}`;
+    if (activeSection === 'idp_approved') return isAMDashboard ? `Assistant Manager Approved IDPs${supervisorSuffix}` : `Manager Approved IDPs${supervisorSuffix}`;
     if (activeSection === 'idp_cycle_completed') return `Cycle Completed IDPs${supervisorSuffix}`;
-    const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
-    if (section) return `${section.label}${supervisorSuffix}`;
-    // Fallback for AM dashboard
+    // AM-specific overrides for CL labels
     if (isAMDashboard) {
       if (activeSection === 'pending') return `For Approval by Assistant Manager${supervisorSuffix}`;
       if (activeSection === 'approved') return `Approved by Assistant Manager${supervisorSuffix}`;
     }
+    const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
+    if (section) return `${section.label}${supervisorSuffix}`;
     return `Competency Levelings${supervisorSuffix}`;
   }, [activeSection, CL_STATUS_SECTIONS, isAMDashboard, selectedSupervisorId, supervisors]);
 
@@ -635,10 +787,13 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   // IDP status mapping - use pending IDPs as source
   const idpByStatus = useMemo(() => {
     return {
-      pending_manager: (pendingIDPs || []).filter(i => i.status === 'PENDING_MANAGER' || i.status === 'PENDING_AM'),
+      pending_am: (pendingIDPs || []).filter(i => i.status === 'PENDING_AM'),
+      pending_manager: (pendingIDPs || []).filter(i => i.status === 'PENDING_MANAGER'),
       pending_hr: (pendingIDPs || []).filter(i => i.status === 'PENDING_HR'),
       for_completion: (pendingIDPs || []).filter(i => i.status === 'FOR_COMPLETION'),
-      // manager-approved (employee pending acknowledgement)
+      // pending employee acknowledgement (manager-approved)
+      pending_employee: (pendingIDPs || []).filter(i => i.status === 'PENDING_EMPLOYEE'),
+      // alias for UI section 'Approved' (manager-approved items pending employee ack)
       approved: (pendingIDPs || []).filter(i => i.status === 'PENDING_EMPLOYEE'),
       // final cycle completed
       cycle_completed: (pendingIDPs || []).filter(i => i.status === 'CYCLE_COMPLETED'),
@@ -647,33 +802,124 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
   // Filter IDPs by selected supervisor
   const filteredIDPsByStatus = useMemo(() => {
-    if (!selectedSupervisorId) {
-      return idpByStatus;
+    const base = Object.keys(idpByStatus).reduce((acc, key) => {
+      acc[key] = (idpByStatus[key] || []).slice();
+      return acc;
+    }, {});
+
+    // Apply supervisor filter if present
+    if (selectedSupervisorId) {
+      for (const k of Object.keys(base)) {
+        base[k] = base[k].filter(i => i.supervisor_id === selectedSupervisorId);
+      }
     }
-    return {
-      pending_manager: idpByStatus.pending_manager.filter(i => i.supervisor_id === selectedSupervisorId),
-      pending_hr: idpByStatus.pending_hr.filter(i => i.supervisor_id === selectedSupervisorId),
-      for_completion: idpByStatus.for_completion.filter(i => i.supervisor_id === selectedSupervisorId),
-      approved: idpByStatus.approved.filter(i => i.supervisor_id === selectedSupervisorId),
-      cycle_completed: idpByStatus.cycle_completed.filter(i => i.supervisor_id === selectedSupervisorId),
+
+    // Apply employee filtering (selectedEmployee or search term)
+    const applyEmployeeFilter = (items) => {
+      let results = items;
+      const matchesEmployee = (item, val) => {
+        if (!val && val !== 0) return false;
+        const v = String(val).toLowerCase();
+        return (String(item.employee_id || '').toLowerCase() === v)
+          || (String(item.employee_code || '').toLowerCase() === v)
+          || (String(item.employee?.id || '').toLowerCase() === v);
+      };
+
+      if (selectedEmployee && selectedEmployee !== 'ALL') {
+        return results.filter(item => matchesEmployee(item, selectedEmployee));
+      }
+      if (employeeSearchTerm && employeeSearchTerm.trim()) {
+        const search = employeeSearchTerm.toLowerCase().trim();
+        const emp = employees.find(emp => ((emp.name || '').toLowerCase().includes(search) || (emp.employee_id || '').toLowerCase().includes(search) || (emp.employee_code || '').toLowerCase().includes(search)));
+        if (emp) {
+          const keys = [String(emp.id), String(emp.employee_id || ''), String(emp.employee_code || '')];
+          return results.filter(item => keys.some(k => matchesEmployee(item, k)));
+        }
+        return results.filter(item => (item.employee_name || '').toLowerCase().includes(search) || String(item.employee_id || '').toLowerCase().includes(search) || String(item.employee_code || '').toLowerCase().includes(search));
+      }
+      return results;
     };
-  }, [idpByStatus, selectedSupervisorId]);
+
+    // Apply date filter to a list of items when dateSearch is enabled
+    const applyDateFilter = (items) => {
+      if (!(dateSearch && dateSearch.enabled && (dateSearch.startDate || dateSearch.endDate))) return items;
+      const startDate = dateSearch.startDate ? new Date(dateSearch.startDate) : null;
+      const endDate = dateSearch.endDate ? new Date(dateSearch.endDate + 'T23:59:59') : null;
+      return (items || []).filter(item => {
+        const itemDate = new Date(item.created_at || item.submitted_at || item.updated_at || Date.now());
+        if (startDate && itemDate < startDate) return false;
+        if (endDate && itemDate > endDate) return false;
+        return true;
+      });
+    };
+
+    return {
+      pending_am: applyDateFilter(applyEmployeeFilter(base.pending_am || [])),
+      pending_manager: applyDateFilter(applyEmployeeFilter(base.pending_manager || [])),
+      pending_hr: applyDateFilter(applyEmployeeFilter(base.pending_hr || [])),
+      for_completion: applyDateFilter(applyEmployeeFilter(base.for_completion || [])),
+      pending_employee: applyDateFilter(applyEmployeeFilter(base.pending_employee || [])),
+      approved: applyDateFilter(applyEmployeeFilter(base.approved || [])),
+      cycle_completed: applyDateFilter(applyEmployeeFilter(base.cycle_completed || [])),
+    };
+  }, [idpByStatus, selectedSupervisorId, selectedEmployee, employeeSearchTerm, employees, dateSearch]);
 
   const idpSectionCounts = useMemo(() => {
     return {
+      pending_am: filteredIDPsByStatus.pending_am.length,
       pending_manager: filteredIDPsByStatus.pending_manager.length,
       pending_hr: filteredIDPsByStatus.pending_hr.length,
       for_completion: filteredIDPsByStatus.for_completion.length,
+      pending_employee: (filteredIDPsByStatus.pending_employee || []).length,
       approved: filteredIDPsByStatus.approved.length,
       cycle_completed: filteredIDPsByStatus.cycle_completed.length,
-      all: Object.values(filteredIDPsByStatus).reduce((sum, arr) => sum + arr.length, 0),
+      all: Object.values(filteredIDPsByStatus).reduce((sum, arr) => sum + (arr ? arr.length : 0), 0),
     };
   }, [filteredIDPsByStatus]);
 
   const filteredPendingIDPs = useMemo(() => {
-    if (!selectedSupervisorId) return pendingIDPs;
-    return pendingIDPs.filter(idp => idp.supervisor_id === selectedSupervisorId);
-  }, [pendingIDPs, selectedSupervisorId]);
+    let results = (pendingIDPs || []).slice();
+
+    if (selectedSupervisorId) {
+      results = results.filter(idp => idp.supervisor_id === selectedSupervisorId);
+    }
+
+    // Employee filter
+    const matchesEmployee = (item, val) => {
+      if (!val && val !== 0) return false;
+      const v = String(val).toLowerCase();
+      return (String(item.employee_id || '').toLowerCase() === v)
+        || (String(item.employee_code || '').toLowerCase() === v)
+        || (String(item.employee?.id || '').toLowerCase() === v);
+    };
+
+    if (selectedEmployee && selectedEmployee !== 'ALL') {
+      results = results.filter(item => matchesEmployee(item, selectedEmployee));
+    } else if (employeeSearchTerm && employeeSearchTerm.trim()) {
+      const search = employeeSearchTerm.toLowerCase().trim();
+      const emp = employees.find(emp => ((emp.name || '').toLowerCase().includes(search) || (emp.employee_id || '').toLowerCase().includes(search) || (emp.employee_code || '').toLowerCase().includes(search)));
+      if (emp) {
+        const keys = [String(emp.id), String(emp.employee_id || ''), String(emp.employee_code || '')];
+        results = results.filter(item => keys.some(k => matchesEmployee(item, k)));
+      } else {
+        results = results.filter(item => (item.employee_name || '').toLowerCase().includes(search) || String(item.employee_id || '').toLowerCase().includes(search) || String(item.employee_code || '').toLowerCase().includes(search));
+      }
+    }
+
+    // Date filter
+    if (dateSearch && dateSearch.enabled && (dateSearch.startDate || dateSearch.endDate)) {
+      const startDate = dateSearch.startDate ? new Date(dateSearch.startDate) : null;
+      const endDate = dateSearch.endDate ? new Date(dateSearch.endDate + 'T23:59:59') : null;
+      results = results.filter(item => {
+        const itemDate = new Date(item.created_at || item.submitted_at || item.updated_at || Date.now());
+        if (startDate && itemDate < startDate) return false;
+        if (endDate && itemDate > endDate) return false;
+        return true;
+      });
+    }
+
+    return results;
+  }, [pendingIDPs, selectedSupervisorId, selectedEmployee, employeeSearchTerm, employees, dateSearch]);
 
   const selectedSupervisor = useMemo(() => {
     return supervisors.find(s => s.id === selectedSupervisorId);
@@ -743,7 +989,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                     >
                       <span className="flex items-center gap-2">
                         <ClockIcon className="w-4 h-4" />
-                        For Approval by Manager
+                        {isAMDashboard ? 'For Approval by Assistant Manager' : 'For Approval by Manager'}
                       </span>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.pending || 0}</span>
                     </button>
@@ -821,20 +1067,33 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                     <ExclamationTriangleIcon className="w-4 h-4" />
                     Action Required
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_manager || 0}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{isAMDashboard ? (idpSectionCounts.pending_am || 0) : (idpSectionCounts.pending_manager || 0)}</span>
                 </button>
-                {showIdpAction && (
-                  <div className="ml-6 space-y-1">
-                    <button
-                      type="button"
-                      onClick={() => setActiveSection('idp_pending_manager')}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_pending_manager' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
-                    >
-                      <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />{isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_manager || 0}</span>
-                    </button>
-                  </div>
-                )}
+                  {showIdpAction && (
+                    <div className="ml-6 space-y-1">
+                      {isAMDashboard ? (
+                        <Fragment>
+                          <button
+                            type="button"
+                            onClick={() => setActiveSection('idp_pending_am')}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_pending_am' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                          >
+                            <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />For Approval by Assistant Manager</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_am || 0}</span>
+                          </button>
+                        </Fragment>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setActiveSection('idp_pending_manager')}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_pending_manager' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                        >
+                          <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />For Approval by Manager</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_manager || 0}</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                 {/* In Review */}
                 <button
@@ -851,6 +1110,16 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                 </button>
                 {showIdpInReview && (
                   <div className="ml-6 space-y-1">
+                    {isAMDashboard && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveSection('idp_pending_manager')}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_pending_manager' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
+                      >
+                        <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />For Approval by Manager</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_manager || 0}</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setActiveSection('idp_pending_employee')}
@@ -913,6 +1182,47 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowDateSearch(!showDateSearch)}
+                className={`flex items-center gap-2 px-4 py-2 rounded text-sm transition ${dateSearch.enabled ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-600 text-white hover:bg-gray-700'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                {dateSearch.enabled ? 'Date Filter Active' : 'Search by Date'}
+              </button>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={selectedEmployee !== 'ALL' ? `Filtered: ${employees.find(emp => String(emp.employee_id) === String(selectedEmployee) || String(emp.employee_code) === String(selectedEmployee) || String(emp.id) === String(selectedEmployee))?.name || selectedEmployee}` : 'Search employee...'}
+                    value={employeeSearchTerm}
+                    onChange={(e) => { setEmployeeSearchTerm(e.target.value); if (selectedEmployee !== 'ALL') setSelectedEmployee('ALL'); }}
+                    className="w-64 px-3 py-2 pl-9 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  {(employeeSearchTerm || selectedEmployee !== 'ALL') && (
+                    <button
+                      onClick={() => { setEmployeeSearchTerm(''); setSelectedEmployee('ALL'); }}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                      title="Clear"
+                    >
+                      <XMarkIcon className="h-4 w-4 text-gray-400" />
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  onClick={openExportModal}
+                  className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 transition"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export CSV
+                </button>
+            </div>
+
             <button
               onClick={() => setProfileModalOpen(true)}
               className="flex items-center gap-3 p-1 rounded hover:bg-gray-50 focus:outline-none"
@@ -937,6 +1247,39 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             </button>
           </div>
         </header>
+
+        {/* Date Search Panel */}
+        {showDateSearch && (
+          <div className="mb-6 bg-white rounded-lg shadow border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Search Records by Date Range
+              </h3>
+              <button onClick={() => setShowDateSearch(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                <input type="date" value={dateSearch.startDate} onChange={(e) => setDateSearch(prev => ({ ...prev, startDate: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-md" max={dateSearch.endDate || new Date().toISOString().split('T')[0]} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                <input type="date" value={dateSearch.endDate} onChange={(e) => setDateSearch(prev => ({ ...prev, endDate: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-md" min={dateSearch.startDate} max={new Date().toISOString().split('T')[0]} />
+              </div>
+
+              <div className="col-span-2 flex items-center gap-3">
+                <button onClick={() => { setDateSearch(prev => ({ ...prev, enabled: false })); setShowDateSearch(false); }} className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-100">Cancel</button>
+                <button onClick={() => { applyDateSearch(); setShowDateSearch(false); }} className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700">Apply</button>
+                <button onClick={() => clearDateSearch()} className="px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-100">Clear</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -966,10 +1309,15 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
         {/* CONDITIONAL CONTENT BASED ON SECTION */}
         <section>
-          <h2 className="text-xl font-semibold mb-3">{activeSectionLabel}</h2>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold">{activeSection === 'pending' ? (isAMDashboard ? 'For Approval by Assistant Manager' : 'For Approval by Manager') : activeSectionLabel}</h2>
+            <div className="flex items-center gap-2">
+              {/* employee search moved to header */}
+            </div>
+          </div>
 
           {activeSection === 'all' ? (
-            <>
+            <Fragment>
               {/* Pending Section */}
 
               {filteredPendingCL.length > 0 && (
@@ -998,27 +1346,27 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               {pendingCL.length === 0 && returnedCLs.length === 0 && approvedCLs.length === 0 && (
                 <p className="text-gray-400 text-sm italic">No competency levelings found.</p>
               )}
-            </>
+            </Fragment>
           ) : activeSection === 'pending' ? (
             filteredPendingCL.length === 0 ? (
-              <p className="text-gray-400 text-sm italic">No pending CLs for manager approval.</p>
+              <p className="text-gray-400 text-sm italic">{isAMDashboard ? 'No pending CLs for assistant manager approval.' : 'No pending CLs for manager approval.'}</p>
             ) : (
-              <PendingTable data={filteredPendingCL} goTo={goTo} />
+              <PendingTable data={filteredPendingCL} goTo={goTo} isAMDashboard={isAMDashboard} />
             )
           ) : activeSection === 'returned' ? (
-            returnedCLs.length === 0 ? (
-              <p className="text-gray-400 text-sm italic">No CLs returned to supervisor.</p>
-            ) : (
-              <HistoryTable data={returnedCLs} goTo={goTo} />
-            )
+              returnedCLs.length === 0 ? (
+                <p className="text-gray-400 text-sm italic">No CLs returned to supervisor.</p>
+              ) : (
+                <HistoryTable data={returnedCLs} goTo={goTo} isAMDashboard={isAMDashboard} />
+              )
           ) : activeSection === 'approved' ? (
-            approvedCLs.length === 0 ? (
-              <p className="text-gray-400 text-sm italic">No CLs approved by manager.</p>
-            ) : (
-              <HistoryTable data={approvedCLs} goTo={goTo} />
-            )
+              approvedCLs.length === 0 ? (
+                <p className="text-gray-400 text-sm italic">{isAMDashboard ? 'No CLs approved by assistant manager.' : 'No CLs approved by manager.'}</p>
+              ) : (
+                <HistoryTable data={approvedCLs} goTo={goTo} isAMDashboard={isAMDashboard} />
+              )
           ) : activeSection === 'department' ? (
-            <>
+            <Fragment>
               {/* Status Filter for Department Tracking */}
               <div className="mb-4 flex items-center gap-3">
                 <label className="text-sm font-medium text-gray-700">Filter by Status:</label>
@@ -1042,7 +1390,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               ) : (
                 <DepartmentTrackingTable data={filteredDepartmentCLs} goTo={goTo} />
               )}
-            </>
+            </Fragment>
           ) : activeSection === 'employees' ? (
             <EmployeeCompetenciesView 
               employees={employees}
@@ -1097,7 +1445,13 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               )}
             </div>
           ) : activeSection === 'idp_all' ? (
-            <>
+            <Fragment>
+              {filteredIDPsByStatus.pending_am && filteredIDPsByStatus.pending_am.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">For Approval by Assistant Manager</h3>
+                  <IDPTable data={filteredIDPsByStatus.pending_am} openIdpView={openIdpView} />
+                </div>
+              )}
               {filteredIDPsByStatus.pending_manager.length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-lg font-semibold text-gray-700 mb-2">For Approval by Manager</h3>
@@ -1125,7 +1479,13 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               {idpSectionCounts.all === 0 && (
                 <p className="text-gray-400 text-sm italic">No IDPs found.</p>
               )}
-            </>
+            </Fragment>
+          ) : activeSection === 'idp_pending_am' ? (
+            filteredIDPsByStatus.pending_am.length === 0 ? (
+              <p className="text-gray-400 text-sm italic">No IDPs pending assistant manager approval.</p>
+            ) : (
+              <IDPTable data={filteredIDPsByStatus.pending_am} openIdpView={openIdpView} />
+            )
           ) : activeSection === 'idp_pending_manager' ? (
             filteredIDPsByStatus.pending_manager.length === 0 ? (
               <p className="text-gray-400 text-sm italic">No IDPs pending manager approval.</p>
@@ -1146,7 +1506,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             )
           ) : activeSection === 'idp_approved' ? (
             filteredIDPsByStatus.approved.length === 0 ? (
-              <p className="text-gray-400 text-sm italic">No manager-approved IDPs.</p>
+              <p className="text-gray-400 text-sm italic">{isAMDashboard ? 'No assistant manager-approved IDPs.' : 'No manager-approved IDPs.'}</p>
             ) : (
               <IDPTable data={filteredIDPsByStatus.approved} openIdpView={openIdpView} />
             )
@@ -1301,8 +1661,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                     {recentActions.slice(0, 10).map((a, idx) => (
                       <tr
                         key={`${a.id}-${idx}`}
-                        onClick={() => handleRecentActionClick(a)}
-                        className="border-t border-gray-75 hover:bg-gray-50 cursor-pointer"
+                        className="border-t border-gray-75 hover:bg-gray-50"
                       >
                         <td className="px-2 py-2">
                           <div className="flex items-center gap-1">
@@ -1353,6 +1712,82 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         onMarkAllRead={handleMarkAllAsRead}
         onClose={() => setShowFullNotifications(false)}
       />
+
+      {/* Export Modal */}
+      {exportModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-200 bg-opacity-50 backdrop-blur-sm">
+          <div className="absolute inset-0" onClick={closeExportModal} />
+
+          <div className="relative z-50 bg-white rounded-lg shadow-xl border border-gray-300 max-w-lg w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800">Export Data</h3>
+              <button onClick={closeExportModal} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Module</label>
+                <select
+                  value={exportModal.module}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, module: e.target.value, selectedStatus: 'ALL' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
+                >
+                  <option value="CL">Competency Leveling (CL)</option>
+                  <option value="IDP">Individual Development Plan (IDP)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Employee <span className="text-xs text-gray-500 ml-2">(Filter by specific employee or all)</span></label>
+                <select
+                  value={exportModal.employee || selectedEmployee}
+                  onChange={(e) => setExportModal(prev => ({ ...prev, employee: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
+                >
+                  <option value="ALL">All Employees</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.employee_id || emp.employee_code || emp.id}>{emp.name} ({emp.employee_id || emp.employee_code})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                  <input type="date" value={exportModal.startDate} onChange={(e) => setExportModal(prev => ({ ...prev, startDate: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-md" max={exportModal.endDate || new Date().toISOString().split('T')[0]} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                  <input type="date" value={exportModal.endDate} onChange={(e) => setExportModal(prev => ({ ...prev, endDate: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-md" min={exportModal.startDate} max={new Date().toISOString().split('T')[0]} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Status Filter</label>
+                <select value={exportModal.selectedStatus} onChange={(e) => setExportModal(prev => ({ ...prev, selectedStatus: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-md">
+                  <option value="ALL">All Statuses</option>
+                  {exportModal.module === 'CL' ? (
+                    CL_STATUS_SECTIONS.map(section => (
+                      <option key={section.key} value={section.key}>{section.label}</option>
+                    ))
+                  ) : (
+                    [
+                      'DRAFT','RETURNED','PENDING_EMPLOYEE','PENDING_HR','PENDING_AM','FOR_COMPLETION','PENDING_MANAGER','CYCLE_COMPLETED'
+                    ].map(s => <option key={s} value={s}>{s.replaceAll('_',' ')}</option>)
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+              <button onClick={closeExportModal} className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-100" disabled={exportModal.loading}>Cancel</button>
+              <button onClick={handleExportCSV} className={`px-6 py-2 text-sm text-white rounded-md transition-all ${exportModal.loading ? 'bg-gray-400 cursor-not-allowed' : !exportModal.startDate || !exportModal.endDate ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`} disabled={exportModal.loading || !exportModal.startDate || !exportModal.endDate} title={!exportModal.startDate || !exportModal.endDate ? 'Please select both start and end dates' : ''}>
+                {exportModal.loading ? 'Exporting...' : 'Export CSV'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1542,6 +1977,53 @@ function Td({ children }) {
 }
 
 function NotificationModal({ open, notification, onProceed, onClose }) {
+  const [canProceed, setCanProceed] = useState(true);
+
+  useEffect(() => {
+    if (!open || !notification) return;
+
+    async function checkIfActionNeeded() {
+      try {
+        const url = notification.url || '';
+        const msg = String(notification.message || '').toLowerCase();
+        // If the message indicates acknowledgement or informational, don't show action
+        if (msg.includes('acknowledg') || msg.includes('acknowledged') || msg.includes('requires completion per hr')) {
+          setCanProceed(false);
+          return;
+        }
+
+        // Manager review links: check current status via manager APIs
+        if (url.includes('/cl/manager/')) {
+          const clean = String(url).split('?')[0].split('#')[0];
+          const parts = clean.split('/').filter(Boolean);
+          const id = parts[parts.length - 1];
+          if (!id) { setCanProceed(true); return; }
+          const data = await apiRequest(`/api/cl/manager/${id}`);
+          const status = (data && data.status) ? String(data.status).toUpperCase() : '';
+          // Manager action required when status is PENDING_MANAGER or RETURNED
+          setCanProceed(['PENDING_MANAGER', 'RETURNED'].includes(status));
+        } else if (url.includes('/idp/manager/') || url.includes('/idp/am/')) {
+          const clean = String(url).split('?')[0].split('#')[0];
+          const parts = clean.split('/').filter(Boolean);
+          const id = parts[parts.length - 1];
+          if (!id) { setCanProceed(true); return; }
+          const res = await apiRequest(`/api/idp/manager/${id}`);
+          // idp may return header.status
+          const status = (res && res.header && res.header.status) ? String(res.header.status).toUpperCase() : '';
+          setCanProceed(['PENDING_MANAGER', 'PENDING_AM', 'RETURNED'].includes(status));
+        } else {
+          // Non-review links keep the button visible
+          setCanProceed(true);
+        }
+      } catch (err) {
+        console.debug('[NotificationModal] status check failed', err);
+        setCanProceed(false);
+      }
+    }
+
+    checkIfActionNeeded();
+  }, [open, notification]);
+
   if (!open || !notification) return null;
 
   return (
@@ -1590,13 +2072,15 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
           >
             Close
           </button>
-          <button
-            type="button"
-            onClick={onProceed}
-            className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            Go to Form
-          </button>
+          {canProceed && (
+            <button
+              type="button"
+              onClick={() => onProceed && onProceed(notification)}
+              className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Go to Form
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1723,16 +2207,10 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {paginatedActions.map((a, idx) => (
+                    {paginatedActions.map((a, idx) => (
                     <tr
                       key={`${a.id}-${idx}`}
-                      onClick={() => {
-                        onActionClick(a);
-                        if (!a.title || !a.title.toLowerCase().includes('deleted')) {
-                          onClose();
-                        }
-                      }}
-                      className="hover:bg-gray-50 cursor-pointer"
+                      className="hover:bg-gray-50"
                     >
                       <td className="px-4 py-3 text-gray-900 font-bold">{a.title || 'Action'}</td>
                       <td className="px-4 py-3 text-gray-700 font-medium">{a.description || '-'}</td>
@@ -2353,30 +2831,30 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
               placeholder="Enter your remarks for approval or return to supervisor..."
             />
             
-            {/* Action Buttons */}
-            <div className="flex justify-end gap-3 pt-4">
+            {/* Action Buttons - stacked so Approve / For Completion appears above Return */}
+            <div className="flex flex-col gap-3 pt-4">
               <button
-                onClick={onClose}
-                className="px-6 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-gray-300/50"
+                onClick={handleApproveIDP}
+                className="w-full px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500/50 disabled:opacity-50"
                 disabled={actionLoading}
               >
-                Cancel
+                {actionLoading ? 'Processing...' : 'Approve IDP'}
               </button>
-              
+
               <button
                 onClick={handleReturnIDP}
-                className="px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
+                className="w-full px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50"
                 disabled={actionLoading}
               >
                 {actionLoading ? 'Processing...' : 'Return to Supervisor'}
               </button>
-              
+
               <button
-                onClick={handleApproveIDP}
-                className="px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500/50 disabled:opacity-50"
+                onClick={onClose}
+                className="w-full px-6 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-gray-300/50"
                 disabled={actionLoading}
               >
-                {actionLoading ? 'Processing...' : 'Approve IDP'}
+                Cancel
               </button>
             </div>
           </div>

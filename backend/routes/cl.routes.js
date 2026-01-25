@@ -1,7 +1,7 @@
 // src/routes/cl.routes.js
 const express = require('express');
 const clController = require('../controllers/cl.controller');
-const { requireAuth, requireRole } = require('../middleware/auth.middleware');
+const { requireAuth, requireRole, allowSelfOrRole } = require('../middleware/auth.middleware');
 const { upload } = require('../middleware/upload.middleware'); // for PDF uploads
 
 const router = express.Router();
@@ -224,14 +224,14 @@ router.post(
 // GET /api/cl/employee/:id/competencies
 router.get(
   '/employee/:id/competencies',
-  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  allowSelfOrRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
   clController.getCompetenciesForEmployee
 );
 
 // GET /api/cl/employee/:id/history
 router.get(
   '/employee/:id/history',
-  requireRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
+  allowSelfOrRole('Supervisor', 'AM', 'Manager', 'HR', 'Admin'),
   clController.getEmployeeHistory
 );
 

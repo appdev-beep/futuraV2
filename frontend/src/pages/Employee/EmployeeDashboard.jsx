@@ -532,18 +532,6 @@ function EmployeeDashboard() {
 
         <nav className="flex-1 p-4 space-y-1">
           <button
-            onClick={() => { setActiveModule('IDP'); setActiveView('idp_pending'); }}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition font-medium text-sm ${
-              activeView === 'idp_pending'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/50'
-                : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
-            }`}
-          >
-            <DocumentTextIcon className="w-5 h-5" />
-            <span>IDP For Approval</span>
-          </button>
-
-          <button
             onClick={() => { setActiveModule('CL'); setActiveView('pending'); }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition font-medium text-sm ${
               activeView === 'pending'
@@ -553,6 +541,18 @@ function EmployeeDashboard() {
           >
             <ClipboardDocumentListIcon className="w-5 h-5" />
             <span>CL For Approval</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveModule('IDP'); setActiveView('idp_pending'); }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition font-medium text-sm ${
+              activeView === 'idp_pending'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/50'
+                : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
+            }`}
+          >
+            <DocumentTextIcon className="w-5 h-5" />
+            <span>IDP For Approval</span>
           </button>
 
           <button
@@ -1303,8 +1303,7 @@ function EmployeeDashboard() {
                     {filteredRecentActions.slice(0, 10).map((a, idx) => (
                       <tr
                         key={`${a.id}-${idx}`}
-                        onClick={() => handleRecentActionClick(a)}
-                        className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                        className="border-t border-slate-100"
                       >
                         <td className="px-2 py-2">
                           <div className="flex items-center gap-1">
@@ -1387,6 +1386,49 @@ function Td({ children }) {
 }
 
 function NotificationModal({ open, notification, onProceed, onClose }) {
+  const [canProceed, setCanProceed] = useState(true);
+
+  useEffect(() => {
+    if (!open || !notification) return;
+
+    async function checkIfActionNeeded() {
+      try {
+        const url = notification.url || '';
+        const msg = String(notification.message || '').toLowerCase();
+        if (msg.includes('acknowledg') || msg.includes('acknowledged')) {
+          setCanProceed(false);
+          return;
+        }
+
+        if (url.includes('/cl/') || url.includes('/idp/')) {
+          // attempt to detect resource id and status
+          const clean = String(url).split('?')[0].split('#')[0];
+          const parts = clean.split('/').filter(Boolean);
+          const id = parts[parts.length - 1];
+          if (!id) { setCanProceed(true); return; }
+          if (url.includes('/cl/')) {
+            const data = await apiRequest(`/api/cl/${id}`);
+            const status = (data && data.status) ? String(data.status).toUpperCase() : '';
+            setCanProceed(!['APPROVED', 'CYCLE_COMPLETED'].includes(status));
+          } else if (url.includes('/idp/')) {
+            const res = await apiRequest(`/api/idp/${id}`);
+            const status = (res && res.header && res.header.status) ? String(res.header.status).toUpperCase() : '';
+            setCanProceed(!['CYCLE_COMPLETED', 'APPROVED'].includes(status));
+          } else {
+            setCanProceed(true);
+          }
+        } else {
+          setCanProceed(true);
+        }
+      } catch (err) {
+        console.debug('[NotificationModal] status check failed', err);
+        setCanProceed(false);
+      }
+    }
+
+    checkIfActionNeeded();
+  }, [open, notification]);
+
   if (!open || !notification) return null;
 
   return (
@@ -1435,13 +1477,15 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
           >
             Close
           </button>
-          <button
-            type="button"
-            onClick={onProceed}
-            className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            Go to Form
-          </button>
+          {canProceed && (
+            <button
+              type="button"
+              onClick={() => onProceed && onProceed(notification)}
+              className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Go to Form
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1560,13 +1604,7 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                   {filteredActions.map((a, idx) => (
                     <tr
                       key={`${a.id}-${idx}`}
-                      onClick={() => {
-                        onActionClick(a);
-                        if (!a.title || !a.title.toLowerCase().includes('deleted')) {
-                          onClose();
-                        }
-                      }}
-                      className="hover:bg-gray-50 cursor-pointer"
+                      className=""
                     >
                       <td className="px-4 py-3 text-gray-800 font-medium">{a.title || 'Action'}</td>
                       <td className="px-4 py-3 text-gray-600">{a.description || '-'}</td>

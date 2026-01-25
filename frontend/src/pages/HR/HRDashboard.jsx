@@ -1668,8 +1668,7 @@ function HRDashboard() {
                       {paginatedRecentActions.map((a, idx) => (
                         <tr
                           key={`${a.id}-${idx}`}
-                          onClick={() => handleRecentActionClick(a)}
-                          className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
+                          className="border-t border-gray-100"
                         >
                           <td className="px-2 py-2">
                             <div className="flex items-center gap-1">
@@ -2162,7 +2161,7 @@ function CLTable({ data, onCLClick }) {
                   : displayStatus(item.status)}
               </Td>
               <Td>{item.total_score != null ? item.total_score : '-'}</Td>
-              <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
+              <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : (item.created_at ? new Date(item.created_at).toLocaleString() : '-')}</Td>
 
               <Td>
                 <div className="flex gap-2 flex-wrap">
@@ -2215,7 +2214,7 @@ function IDPTable({ data, goTo }) {
                 <Td>{item.position_title || '-'}</Td>
                 <Td>{item.supervisor_name || '-'}</Td>
                 <Td>{displayStatus(item.status)}</Td>
-                <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
+                <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : (item.created_at ? new Date(item.created_at).toLocaleString() : '-')}</Td>
 
                 <Td>
                   <div className="flex gap-2 flex-wrap">
@@ -2293,6 +2292,48 @@ function Modal({
 }
 
 function NotificationModal({ open, notification, onProceed, onClose }) {
+  const [canProceed, setCanProceed] = useState(true);
+
+  useEffect(() => {
+    if (!open || !notification) return;
+
+    async function checkIfActionNeeded() {
+      try {
+        const url = notification.url || '';
+        const msg = String(notification.message || '').toLowerCase();
+        if (msg.includes('acknowledg') || msg.includes('acknowledged') || msg.includes('requires completion per hr')) {
+          setCanProceed(false);
+          return;
+        }
+
+        if (url.includes('/cl/hr/review/') || url.includes('/cl/supervisor/review/')) {
+          const clean = String(url).split('?')[0].split('#')[0];
+          const parts = clean.split('/').filter(Boolean);
+          const id = parts[parts.length - 1];
+          if (!id) { setCanProceed(true); return; }
+          const data = await apiRequest(`/api/cl/${id}`);
+          const status = (data && data.status) ? String(data.status).toUpperCase() : '';
+          setCanProceed(['PENDING_HR', 'PENDING_SUPERVISOR', 'RETURNED'].includes(status));
+        } else if (url.includes('/idp/hr/review/') || url.includes('/idp/supervisor/review/')) {
+          const clean = String(url).split('?')[0].split('#')[0];
+          const parts = clean.split('/').filter(Boolean);
+          const id = parts[parts.length - 1];
+          if (!id) { setCanProceed(true); return; }
+          const res = await apiRequest(`/api/idp/${id}`);
+          const status = (res && res.header && res.header.status) ? String(res.header.status).toUpperCase() : '';
+          setCanProceed(['PENDING_HR', 'PENDING_SUPERVISOR', 'RETURNED'].includes(status));
+        } else {
+          setCanProceed(true);
+        }
+      } catch (err) {
+        console.debug('[NotificationModal] status check failed', err);
+        setCanProceed(false);
+      }
+    }
+
+    checkIfActionNeeded();
+  }, [open, notification]);
+
   if (!open || !notification) return null;
 
   return (
@@ -2341,13 +2382,15 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
           >
             Close
           </button>
-          <button
-            type="button"
-            onClick={onProceed}
-            className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            Go to Form
-          </button>
+          {canProceed && (
+            <button
+              type="button"
+              onClick={() => onProceed && onProceed(notification)}
+              className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Go to Form
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -2484,13 +2527,7 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                     {paginatedActions.map((a, idx) => (
                       <tr
                         key={`${a.id}-${idx}`}
-                        onClick={() => {
-                          onActionClick(a);
-                          if (!a.title || !a.title.toLowerCase().includes('deleted')) {
-                            onClose();
-                          }
-                        }}
-                        className="hover:bg-gray-50 cursor-pointer"
+                        className=""
                       >
                         <td className="px-4 py-3 text-gray-800 font-medium">{a.title || 'Action'}</td>
                         <td className="px-4 py-3 text-gray-600">{a.description || '-'}</td>

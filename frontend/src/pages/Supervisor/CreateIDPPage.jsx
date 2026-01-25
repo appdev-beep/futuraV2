@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import { ArrowLeftIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
-
+import { StatusBadge } from '../../components';
 import {
   COMPLETION_STATUS_OPTIONS,
   DEVELOPMENT_TYPES,
@@ -24,37 +24,12 @@ function ModalShell({ title, onClose, children, maxWidth = 'max-w-lg' }) {
         <div className={`w-full ${maxWidth} bg-white rounded-xl border-0 shadow-2xl overflow-hidden`}>
           <div className="flex items-start justify-between px-5 py-4 border-b border-gray-200">
             <h3 className="text-lg font-semibold text-black">{title}</h3>
-            <button onClick={onClose} className="text-black/60" aria-label="Close">
-              ✕
-            </button>
+            <button onClick={onClose} className="text-black/60" aria-label="Close">✕</button>
           </div>
           <div className="p-5">{children}</div>
         </div>
       </div>
     </div>
-  );
-}
-
-function StatusBadge({ status }) {
-  if (!status) return null;
-
-  const base = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold border';
-  const dot = 'h-2 w-2 rounded-full';
-
-  const variants = {
-    RETURNED: { cls: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
-    SUBMITTED: { cls: 'bg-blue-50 text-blue-800 border-blue-200', dot: 'bg-blue-500' },
-    CYCLE_COMPLETED: { cls: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
-    DEFAULT: { cls: 'bg-gray-50 text-gray-800 border-gray-200', dot: 'bg-gray-500' },
-  };
-
-  const v = variants[status] || variants.DEFAULT;
-
-  return (
-    <span className={`${base} ${v.cls}`}>
-      <span className={`${dot} ${v.dot}`} />
-      {status}
-    </span>
   );
 }
 
@@ -98,7 +73,6 @@ function TextBox({ value, readOnly = false }) {
     </div>
   );
 }
-
 function PdfUpload({
   label,
   currentPath,
@@ -166,6 +140,7 @@ function PdfUpload({
     </div>
   );
 }
+
 
 /* ----------------------------- Main Page ---------------------------------- */
 
@@ -590,7 +565,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           if (idpRes.header.employee) setEmployee(idpRes.header.employee);
           else if (idpRes.header.employee_id) {
             try {
-              const emp = await apiRequest(`/api/users/${idpRes.header.employee_id}`);
+              const emp = await apiRequest(`/api/users/public/${idpRes.header.employee_id}`);
               setEmployee(emp || {});
             } catch {
               setEmployee({});
@@ -601,7 +576,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
           if (idpRes.header.supervisor) setSupervisor(idpRes.header.supervisor);
           else if (idpRes.header.supervisor_id) {
             try {
-              const sup = await apiRequest(`/api/users/${idpRes.header.supervisor_id}`);
+              const sup = await apiRequest(`/api/users/public/${idpRes.header.supervisor_id}`);
               setSupervisor(sup || {});
             } catch {
               setSupervisor({});
@@ -705,10 +680,10 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             }
           }
         } else if (employeeId) {
-          const employeeData = await apiRequest(`/api/users/${employeeId}`);
+          const employeeData = await apiRequest(`/api/users/public/${employeeId}`);
 
           if (employeeData.supervisor_id) {
-            const supervisorData = await apiRequest(`/api/users/${employeeData.supervisor_id}`);
+            const supervisorData = await apiRequest(`/api/users/public/${employeeData.supervisor_id}`);
             setSupervisor(supervisorData);
           }
 
@@ -1766,12 +1741,25 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
               <div className="min-w-0">
                 <label className={`block ${viewOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>Supervisor/Manager</label>
-                <TextBox value={supervisor?.name || 'N/A'} readOnly={viewOnly} />
+                <TextBox
+                  value={
+                    supervisor?.name || supervisor?.supervisor_name || supervisor?.manager_name ||
+                    employee?.supervisor_name || employee?.manager_name || employee?.supervisor || employee?.manager || 'N/A'
+                  }
+                  readOnly={viewOnly}
+                />
               </div>
 
               <div className="min-w-0">
                 <label className={`block ${viewOnly ? 'text-sm font-bold' : 'text-sm font-bold'} text-gray-700 mb-2`}>CL Score</label>
-                <TextBox value={latestCLScore ? Number(latestCLScore).toFixed(2) : 'No approved CL'} readOnly={viewOnly} />
+                <TextBox
+                  value={
+                    (latestCLScore ?? idpHeader?.latest_cl_score ?? employee?.latest_cl_score ?? employee?.cl_score) != null
+                      ? Number(latestCLScore ?? idpHeader?.latest_cl_score ?? employee?.latest_cl_score ?? employee?.cl_score).toFixed(2)
+                      : 'No approved CL'
+                  }
+                  readOnly={viewOnly}
+                />
               </div>
 
               <div className="sm:col-span-1 lg:col-span-2">
@@ -1902,42 +1890,127 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
               
               {/* Action Buttons */}
               <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:justify-end gap-3">
-                  <button
-                    onClick={handleReturnIDP}
-                    className="px-6 py-2 rounded-lg bg-red-600 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap order-2 sm:order-1"
-                    disabled={actionLoading}
-                  >
-                    {actionLoading ? 'Processing...' : 'Return to Supervisor'}
-                  </button>
-                  
-                  <button
-                    onClick={idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' ? handleApproveCycleCompletion : handleApproveIDP}
-                    className={`px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 disabled:opacity-50 whitespace-nowrap transition order-1 sm:order-2 ${
-                      (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR') 
-                        ? (areAllActivitiesComplete 
-                            ? 'bg-green-600 text-white focus:ring-green-500/50' 
-                            : 'bg-gray-300 text-gray-500 cursor-not-allowed')
-                        : 'bg-green-600 text-white focus:ring-green-500/50'
-                    }`}
-                    disabled={actionLoading || (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' && !areAllActivitiesComplete)}
-                  >
-                    {actionLoading ? 'Processing...' : (() => {
-                      const role = getUserRole();
-                      const status = idpHeader?.status;
-                      if (status === 'FOR_COMPLETION' && role === 'HR') {
-                        return areAllActivitiesComplete ? 'Approve Cycle Completion' : 'Cannot Approve - Incomplete Activities';
-                      }
-                      if (allActivitiesCompleted) {
-                        return 'Cycle Completed';
-                      }
-                      if (role === 'HR') {
-                        return 'For Completion';
-                      }
-                      if (role === 'Employee') return 'Acknowledge IDP';
-                      return 'Approve IDP';
-                    })()}
-                  </button>
+                <div className={`flex gap-3 ${getUserRole() === 'Employee' ? 'flex-col' : 'flex-col sm:flex-row sm:justify-end'}`}>
+                  {(getUserRole() === 'Employee' || getUserRole() === 'employee' || idpHeader?.status === 'PENDING_EMPLOYEE') ? (
+                    <>
+                      <button
+                        onClick={idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' ? handleApproveCycleCompletion : handleApproveIDP}
+                        className={`px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 disabled:opacity-50 whitespace-nowrap transition ${
+                          (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR') 
+                            ? (areAllActivitiesComplete 
+                                ? 'bg-green-600 text-white focus:ring-green-500/50' 
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed')
+                            : 'bg-green-600 text-white focus:ring-green-500/50'
+                        }`}
+                        disabled={actionLoading || (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' && !areAllActivitiesComplete)}
+                      >
+                        {actionLoading ? 'Processing...' : (() => {
+                          const role = getUserRole();
+                          const status = idpHeader?.status;
+                          if (status === 'FOR_COMPLETION' && role === 'HR') {
+                            return areAllActivitiesComplete ? 'Approve Cycle Completion' : 'Cannot Approve - Incomplete Activities';
+                          }
+                          if (allActivitiesCompleted) {
+                            return 'Cycle Completed';
+                          }
+                          if (role === 'HR') {
+                            return 'For Completion';
+                          }
+                          if (role === 'Employee') return 'Acknowledge IDP';
+                          return 'Approve IDP';
+                        })()}
+                      </button>
+
+                      <button
+                        onClick={handleReturnIDP}
+                        className="px-6 py-2 rounded-lg bg-red-600 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap"
+                        disabled={actionLoading}
+                      >
+                        {actionLoading ? 'Processing...' : 'Return to Supervisor'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Ensure HR sees the approve/For Completion action first (top on narrow screens) */}
+                      {getUserRole() === 'HR' ? (
+                        <>
+                          <button
+                            onClick={idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' ? handleApproveCycleCompletion : handleApproveIDP}
+                            className={`px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 disabled:opacity-50 whitespace-nowrap transition order-1 sm:order-1 ${
+                              (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR') 
+                                ? (areAllActivitiesComplete 
+                                    ? 'bg-green-600 text-white focus:ring-green-500/50' 
+                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed')
+                                : 'bg-green-600 text-white focus:ring-green-500/50'
+                            }`}
+                            disabled={actionLoading || (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' && !areAllActivitiesComplete)}
+                          >
+                            {actionLoading ? 'Processing...' : (() => {
+                              const role = getUserRole();
+                              const status = idpHeader?.status;
+                              if (status === 'FOR_COMPLETION' && role === 'HR') {
+                                return areAllActivitiesComplete ? 'Approve Cycle Completion' : 'Cannot Approve - Incomplete Activities';
+                              }
+                              if (allActivitiesCompleted) {
+                                return 'Cycle Completed';
+                              }
+                              if (role === 'HR') {
+                                return 'For Completion';
+                              }
+                              if (role === 'Employee') return 'Acknowledge IDP';
+                              return 'Approve IDP';
+                            })()}
+                          </button>
+
+                          <button
+                            onClick={handleReturnIDP}
+                            className="px-6 py-2 rounded-lg bg-red-600 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap order-2 sm:order-2"
+                            disabled={actionLoading}
+                          >
+                            {actionLoading ? 'Processing...' : 'Return to Supervisor'}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={handleReturnIDP}
+                            className="px-6 py-2 rounded-lg bg-red-600 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:opacity-50 whitespace-nowrap order-2 sm:order-1"
+                            disabled={actionLoading}
+                          >
+                            {actionLoading ? 'Processing...' : 'Return to Supervisor'}
+                          </button>
+
+                          <button
+                            onClick={idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' ? handleApproveCycleCompletion : handleApproveIDP}
+                            className={`px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 disabled:opacity-50 whitespace-nowrap transition order-1 sm:order-2 ${
+                              (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR') 
+                                ? (areAllActivitiesComplete 
+                                    ? 'bg-green-600 text-white focus:ring-green-500/50' 
+                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed')
+                                : 'bg-green-600 text-white focus:ring-green-500/50'
+                            }`}
+                            disabled={actionLoading || (idpHeader?.status === 'FOR_COMPLETION' && getUserRole() === 'HR' && !areAllActivitiesComplete)}
+                          >
+                            {actionLoading ? 'Processing...' : (() => {
+                              const role = getUserRole();
+                              const status = idpHeader?.status;
+                              if (status === 'FOR_COMPLETION' && role === 'HR') {
+                                return areAllActivitiesComplete ? 'Approve Cycle Completion' : 'Cannot Approve - Incomplete Activities';
+                              }
+                              if (allActivitiesCompleted) {
+                                return 'Cycle Completed';
+                              }
+                              if (role === 'HR') {
+                                return 'For Completion';
+                              }
+                              if (role === 'Employee') return 'Acknowledge IDP';
+                              return 'Approve IDP';
+                            })()}
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
                 </div>
                 
                 <button
@@ -1994,19 +2067,12 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                       />
                     </div>
                     
-                    <div className="flex gap-3">
-                      <button
-                        onClick={handleReturnIDP}
-                        disabled={actionLoading}
-                        className="flex-1 px-4 py-2 rounded-lg font-semibold text-sm bg-red-600 text-white focus:ring-2 focus:ring-red-500 disabled:opacity-50"
-                      >
-                        {actionLoading ? 'Processing...' : 'Return to Supervisor'}
-                      </button>
-                      
+                    <div className="flex flex-col gap-3">
+                      {/* Approve first for HR (appears on top on narrow screens) */}
                       <button
                         onClick={handleApproveCycleCompletion}
                         disabled={!areAllActivitiesComplete || actionLoading}
-                        className={`flex-1 px-4 py-2 rounded-lg font-semibold text-sm transition ${
+                        className={`w-full px-4 py-2 rounded-lg font-semibold text-sm transition ${
                           areAllActivitiesComplete 
                             ? 'bg-green-600 text-white focus:ring-2 focus:ring-green-500' 
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
@@ -2015,6 +2081,14 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                         {actionLoading ? 'Processing...' : 
                          areAllActivitiesComplete ? 'Approve Cycle Completion' : 
                          'Cannot Approve - Incomplete Activities'}
+                      </button>
+
+                      <button
+                        onClick={handleReturnIDP}
+                        disabled={actionLoading}
+                        className="w-full px-4 py-2 rounded-lg font-semibold text-sm bg-red-600 text-white focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+                      >
+                        {actionLoading ? 'Processing...' : 'Return to Supervisor'}
                       </button>
                     </div>
                     
@@ -2307,7 +2381,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                         href={`${apiBase}/${activity.pdfPath}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg font-semibold text-sm"
+                                        className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg font-semibold text-sm pointer-events-auto"
                                       >
                                         📄 View PDF
                                       </a>
@@ -2352,7 +2426,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   href={`${apiBase}/${activity.pdfPath}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg font-semibold"
+                                  className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg font-semibold pointer-events-auto"
                                 >
                                   📄 View PDF
                                 </a>

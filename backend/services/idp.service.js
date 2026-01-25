@@ -23,7 +23,8 @@ async function getById(id) {
     [id]
   );
 
-  const normalizeDate = (v) => {
+  // Helper: normalize various date formats into YYYY-MM-DD
+  function normalizeDate(v) {
     if (!v) return '';
     if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
     const m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -36,7 +37,7 @@ async function getById(id) {
       return `${yy}-${mm}-${dd}`;
     }
     return '';
-  };
+  }
 
   // Normalize DB column differences and parse JSON so frontend always receives an object
   const normalizedItems = await Promise.all((items || []).map(async (it) => {
@@ -2105,7 +2106,7 @@ async function exportIDPForSupervisor({ startDate, endDate, department, status, 
     LEFT JOIN users s ON ih.supervisor_id = s.id
     LEFT JOIN users m ON ih.manager_id = m.id
     LEFT JOIN users am ON ih.am_id = am.id
-    JOIN departments d ON ih.department_id = d.id
+    LEFT JOIN departments d ON e.department_id = d.id
     JOIN positions p ON e.position_id = p.id
     LEFT JOIN idp_items ii ON ih.id = ii.idp_header_id
     LEFT JOIN competencies c ON ii.competency_id = c.id
@@ -2316,7 +2317,7 @@ async function exportIDPForAM({ startDate, endDate, department, status, amId }) 
       ih.hr_remarks
     FROM idp_headers ih
     JOIN users e ON ih.employee_id = e.id
-    LEFT JOIN departments d ON ih.department_id = d.id
+    LEFT JOIN departments d ON e.department_id = d.id
     LEFT JOIN positions p ON e.position_id = p.id
     LEFT JOIN users s ON ih.supervisor_id = s.id
     LEFT JOIN users am ON ih.am_id = am.id
@@ -2426,7 +2427,7 @@ async function exportIDPForManager({ startDate, endDate, department, status, man
       ih.hr_remarks
     FROM idp_headers ih
     JOIN users e ON ih.employee_id = e.id
-    LEFT JOIN departments d ON ih.department_id = d.id
+    LEFT JOIN departments d ON e.department_id = d.id
     LEFT JOIN positions p ON e.position_id = p.id
     LEFT JOIN users s ON ih.supervisor_id = s.id
     LEFT JOIN users am ON ih.am_id = am.id

@@ -5,9 +5,9 @@ const lookupController = require('../controllers/lookup.controller');
 
 const router = express.Router();
 
-// If only admins can see the lookups, keep this
+// Require authentication for lookup routes, but allow all authenticated
+// users to GET lookup data. Only protect mutation endpoints with roles.
 router.use(requireAuth);
-router.use(requireRole('Admin', 'Supervisor', 'HR', 'Manager', 'AM'));
 
 // GET /api/lookup/departments
 router.get('/departments', lookupController.getDepartments);

@@ -5,6 +5,9 @@ const { requireAuth, requireRole } = require('../middleware/auth.middleware');
 const router = express.Router();
 
 router.use(requireAuth);
+// Public (limited) user info accessible to any authenticated user
+router.get('/public/:id', userController.getPublicById);
+
 // Allow authenticated users to fetch their own profile; role checks apply to other user management routes
 router.get('/:id', userController.getById);
 

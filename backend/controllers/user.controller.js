@@ -150,6 +150,33 @@ async function getById(req, res, next) {
   }
 }
 
+// GET /api/users/public/:id - limited public info for any authenticated user
+async function getPublicById(req, res, next) {
+  try {
+    const { id } = req.params;
+    const user = await getUserById(id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Return only the fields necessary for frontend forms
+    const publicData = {
+      id: user.id,
+      employee_id: user.employee_id,
+      name: user.name,
+      supervisor_id: user.supervisor_id,
+      manager_id: user.manager_id,
+      am_id: user.am_id,
+      department_id: user.department_id,
+      department_name: user.department_name,
+      position_id: user.position_id,
+      position_title: user.position_title,
+    };
+
+    res.json(publicData);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // PUT /api/users/:id
 async function update(req, res, next) {
   try {
@@ -271,6 +298,7 @@ module.exports = {
   create,
   deleteById,
   getById,
+  getPublicById,
   update,
   changePassword,
   getSupervisorEmployees

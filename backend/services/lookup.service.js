@@ -176,16 +176,21 @@ async function getAMsByDepartment(departmentId) {
  * Returns: [{ id, name }]
  */
 async function getReviewPeriods() {
-  const [rows] = await db.query(
-    `
-    SELECT id, name
-    FROM review_periods
-    WHERE is_active = 1
-    ORDER BY id ASC
-    `
-  );
-  // Return array of names for backward compatibility with frontend
-  return rows.map(r => r.name);
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT id, name
+      FROM review_periods
+      WHERE is_active = 1
+      ORDER BY id ASC
+      `
+    );
+    // Return array of names for backward compatibility with frontend
+    return rows.map(r => r.name);
+  } catch (err) {
+    console.warn('Warning: getReviewPeriods failed, returning empty list', err.message || err);
+    return [];
+  }
 }
 
 /**
@@ -206,5 +211,8 @@ module.exports = {
   getAppraisalCycles,
   getSupervisorsByDepartment,
   getManagersByDepartment,
-  getAMsByDepartment
+  getAMsByDepartment,
+  getReviewPeriods,
+  addReviewPeriod
 };
+

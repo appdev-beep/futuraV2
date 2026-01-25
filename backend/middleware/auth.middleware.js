@@ -203,11 +203,32 @@ function requireIDPApprovalPermission(req, res, next) {
   };
 }
 
+// Allow access if requesting own resource (req.params.id) or if user has one of the allowed roles
+function allowSelfOrRole(...allowedRoles) {
+  const roles = allowedRoles.filter(Boolean);
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ message: 'Authentication required' });
+
+    const targetId = req.params.id || req.params.employeeId || req.params.userId;
+    if (targetId && String(req.user.id) === String(targetId)) {
+      return next();
+    }
+
+    if (roles.length === 0) return next();
+
+    if (roles.includes(req.user.role)) return next();
+
+    return res.status(403).json({ message: 'Forbidden: insufficient role' });
+  };
+}
+
 module.exports = { 
   requireAuth, 
   requireRole, 
+  allowSelfOrRole,
   canApproveCLForEmployee,
   canApproveIDPForEmployee,
   requireCLApprovalPermission,
   requireIDPApprovalPermission
 };
+
