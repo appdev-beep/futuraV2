@@ -2,6 +2,23 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 
+// Format timestamps consistently for HR display (local time): YYYY-MM-DD HH:mm:ss
+function formatTimestamp(value) {
+  if (!value) return 'N/A';
+  const date = typeof value === 'number' ? new Date(value) : new Date(String(value));
+  if (isNaN(date.getTime())) return 'N/A';
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
 function SummaryCard({ label, value, gradientClass }) {
   return (
     <div className={`p-4 rounded shadow-md bg-gradient-to-r ${gradientClass}`}>
@@ -63,7 +80,9 @@ export default function SupervisorIDP({ idpSummary, idpByStatus, activeIDPSectio
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IDP ID</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted At</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -74,7 +93,9 @@ export default function SupervisorIDP({ idpSummary, idpByStatus, activeIDPSectio
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idp.id}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idp.employee_id || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idp.employee_name || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idp.department_name || idp.department || (idp.department_id ? `Dept #${idp.department_id}` : 'N/A')}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idp.position_title || idp.position || (idp.position_id ? `Position #${idp.position_id}` : 'N/A')}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatTimestamp(idp.submitted_at || idp.created_at)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idp.status || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button

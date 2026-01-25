@@ -734,18 +734,25 @@ async function getSupervisorAllCL(supervisorId) {
     const [rows] = await db.query(
       `
       SELECT 
-        ch.id,
-        e.name        AS employee_name,
-        e.employee_id AS employee_code,
-        d.name        AS department_name,
-        p.title       AS position_title,
-        ch.status,
-        ch.awaiting_approval_from,
-        ch.created_at AS submitted_at
+          ch.id,
+          e.name        AS employee_name,
+          e.employee_id AS employee_code,
+          d.name        AS department_name,
+          p.title       AS position_title,
+          ch.status,
+          ch.awaiting_approval_from,
+          ch.created_at AS submitted_at,
+          -- Use aggregated item score (total_score from cl_items); header.total_score column not present in schema
+          COALESCE(ci.total_score, 0) AS total_score
       FROM cl_headers ch
-        JOIN users e       ON ch.employee_id   = e.id
-        JOIN departments d ON e.department_id  = d.id
-        JOIN positions   p ON e.position_id    = p.id
+          JOIN users e       ON ch.employee_id   = e.id
+          JOIN departments d ON e.department_id  = d.id
+          JOIN positions   p ON e.position_id    = p.id
+          LEFT JOIN (
+            SELECT cl_header_id, SUM(score) AS total_score
+            FROM cl_items
+            GROUP BY cl_header_id
+          ) ci ON ci.cl_header_id = ch.id
       WHERE
         ch.supervisor_id = ?
       ORDER BY ch.status ASC, ch.created_at DESC

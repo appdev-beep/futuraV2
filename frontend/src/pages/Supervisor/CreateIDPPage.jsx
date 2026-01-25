@@ -256,6 +256,53 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     items: [],
   });
 
+  // Review period options (dynamic). Try lookup endpoint, else fall back to localStorage/default.
+  const [reviewPeriods, setReviewPeriods] = useState(() => {
+    try {
+      const stored = localStorage.getItem('reviewPeriods');
+      return stored ? JSON.parse(stored) : ['1st Cycle Performance Review'];
+    } catch (e) {
+      return ['1st Cycle Performance Review'];
+    }
+  });
+  const [showAddReview, setShowAddReview] = useState(false);
+  const [newReviewPeriod, setNewReviewPeriod] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await apiRequest('/api/lookup/review-periods');
+        if (!mounted) return;
+        if (Array.isArray(data) && data.length) {
+          setReviewPeriods(data);
+          // persist for later
+          try { localStorage.setItem('reviewPeriods', JSON.stringify(data)); } catch {}
+        }
+      } catch (err) {
+        // ignore — we'll use localStorage/default
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  function addNewReviewPeriod() {
+    const v = (newReviewPeriod || '').toString().trim();
+    if (!v) return;
+    if (reviewPeriods.includes(v)) {
+      setNewReviewPeriod('');
+      setShowAddReview(false);
+      setIdpData(prev => ({ ...prev, reviewPeriod: v }));
+      return;
+    }
+    const next = [...reviewPeriods, v];
+    setReviewPeriods(next);
+    try { localStorage.setItem('reviewPeriods', JSON.stringify(next)); } catch {}
+    setIdpData(prev => ({ ...prev, reviewPeriod: v }));
+    setNewReviewPeriod('');
+    setShowAddReview(false);
+  }
+
   function normalizeDate(value) {
     if (!value) return '';
     if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -1638,13 +1685,56 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
               <div className="sm:col-span-1 lg:col-span-2">
                 <Field label="Review Period" readOnly={viewOnly}>
-                  <input
-                    type="text"
-                    value={idpData.reviewPeriod}
-                    onChange={(e) => updateIdpData('reviewPeriod', e.target.value)}
-                    disabled={viewOnly}
-                    className={`w-full bg-gray-50 rounded-lg px-3 py-2 ${viewOnly ? 'text-base' : 'text-sm'} text-black outline-none focus:ring-2 focus:ring-black/10 ${viewOnly ? 'border-0' : 'border border-gray-100'} disabled:opacity-60 disabled:cursor-not-allowed`}
-                  />
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={idpData.reviewPeriod}
+                      onChange={(e) => updateIdpData('reviewPeriod', e.target.value)}
+                      disabled={viewOnly}
+                      className={`flex-1 bg-gray-50 rounded-lg px-3 py-2 ${viewOnly ? 'text-base' : 'text-sm'} text-black outline-none focus:ring-2 focus:ring-black/10 ${viewOnly ? 'border-0' : 'border border-gray-100'} disabled:opacity-60 disabled:cursor-not-allowed`}
+                    >
+                      {(reviewPeriods || []).map((rp) => (
+                        <option key={rp} value={rp}>{rp}</option>
+                      ))}
+                    </select>
+
+                    {!viewOnly && (
+                      <div className="flex items-center gap-2">
+                        {!showAddReview ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowAddReview(true)}
+                            className="text-sm px-3 py-2 border border-gray-200 rounded bg-white hover:bg-gray-50"
+                          >
+                            + Add
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              placeholder="New review period"
+                              value={newReviewPeriod}
+                              onChange={(e) => setNewReviewPeriod(e.target.value)}
+                              className="px-2 py-1 border border-gray-200 rounded text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={addNewReviewPeriod}
+                              className="text-sm px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
+                              Add
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setShowAddReview(false); setNewReviewPeriod(''); }}
+                              className="text-sm px-3 py-2 border border-gray-200 rounded bg-white hover:bg-gray-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </Field>
               </div>
 

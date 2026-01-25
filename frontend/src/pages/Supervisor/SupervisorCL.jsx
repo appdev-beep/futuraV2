@@ -38,6 +38,9 @@ function CLTable({ data, goTo, onDelete }) {
               <Td>{item.department_name}</Td>
               <Td>{item.position_title}</Td>
               <Td>{(() => {
+                // Prefer backend-provided total_score (score at creation) when available
+                if (item.total_score != null) return Number(item.total_score).toFixed(2);
+
                 // Calculate the final score exactly like in the detailed view
                 // Sum up (score * weight) for all competencies
                 let totalScore = 0;

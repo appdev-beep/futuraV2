@@ -93,6 +93,8 @@ function SupervisorDashboard() {
     notification: null,
   });
 
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
   // Export modal state
   const [exportModal, setExportModal] = useState({
     open: false,
@@ -109,6 +111,7 @@ function SupervisorDashboard() {
 
 
   const [department, setDepartment] = useState(null);
+  const [position, setPosition] = useState(null);
 
   // Dynamically build CL and IDP status sections based on department.has_am
   const CL_STATUS_SECTIONS = useMemo(() => {
@@ -350,6 +353,14 @@ function SupervisorDashboard() {
         const departments = await apiRequest('/api/lookup/departments');
         const dept = departments.find((d) => d.id === parsed.department_id);
         setDepartment(dept || null);
+        // fetch positions and set user's position
+        try {
+          const positions = await apiRequest('/api/lookup/positions');
+          const pos = positions.find(p => p.id === parsed.position_id);
+          setPosition(pos || null);
+        } catch (err) {
+          setPosition(null);
+        }
       } catch {
         setDepartment(null);
       }
@@ -589,7 +600,14 @@ function SupervisorDashboard() {
 
   async function proceedToNotificationLink(n) {
     setNotificationModalState({ open: false, notification: null });
-    
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      // No auth token — force login before navigating
+      window.location.href = '/login';
+      return;
+    }
+
     try {
       if (n?.id) {
         await apiRequest(`/api/notifications/${n.id}/read`, { method: 'PATCH' });
@@ -599,10 +617,23 @@ function SupervisorDashboard() {
       }
     } catch (err) {
       console.error('Failed to mark notification as read', err);
+      // If the server responded with 401/403, token is invalid/expired — redirect to login
+      if (err && (err.status === 401 || err.status === 403)) {
+        // Clear stored auth and force login
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+        return;
+      }
+      // For other errors, continue to navigate to the URL — it may still work client-side
     }
-    
-    // Always navigate using SPA without page refresh
-    const url = n?.url || '/supervisor';
+
+    // Navigate using SPA without page refresh
+    const baseUrl = n?.url || '/supervisor';
+    // Ensure we open the form in view-only mode so supervisors can see it regardless of current workflow state
+    const hasViewFlag = baseUrl.includes('viewOnly=') || baseUrl.includes('forceView=');
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    const url = hasViewFlag ? baseUrl : `${baseUrl}${separator}viewOnly=true`;
     navigate(url);
   }
 
@@ -1213,14 +1244,23 @@ function SupervisorDashboard() {
 
             {/* User info and logout */}
             <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-semibold text-gray-800">{user.name}</p>
-                <p className="text-xs text-gray-500">{user.role}</p>
-              </div>
+              <button
+                onClick={() => setProfileModalOpen(true)}
+                className="flex items-center gap-3 p-1 rounded hover:bg-gray-50 focus:outline-none"
+                title="View profile"
+              >
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700">
+                  <UserIcon className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <div className="text-sm font-semibold text-gray-800 hover:underline">{user.name}</div>
+                  <div className="text-xs text-gray-500">{user.role}</div>
+                </div>
+              </button>
+
               <button
                 onClick={logout}
-                className="flex items-center gap-2 px-3 py-2 rounded bg-red-600 text-white
-                           text-sm hover:bg-red-700 transition"
+                className="flex items-center gap-2 px-3 py-2 rounded bg-red-600 text-white text-sm hover:bg-red-700 transition"
               >
                 <ArrowRightOnRectangleIcon className="w-4 h-4" />
                 <span>Logout</span>
@@ -1490,8 +1530,7 @@ function SupervisorDashboard() {
                     {recentActions.slice(0, 10).map((a, idx) => (
                       <tr
                         key={`${a.id}-${idx}`}
-                        onClick={() => handleRecentActionClick(a)}
-                        className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
+                        className="border-t border-gray-100 hover:bg-gray-50"
                       >
                         <td className="px-2 py-2">
                           <p className="font-medium text-gray-800 truncate">{a.title || 'Action'}</p>
@@ -1531,8 +1570,16 @@ function SupervisorDashboard() {
       <NotificationModal
         open={notificationModalState.open}
         notification={notificationModalState.notification}
-        onProceed={() => proceedToNotificationLink(notificationModalState.notification)}
+        onProceed={proceedToNotificationLink}
         onClose={closeNotificationModal}
+      />
+
+      <ProfileModal
+        open={profileModalOpen}
+        user={user}
+        department={department}
+        position={position}
+        onClose={() => setProfileModalOpen(false)}
       />
 
       {/* IDP Creation Modal removed. All IDP creation is now handled in CreateIDPPage.jsx */}
@@ -1838,6 +1885,59 @@ function Modal({
 }
 
 function NotificationModal({ open, notification, onProceed, onClose }) {
+  const [canProceed, setCanProceed] = useState(true);
+
+  useEffect(() => {
+    if (!open || !notification) return;
+
+    // Default to showing the button; but if this notification points to a supervisor review URL,
+    // fetch the current header and hide the button when supervisor action is no longer required.
+    async function checkIfActionNeeded() {
+      try {
+        const url = notification.url || '';
+        const msg = String(notification.message || '').toLowerCase();
+        // quick message-based heuristics: if it's acknowledged or explicitly for HR, don't show the button
+        if (msg.includes('acknowledg') || msg.includes('acknowledged') || msg.includes('requires completion per hr')) {
+          setCanProceed(false);
+          return;
+        }
+
+        if (url.includes('/cl/supervisor/review/')) {
+          const clean = String(url).split('?')[0].split('#')[0];
+          const parts = clean.split('/').filter(Boolean);
+          const id = parts[parts.length - 1];
+          console.debug('[NotificationModal] CL url:', url, 'clean id:', id);
+          if (!id) { setCanProceed(true); return; }
+          const data = await apiRequest(`/api/cl/${id}`);
+          // data.status exists and should indicate current status
+          const status = (data && data.status) ? String(data.status).toUpperCase() : '';
+          console.debug('[NotificationModal] CL status for', id, status);
+          // Supervisor action required when status is PENDING_SUPERVISOR or RETURNED
+          setCanProceed(['PENDING_SUPERVISOR', 'RETURNED'].includes(status));
+        } else if (url.includes('/idp/supervisor/review/')) {
+          const clean = String(url).split('?')[0].split('#')[0];
+          const parts = clean.split('/').filter(Boolean);
+          const id = parts[parts.length - 1];
+          console.debug('[NotificationModal] IDP url:', url, 'clean id:', id);
+          if (!id) { setCanProceed(true); return; }
+          const res = await apiRequest(`/api/idp/${id}`);
+          const status = (res && res.header && res.header.status) ? String(res.header.status).toUpperCase() : '';
+          console.debug('[NotificationModal] IDP status for', id, status);
+          setCanProceed(['PENDING_SUPERVISOR', 'RETURNED'].includes(status));
+        } else {
+          // For non-review links, keep the button visible
+          setCanProceed(true);
+        }
+      } catch (err) {
+        // If check fails (network/auth), hide the button to avoid showing actions that may no longer be needed.
+        console.debug('[NotificationModal] status check failed', err);
+        setCanProceed(false);
+      }
+    }
+
+    checkIfActionNeeded();
+  }, [open, notification]);
+
   if (!open || !notification) return null;
 
   return (
@@ -1886,13 +1986,135 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
           >
             Close
           </button>
-          <button
-            type="button"
-            onClick={onProceed}
-            className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            Go to Form
-          </button>
+          {canProceed && (
+            <button
+              type="button"
+              onClick={() => onProceed && onProceed(notification)}
+              className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Go to Form
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfileModal({ open, user, department, position, onClose }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  if (!open || !user) return null;
+
+  async function handleChangePassword(e) {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setError('Please fill all fields');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('New password and confirmation do not match');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await apiRequest('/api/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      setSuccess('Password changed successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err.message || 'Failed to change password');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800">Profile</h3>
+            <p className="text-sm text-gray-500">Supervisor information</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+
+        <div className="px-6 py-4 space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Name</p>
+            <p className="text-sm text-gray-800">{user.name}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Employee ID</p>
+            <p className="text-sm text-gray-800">{user.employee_id || user.employee_code || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Email</p>
+            <p className="text-sm text-gray-800">{user.email || user.username || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Department</p>
+            <p className="text-sm text-gray-800">{department?.name || user.department_name || user.department || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Position</p>
+            <p className="text-sm text-gray-800">{position?.title || user.position_title || user.position || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Role</p>
+            <p className="text-sm text-gray-800">{user.role}</p>
+          </div>
+
+          <form onSubmit={handleChangePassword} className="mt-2">
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">Change Password</h4>
+            {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
+            {success && <div className="text-sm text-green-600 mb-2">{success}</div>}
+
+            <div className="space-y-2">
+              <input
+                type="password"
+                placeholder="Current password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+              <input
+                type="password"
+                placeholder="New password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+              <input
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-100">Close</button>
+              <button type="submit" disabled={loading} className={`px-4 py-2 text-sm rounded text-white ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                {loading ? 'Saving...' : 'Change Password'}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -2031,13 +2253,7 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                   {visibleActions.map((a, idx) => (
                     <tr
                       key={`${a.id}-${idx}`}
-                      onClick={() => {
-                        onActionClick(a);
-                        if (!a.title || !a.title.toLowerCase().includes('deleted')) {
-                          onClose();
-                        }
-                      }}
-                      className="hover:bg-gray-50 cursor-pointer"
+                      className="hover:bg-gray-50"
                     >
                       <td className="px-4 py-3 text-gray-800 font-medium">{a.title || 'Action'}</td>
                       <td className="px-4 py-3 text-gray-600">{a.description || '-'}</td>

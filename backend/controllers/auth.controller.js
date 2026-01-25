@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { validateUserCredentials } = require('../services/auth.service');
+const { changeUserPassword } = require('../services/auth.service');
 
 function signToken(user) {
   const payload = {
@@ -44,3 +45,25 @@ async function login(req, res, next) {
 }
 
 module.exports = { login };
+
+// POST /api/auth/change-password
+// body: { currentPassword, newPassword }
+async function changePassword(req, res, next) {
+  try {
+    const userId = req.user && req.user.id;
+    if (!userId) return res.status(401).json({ message: 'Authentication required' });
+
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Both currentPassword and newPassword are required' });
+    }
+
+    await changeUserPassword(userId, currentPassword, newPassword);
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports.changePassword = changePassword;

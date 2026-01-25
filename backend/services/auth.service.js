@@ -28,3 +28,26 @@ module.exports = {
   findUserByEmail,
   validateUserCredentials
 };
+
+// Change user password after verifying current password
+async function changeUserPassword(userId, currentPassword, newPassword) {
+  const [rows] = await db.query(
+    `SELECT password FROM users WHERE id = ?`,
+    [userId]
+  );
+  const user = rows[0];
+  if (!user) throw new Error('User not found');
+
+  const ok = await bcrypt.compare(currentPassword, user.password || '');
+  if (!ok) {
+    const err = new Error('Current password is incorrect');
+    err.status = 400;
+    throw err;
+  }
+
+  const hashed = await bcrypt.hash(newPassword, 10);
+  await db.query(`UPDATE users SET password = ? WHERE id = ?`, [hashed, userId]);
+  return true;
+}
+
+module.exports.changeUserPassword = changeUserPassword;
