@@ -841,6 +841,51 @@ async function update(id, payload, actorId = null, actorRole = null) {
         if (hrId) {
           await createNotification({ recipient_id: hrId, message: note, module: 'IDP' }).catch(() => {});
         }
+        // If the IDP is in FOR_COMPLETION, also send emails to HR and the employee
+        if (String(statusAfter).toUpperCase() === 'FOR_COMPLETION') {
+          try {
+            // Send to all HR users
+            const hrUsers = await getHREmails();
+            if (hrUsers && hrUsers.length) {
+              const hrSubject = `IDP #${id} Updated - Requires Completion`;
+              const hrText = `Supervisor ${actorName} updated IDP #${id} for ${employeeName}. The form remains in FOR_COMPLETION and requires follow-up.`;
+              const hrHtml = `
+                <h3 style="color:#0b61ff;">IDP Updated (For Completion)</h3>
+                <p>Dear HR,</p>
+                <p>Supervisor <strong>${actorName}</strong> updated Individual Development Plan <strong>#${id}</strong> for ${employeeName}. The IDP is currently marked <strong>For Completion</strong> and may require your review.</p>
+                <p>Regards,<br/>Futura System</p>
+              `;
+
+              hrUsers.forEach((hr) => {
+                if (hr && hr.email) {
+                  sendEmail({ to: hr.email, subject: hrSubject, text: hrText, html: hrHtml })
+                    .then(r => console.log(`[EMAIL] Supervisor update -> sent HR ${hr.email}: ${r ? r.messageId : 'no-info'}`))
+                    .catch(e => console.error('[EMAIL] Supervisor update -> failed sending to HR:', e && e.message ? e.message : e));
+                }
+              });
+            }
+
+            // Send to employee
+            if (employeeId) {
+              const emp = await getUserEmail(employeeId);
+              if (emp && emp.email) {
+                const subjEmp = `Your IDP #${id} Has Been Updated - Action Required`;
+                const htmlEmp = `
+                  <h3 style="color:#0b61ff;">IDP Updated</h3>
+                  <p>Dear ${emp.name},</p>
+                  <p>Your Individual Development Plan <strong>#${id}</strong> has been updated by your supervisor <strong>${actorName}</strong> and remains marked <strong>For Completion</strong> by HR. Please review and update the required fields as instructed.</p>
+                  <p>Regards,<br/>Futura System</p>
+                `;
+                const textEmp = `Your IDP #${id} was updated by ${actorName} and is marked For Completion. Please review and complete the required fields.`;
+                sendEmail({ to: emp.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+                  .then(r => console.log(`[EMAIL] Supervisor update -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+                  .catch(e => console.error('[EMAIL] Supervisor update -> failed sending to employee:', e && e.message ? e.message : e));
+              }
+            }
+          } catch (e) {
+            console.error('[EMAIL] Supervisor update FOR_COMPLETION notify error:', e && e.message ? e.message : e);
+          }
+        }
       }
     } catch (notifyErr) {
       console.error('Failed to notify stakeholders after supervisor update in FOR_COMPLETION:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
@@ -1080,11 +1125,104 @@ async function submit(id) {
             console.error('[EMAIL] Resubmit -> failed to notify employee:', e && e.message ? e.message : e);
           }
         }
+        // If supervisor resubmits back to the employee (PENDING_EMPLOYEE), email the employee
+        if (shouldNotify && String(nextStatus).toUpperCase() === 'PENDING_EMPLOYEE') {
+          try {
+            const empUser = await getUserEmail(header.employee_id);
+            if (empUser && empUser.email) {
+              const subjEmp = `Your IDP #${id} - For Your Acknowledgment`;
+              const htmlEmp = `
+                <h3 style="color:#0b61ff;">IDP Resubmitted - For Your Acknowledgment</h3>
+                <p>Dear ${empUser.name},</p>
+                <p>Your Individual Development Plan <strong>#${id}</strong> has been resubmitted by ${supervisorName} for your acknowledgment.</p>
+                <p>Please log in to the system to acknowledge the IDP.</p>
+                <p>Regards,<br/>Futura System</p>
+              `;
+              const textEmp = `Your IDP #${id} has been resubmitted by ${supervisorName} for your acknowledgment.`;
+              sendEmail({ to: empUser.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+                .then((r) => console.log(`[EMAIL] Resubmit -> sent to employee ${empUser.email}: ${r ? r.messageId : 'no-info'}`))
+                .catch((e) => console.error('[EMAIL] Resubmit -> failed sending to employee:', e && e.message ? e.message : e));
+            }
+          } catch (e) {
+            console.error('[EMAIL] Resubmit -> failed to notify employee (pending employee):', e && e.message ? e.message : e);
+          }
+        }
       } catch (e) {
         console.error('[EMAIL] Resubmit email notify error:', e && e.message ? e.message : e);
       }
     } else {
       console.log(`[IDP SUBMIT DEBUG] FOR_COMPLETION update - no notifications sent to approvers`);
+    }
+    // If this was a supervisor-triggered update while IDP was already in FOR_COMPLETION
+    // and all activities are completed (supervisor clicked "Mark Cycle Completed"),
+    // notify HR and the employee so they know the supervisor marked the cycle completed.
+    try {
+      if (String(header.status).toUpperCase() === 'FOR_COMPLETION') {
+        // Check items to see if all activities are completed
+        const [items] = await db.query('SELECT ii.* FROM idp_items ii WHERE ii.idp_header_id = ?', [id]);
+        let incompleteFound = false;
+        for (const it of items) {
+          const raw = it.development_action || it.development_activity || null;
+          let parsed = null;
+          if (raw) {
+            if (typeof raw === 'string') {
+              try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+            } else if (typeof raw === 'object') parsed = raw;
+          }
+          const status = String((parsed && (parsed.status || parsed.completionStatus || parsed.completion_status)) || '').trim().toLowerCase();
+          if (status !== 'completed') {
+            // For items like experience/exposure, also check extra tables
+            const [extraTables] = await db.query('SELECT * FROM idp_extra_tables WHERE idp_item_id = ?', [it.id]);
+            if (extraTables && extraTables.length) {
+              for (const et of extraTables) {
+                const etStatus = String((et.completionStatus || et.completion_status || '') || '').trim().toLowerCase();
+                if (etStatus !== 'completed') {
+                  incompleteFound = true;
+                  break;
+                }
+              }
+            } else {
+              incompleteFound = true;
+            }
+          }
+          if (incompleteFound) break;
+        }
+
+        if (!incompleteFound) {
+          // All activities completed — notify HR users and employee
+          try {
+            const hrUsers = await getHREmails();
+            const empUser = await getUserEmail(header.employee_id);
+
+            const hrSubject = `Supervisor marked IDP #${id} as ready for cycle completion`;
+            const hrText = `Supervisor ${header.supervisor_id} updated IDP #${id} and indicated the cycle is ready for completion.`;
+            const hrHtml = `<p>Supervisor updated IDP <strong>#${id}</strong> and marked it for cycle completion. Please review.</p>`;
+
+            if (hrUsers && hrUsers.length) {
+              for (const hr of hrUsers) {
+                if (!hr.email) continue;
+                sendEmail({ to: hr.email, subject: hrSubject, text: hrText, html: hrHtml })
+                  .then(r => console.log(`[EMAIL] Supervisor Mark Cycle -> sent HR ${hr.email}: ${r ? r.messageId : 'no-info'}`))
+                  .catch(e => console.error('[EMAIL] Supervisor Mark Cycle -> failed sending to HR:', e && e.message ? e.message : e));
+              }
+            }
+
+            if (empUser && empUser.email) {
+              const subjEmp = `Your IDP #${id} was updated by your supervisor`;
+              const textEmp = `Your supervisor updated IDP #${id} and indicated the cycle is ready for completion. HR will be notified.`;
+              const htmlEmp = `<p>Dear ${empUser.name},</p><p>Your Individual Development Plan <strong>#${id}</strong> was updated by your supervisor and marked for cycle completion. HR will review the finalization.</p>`;
+              sendEmail({ to: empUser.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+                .then(r => console.log(`[EMAIL] Supervisor Mark Cycle -> sent to employee ${empUser.email}: ${r ? r.messageId : 'no-info'}`))
+                .catch(e => console.error('[EMAIL] Supervisor Mark Cycle -> failed sending to employee:', e && e.message ? e.message : e));
+            }
+          } catch (e) {
+            console.error('[EMAIL] Supervisor Mark Cycle notify error:', e && e.message ? e.message : e);
+          }
+        }
+      }
+    } catch (e) {
+      // Non-fatal; continue
+      console.error('Supervisor Mark Cycle detection error:', e && e.message ? e.message : e);
     }
     
     // Also notify manager, AM and HR so all stakeholders see new submissions
@@ -1275,6 +1413,46 @@ async function employeeApprove(idpId, employeeId) {
       } catch (hrErr) {
         console.error('Failed to notify HR on employee approve:', hrErr && hrErr.message ? hrErr.message : hrErr);
       }
+      // Email notify supervisor and HR (non-blocking)
+      try {
+        if (supervisorId) {
+          const sup = await getUserEmail(supervisorId);
+          if (sup && sup.email) {
+            const subjSup = `Employee Acknowledged IDP #${idpId}`;
+            const htmlSup = `
+              <h3 style="color:#0b61ff;">IDP Acknowledged by Employee</h3>
+              <p>Dear ${sup.name},</p>
+              <p>Employee <strong>${employeeName}</strong> has acknowledged Individual Development Plan <strong>#${idpId}</strong>.</p>
+              <p>Please review and proceed with HR routing if necessary.</p>
+              <p>Regards,<br/>Futura System</p>
+            `;
+            const textSup = `Employee ${employeeName} has acknowledged IDP #${idpId}.`;
+            sendEmail({ to: sup.email, subject: subjSup, text: textSup, html: htmlSup })
+              .then(r => console.log(`[EMAIL] Employee approve -> sent to supervisor ${sup.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] Employee approve -> failed sending to supervisor:', e && e.message ? e.message : e));
+          }
+        }
+
+        const hrUsers = await getHREmails();
+        if (hrUsers && hrUsers.length) {
+          const subjHr = `IDP #${idpId} Acknowledged by Employee`;
+          const htmlHr = `
+            <h3 style="color:#0b61ff;">IDP Awaiting HR Review</h3>
+            <p>Dear HR,</p>
+            <p>The Individual Development Plan <strong>#${idpId}</strong> for ${employeeName} has been acknowledged by the employee and is now pending HR review.</p>
+            <p>Regards,<br/>Futura System</p>
+          `;
+          const textHr = `IDP #${idpId} for ${employeeName} has been acknowledged by the employee and is pending HR review.`;
+          for (const hr of hrUsers) {
+            if (!hr.email) continue;
+            sendEmail({ to: hr.email, subject: subjHr, text: textHr, html: htmlHr })
+              .then(r => console.log(`[EMAIL] Employee approve -> sent HR notify to ${hr.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] Employee approve -> failed sending to HR:', e && e.message ? e.message : e));
+          }
+        }
+      } catch (e) {
+        console.error('[EMAIL] Employee approve -> notify error:', e && e.message ? e.message : e);
+      }
     } catch (notifErr) {
       console.error('Failed to log/notify on employee approve:', notifErr.message || notifErr);
     }
@@ -1331,6 +1509,27 @@ async function employeeReturn(idpId, employeeId, remarks) {
           message: `Employee ${employeeName} returned IDP #${idpId}. Remarks: ${remarks}`,
           module: 'IDP',
         }).catch(() => {});
+        // Email notify supervisor about the return
+        try {
+          const sup = supervisorId ? await getUserEmail(supervisorId) : null;
+          if (sup && sup.email) {
+            const subjSup = `IDP #${idpId} Returned by Employee ${employeeName}`;
+            const htmlSup = `
+              <h3 style="color:#0b61ff;">IDP Returned by Employee</h3>
+              <p>Dear ${sup.name},</p>
+              <p>Employee <strong>${employeeName}</strong> has returned Individual Development Plan <strong>#${idpId}</strong> for revision.</p>
+              <p><strong>Remarks:</strong> ${remarks || 'No remarks provided'}</p>
+              <p>Please review and coordinate the revisions as needed.</p>
+              <p>Regards,<br/>Futura System</p>
+            `;
+            const textSup = `Employee ${employeeName} returned IDP #${idpId}. Remarks: ${remarks || 'No remarks provided'}`;
+            sendEmail({ to: sup.email, subject: subjSup, text: textSup, html: htmlSup })
+              .then(r => console.log(`[EMAIL] Employee return -> sent to supervisor ${sup.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] Employee return -> failed sending to supervisor:', e && e.message ? e.message : e));
+          }
+        } catch (e) {
+          console.error('[EMAIL] Employee return -> supervisor email error:', e && e.message ? e.message : e);
+        }
       }
     } catch (notifErr) {
       console.error('Failed to log/notify on employee return:', notifErr.message || notifErr);
@@ -1440,6 +1639,49 @@ async function hrApprove(idpId, hrId) {
             message: `IDP #${idpId} for ${employeeName} requires completion (incomplete competencies: ${incomplete.join(', ')}). HR ${hrName} flagged it for completion.`,
             module: 'IDP',
           }).catch(() => {});
+          // Also notify the employee and send emails to both supervisor and employee
+          try {
+            if (employeeIdFC) {
+              await createNotification({ recipient_id: employeeIdFC, message: `IDP #${idpId} requires completion: ${incomplete.join(', ')}. Please coordinate with your supervisor.`, module: 'IDP' }).catch(() => {});
+            }
+
+            // Email supervisor
+            const sup = supervisorIdFC ? await getUserEmail(supervisorIdFC) : null;
+            if (sup && sup.email) {
+              const subjSupFC = `IDP #${idpId} - For Completion`;
+              const htmlSupFC = `
+                <h3 style="color:#0b61ff;">IDP Requires Completion</h3>
+                <p>Dear ${sup.name},</p>
+                <p>HR ${hrName} has marked IDP <strong>#${idpId}</strong> for ${employeeName} as requiring completion for the following competencies: ${incomplete.join(', ')}.</p>
+                <p>Please coordinate the completion activities with your employee.</p>
+                <p>Regards,<br/>Futura System</p>
+              `;
+              const textSupFC = `IDP #${idpId} requires completion for competencies: ${incomplete.join(', ')}.`;
+              sendEmail({ to: sup.email, subject: subjSupFC, text: textSupFC, html: htmlSupFC })
+                .then(r => console.log(`[EMAIL] HR FOR_COMPLETION -> sent to supervisor ${sup.email}: ${r ? r.messageId : 'no-info'}`))
+                .catch(e => console.error('[EMAIL] HR FOR_COMPLETION -> failed sending to supervisor:', e && e.message ? e.message : e));
+            }
+
+            // Email employee
+            if (employeeIdFC) {
+              const emp = await getUserEmail(employeeIdFC);
+              if (emp && emp.email) {
+                const subjEmpFC = `Your IDP #${idpId} - For Completion`;
+                const htmlEmpFC = `
+                  <h3 style="color:#0b61ff;">IDP Marked For Completion</h3>
+                  <p>Dear ${emp.name},</p>
+                  <p>Your IDP <strong>#${idpId}</strong> has been marked by HR as <strong>For Completion</strong> for the following competencies: ${incomplete.join(', ')}. Please work with your supervisor to complete them.</p>
+                  <p>Regards,<br/>Futura System</p>
+                `;
+                const textEmpFC = `Your IDP #${idpId} has been marked For Completion by HR for: ${incomplete.join(', ')}.`;
+                sendEmail({ to: emp.email, subject: subjEmpFC, text: textEmpFC, html: htmlEmpFC })
+                  .then(r => console.log(`[EMAIL] HR FOR_COMPLETION -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+                  .catch(e => console.error('[EMAIL] HR FOR_COMPLETION -> failed sending to employee:', e && e.message ? e.message : e));
+              }
+            }
+          } catch (e) {
+            console.error('[EMAIL] HR FOR_COMPLETION notify error:', e && e.message ? e.message : e);
+          }
         }
       } catch (notifyErr) {
         console.error('Failed to log/notify on HR FOR_COMPLETION:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
@@ -1490,6 +1732,44 @@ async function hrApprove(idpId, hrId) {
           message: `IDP #${idpId} for ${employeeName} has been marked Cycle Completed by HR ${hrName}.`,
           module: 'IDP',
         }).catch(() => {});
+      }
+      // Also email supervisor and employee about cycle completion (non-blocking)
+      try {
+        if (supervisorId) {
+          const sup = await getUserEmail(supervisorId);
+          if (sup && sup.email) {
+            const subjSup = `IDP #${idpId} Cycle Completed by HR`;
+            const htmlSup = `
+              <h3 style="color:#0b61ff;">IDP Cycle Completed</h3>
+              <p>Dear ${sup.name},</p>
+              <p>The Individual Development Plan <strong>#${idpId}</strong> for ${employeeName} has been marked <strong>Cycle Completed</strong> by HR ${hrName}.</p>
+              <p>Regards,<br/>Futura System</p>
+            `;
+            const textSup = `IDP #${idpId} for ${employeeName} has been marked Cycle Completed by HR ${hrName}.`;
+            sendEmail({ to: sup.email, subject: subjSup, text: textSup, html: htmlSup })
+              .then(r => console.log(`[EMAIL] HR cycle complete -> sent to supervisor ${sup.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] HR cycle complete -> failed sending to supervisor:', e && e.message ? e.message : e));
+          }
+        }
+
+        if (employeeId) {
+          const emp = await getUserEmail(employeeId);
+          if (emp && emp.email) {
+            const subjEmp = `Your IDP #${idpId} Cycle Completed`;
+            const htmlEmp = `
+              <h3 style="color:#0b61ff;">IDP Cycle Completed</h3>
+              <p>Dear ${emp.name},</p>
+              <p>Your Individual Development Plan <strong>#${idpId}</strong> has been marked <strong>Cycle Completed</strong> by HR ${hrName}.</p>
+              <p>Regards,<br/>Futura System</p>
+            `;
+            const textEmp = `Your IDP #${idpId} has been marked Cycle Completed by HR ${hrName}.`;
+            sendEmail({ to: emp.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+              .then(r => console.log(`[EMAIL] HR cycle complete -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] HR cycle complete -> failed sending to employee:', e && e.message ? e.message : e));
+          }
+        }
+      } catch (e) {
+        console.error('[EMAIL] HR cycle complete notify error:', e && e.message ? e.message : e);
       }
     } catch (notifErr) {
       console.error('Failed to log/notify on HR approve:', notifErr && notifErr.message ? notifErr.message : notifErr);
@@ -1555,6 +1835,58 @@ async function hrReturn(idpId, hrId, remarks) {
           module: 'IDP',
         }).catch(() => {});
       }
+      // Also notify the employee and email both supervisor and employee
+      try {
+        if (employeeId) {
+          await createNotification({
+            recipient_id: employeeId,
+            message: `Your IDP #${idpId} was returned by HR ${hrName}. Remarks: ${remarks}`,
+            module: 'IDP',
+          }).catch(() => {});
+        }
+
+        // Email supervisor
+        if (supervisorId) {
+          const sup = await getUserEmail(supervisorId);
+          if (sup && sup.email) {
+            const subjSup = `IDP #${idpId} Returned by HR`;
+            const htmlSup = `
+              <h3 style="color:#0b61ff;">IDP Returned by HR</h3>
+              <p>Dear ${sup.name},</p>
+              <p>The Individual Development Plan <strong>#${idpId}</strong> for ${employeeName} was returned by HR ${hrName}.</p>
+              <p><strong>Remarks:</strong> ${remarks || 'No remarks provided'}</p>
+              <p>Please review and coordinate revisions as needed.</p>
+              <p>Regards,<br/>Futura System</p>
+            `;
+            const textSup = `IDP #${idpId} for ${employeeName} was returned by HR ${hrName}. Remarks: ${remarks || 'No remarks provided'}`;
+            sendEmail({ to: sup.email, subject: subjSup, text: textSup, html: htmlSup })
+              .then(r => console.log(`[EMAIL] HR return -> sent to supervisor ${sup.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] HR return -> failed sending to supervisor:', e && e.message ? e.message : e));
+          }
+        }
+
+        // Email employee
+        if (employeeId) {
+          const emp = await getUserEmail(employeeId);
+          if (emp && emp.email) {
+            const subjEmp = `Your IDP #${idpId} Was Returned by HR`;
+            const htmlEmp = `
+              <h3 style="color:#0b61ff;">IDP Returned by HR</h3>
+              <p>Dear ${emp.name},</p>
+              <p>Your Individual Development Plan <strong>#${idpId}</strong> has been returned by HR ${hrName} ${newStatus === 'FOR_COMPLETION' ? 'for completion updates' : 'for revision'}.</p>
+              <p><strong>Remarks:</strong> ${remarks || 'No remarks provided'}</p>
+              <p>Please coordinate with your supervisor.</p>
+              <p>Regards,<br/>Futura System</p>
+            `;
+            const textEmp = `Your IDP #${idpId} has been returned by HR ${hrName}. Remarks: ${remarks || 'No remarks provided'}`;
+            sendEmail({ to: emp.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+              .then(r => console.log(`[EMAIL] HR return -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] HR return -> failed sending to employee:', e && e.message ? e.message : e));
+          }
+        }
+      } catch (e) {
+        console.error('[EMAIL] HR return notify error:', e && e.message ? e.message : e);
+      }
     } catch (notifErr) {
       console.error('Failed to log/notify on HR return:', notifErr && notifErr.message ? notifErr.message : notifErr);
     }
@@ -1614,6 +1946,27 @@ async function resubmitToHR(id) {
       description: `IDP #${id}`,
       url: `/supervisor/idp/view/${id}`,
     }).catch(() => {});
+    // Notify employee (email + in-app) that supervisor resubmitted to HR
+    try {
+      const emp = header.employee_id ? await getUserEmail(header.employee_id) : null;
+      if (emp && emp.email) {
+        await createNotification({ recipient_id: header.employee_id, message: `Your IDP #${id} was resubmitted to HR by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
+        const subjEmp = `Your IDP #${id} Was Resubmitted to HR`;
+        const htmlEmp = `
+          <h3 style="color:#0b61ff;">IDP Resubmitted to HR</h3>
+          <p>Dear ${emp.name},</p>
+          <p>Your Individual Development Plan <strong>#${id}</strong> has been resubmitted to HR by ${supervisorName}.</p>
+          <p>Please await further updates.</p>
+          <p>Regards,<br/>Futura System</p>
+        `;
+        const textEmp = `Your IDP #${id} has been resubmitted to HR by ${supervisorName}.`;
+        sendEmail({ to: emp.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+          .then(r => console.log(`[EMAIL] Resubmit to HR -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+          .catch(e => console.error('[EMAIL] Resubmit to HR -> failed sending to employee:', e && e.message ? e.message : e));
+      }
+    } catch (e) {
+      console.error('[EMAIL] Resubmit to HR -> employee notify error:', e && e.message ? e.message : e);
+    }
   } catch (e) {
     console.error('IDP resubmit to HR notifications failed', e);
   }
@@ -1676,6 +2029,27 @@ async function resubmitToManager(id) {
       description: `IDP #${id}`,
       url: `/supervisor/idp/view/${id}`,
     }).catch(() => {});
+    // Notify employee (email + in-app) that supervisor resubmitted to Manager/AM
+    try {
+      const emp = header.employee_id ? await getUserEmail(header.employee_id) : null;
+      if (emp && emp.email) {
+        await createNotification({ recipient_id: header.employee_id, message: `Your IDP #${id} was resubmitted to ${hasAM ? 'AM' : 'Manager'} by ${supervisorName}.`, module: 'IDP' }).catch(() => {});
+        const subjEmp = `Your IDP #${id} Was Resubmitted for Further Review`;
+        const htmlEmp = `
+          <h3 style="color:#0b61ff;">IDP Resubmitted</h3>
+          <p>Dear ${emp.name},</p>
+          <p>Your Individual Development Plan <strong>#${id}</strong> has been resubmitted to ${hasAM ? 'the Assistant Manager' : 'the Manager'} by ${supervisorName} for further review.</p>
+          <p>Please await further updates.</p>
+          <p>Regards,<br/>Futura System</p>
+        `;
+        const textEmp = `Your IDP #${id} has been resubmitted to ${hasAM ? 'AM' : 'Manager'} by ${supervisorName}.`;
+        sendEmail({ to: emp.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+          .then(r => console.log(`[EMAIL] Resubmit to Manager -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+          .catch(e => console.error('[EMAIL] Resubmit to Manager -> failed sending to employee:', e && e.message ? e.message : e));
+      }
+    } catch (e) {
+      console.error('[EMAIL] Resubmit to Manager -> employee notify error:', e && e.message ? e.message : e);
+    }
   } catch (e) {
     console.error('IDP resubmit to Manager notifications failed', e);
   }
@@ -2557,6 +2931,52 @@ async function hrApproveForCompletion(idpId, hrId) {
       if (supervisorId) {
         await createNotification({ recipient_id: supervisorId, message: `IDP #${idpId} for ${employeeName} requires completion per HR ${hrName}.`, module: 'IDP' }).catch(() => {});
       }
+
+      // Also notify the employee and send emails to supervisor and employee
+      try {
+        if (employeeId) {
+          await createNotification({ recipient_id: employeeId, message: `Your IDP #${idpId} requires completion per HR ${hrName}. Please update accordingly.`, module: 'IDP' }).catch(() => {});
+        }
+
+        // Email supervisor
+        if (supervisorId) {
+          const sup = await getUserEmail(supervisorId);
+          if (sup && sup.email) {
+            const subjSup = `IDP #${idpId} Requires Completion - Action Required`;
+            const htmlSup = `
+              <h3 style="color:#0b61ff;">IDP Requires Completion</h3>
+              <p>Dear ${sup.name},</p>
+              <p>The Individual Development Plan <strong>#${idpId}</strong> for ${employeeName} has been marked <strong>For Completion</strong> by HR ${hrName} and requires your attention.</p>
+              <p>Please coordinate with the employee to complete the required fields.</p>
+              <p>Regards,<br/>Futura System</p>
+            `;
+            const textSup = `IDP #${idpId} for ${employeeName} requires completion per HR ${hrName}. Please coordinate with the employee.`;
+            sendEmail({ to: sup.email, subject: subjSup, text: textSup, html: htmlSup })
+              .then(r => console.log(`[EMAIL] HR for-completion -> sent to supervisor ${sup.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] HR for-completion -> failed sending to supervisor:', e && e.message ? e.message : e));
+          }
+        }
+
+        // Email employee
+        if (employeeId) {
+          const emp = await getUserEmail(employeeId);
+          if (emp && emp.email) {
+            const subjEmp = `Your IDP #${idpId} Requires Completion - Action Needed`;
+            const htmlEmp = `
+              <h3 style="color:#0b61ff;">IDP Requires Completion</h3>
+              <p>Dear ${emp.name},</p>
+              <p>Your Individual Development Plan <strong>#${idpId}</strong> has been marked <strong>For Completion</strong> by HR ${hrName}. Please review and complete the necessary fields as instructed by your supervisor.</p>
+              <p>Regards,<br/>Futura System</p>
+            `;
+            const textEmp = `Your IDP #${idpId} has been marked For Completion by HR ${hrName}. Please review and complete the required fields.`;
+            sendEmail({ to: emp.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+              .then(r => console.log(`[EMAIL] HR for-completion -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] HR for-completion -> failed sending to employee:', e && e.message ? e.message : e));
+          }
+        }
+      } catch (e) {
+        console.error('[EMAIL] HR for-completion notify error:', e && e.message ? e.message : e);
+      }
     } catch (notifErr) {
       console.error('Failed to log/notify on HR FOR_COMPLETION (explicit):', notifErr && notifErr.message ? notifErr.message : notifErr);
     }
@@ -2609,6 +3029,44 @@ async function hrForceCycleComplete(idpId, hrId) {
       }
       if (supervisorId) {
         await createNotification({ recipient_id: supervisorId, message: `IDP #${idpId} for ${employeeName} has been marked Cycle Completed by HR ${hrName}.`, module: 'IDP' }).catch(() => {});
+      }
+      // Send emails to supervisor and employee about cycle completion (non-blocking)
+      try {
+        if (supervisorId) {
+          const sup = await getUserEmail(supervisorId);
+          if (sup && sup.email) {
+            const subjSup = `IDP #${idpId} Cycle Completed by HR`;
+            const htmlSup = `
+              <h3 style="color:#0b61ff;">IDP Cycle Completed</h3>
+              <p>Dear ${sup.name},</p>
+              <p>The Individual Development Plan <strong>#${idpId}</strong> for ${employeeName} has been marked <strong>Cycle Completed</strong> by HR ${hrName}.</p>
+              <p>Regards,<br/>Futura System</p>
+            `;
+            const textSup = `IDP #${idpId} for ${employeeName} has been marked Cycle Completed by HR ${hrName}.`;
+            sendEmail({ to: sup.email, subject: subjSup, text: textSup, html: htmlSup })
+              .then(r => console.log(`[EMAIL] HR cycle-complete -> sent to supervisor ${sup.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] HR cycle-complete -> failed sending to supervisor:', e && e.message ? e.message : e));
+          }
+        }
+
+        if (employeeId) {
+          const emp = await getUserEmail(employeeId);
+          if (emp && emp.email) {
+            const subjEmp = `Your IDP #${idpId} Cycle Completed`;
+            const htmlEmp = `
+              <h3 style="color:#0b61ff;">IDP Cycle Completed</h3>
+              <p>Dear ${emp.name},</p>
+              <p>Your Individual Development Plan <strong>#${idpId}</strong> has been marked <strong>Cycle Completed</strong> by HR ${hrName}.</p>
+              <p>Regards,<br/>Futura System</p>
+            `;
+            const textEmp = `Your IDP #${idpId} has been marked Cycle Completed by HR ${hrName}.`;
+            sendEmail({ to: emp.email, subject: subjEmp, text: textEmp, html: htmlEmp })
+              .then(r => console.log(`[EMAIL] HR cycle-complete -> sent to employee ${emp.email}: ${r ? r.messageId : 'no-info'}`))
+              .catch(e => console.error('[EMAIL] HR cycle-complete -> failed sending to employee:', e && e.message ? e.message : e));
+          }
+        }
+      } catch (e) {
+        console.error('[EMAIL] HR cycle-complete notify error:', e && e.message ? e.message : e);
       }
     } catch (notifErr) {
       console.error('Failed to log/notify on HR force cycle complete:', notifErr && notifErr.message ? notifErr.message : notifErr);
