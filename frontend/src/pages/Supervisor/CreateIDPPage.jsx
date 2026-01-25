@@ -19,7 +19,7 @@ import {
 function ModalShell({ title, onClose, children, maxWidth = 'max-w-lg' }) {
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-blue-900/60" onClick={onClose} aria-hidden="true" />
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} aria-hidden="true" />
       <div className="relative h-full w-full flex items-center justify-center p-4">
         <div className={`w-full ${maxWidth} bg-white rounded-xl border-0 shadow-2xl overflow-hidden`}>
           <div className="flex items-start justify-between px-5 py-4 border-b border-gray-200">
@@ -776,9 +776,10 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     if (id || employeeId) loadData();
   }, [id, employeeId, fromBackendActivity, defaultActivity]);
 
-  // Update idpData.items when selected competencies change (create mode only)
+  // Update idpData.items when selected competencies change (create mode only,
+  // or when editing an existing DRAFT so add/remove persists)
   useEffect(() => {
-    if (editMode) return;
+    if (editMode && idpHeader?.status !== 'DRAFT') return;
     if (!availableCompetencies?.length) return;
 
     setIdpData((prev) => {
@@ -819,7 +820,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
       return { ...prev, items: selected };
     });
-  }, [selectedCompetencyIds, availableCompetencies, editMode, defaultActivity]);
+  }, [selectedCompetencyIds, availableCompetencies, editMode, defaultActivity, idpHeader]);
 
   const updateIdpData = (path, value) => {
     setIdpData((prev) => {
@@ -961,6 +962,27 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
     });
     if (missingAreaNames.length) {
       setValidationError(`Area of exposure names are required. Please fill in all area names before submitting.`);
+      setShowValidationErrorModal(true);
+      return;
+    }
+
+    // Validate: For Experience/Exposure types, ensure at least one Area of Exposure is added
+    const missingAreasAdded = [];
+    (idpData.items || []).forEach((it, idx) => {
+      const act = (it.developmentActivities || [])[0] || {};
+      const actType = (act.type || '').toLowerCase();
+      if (['exposure', 'experience'].includes(actType)) {
+        const extraTables = it.extraTables || [];
+        if (extraTables.length > 0) {
+          const hasAnyAreas = extraTables.some(et => Array.isArray(et.areasOfExposure) && et.areasOfExposure.length > 0);
+          if (!hasAnyAreas) {
+            missingAreasAdded.push({ itemIndex: idx, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
+          }
+        }
+      }
+    });
+    if (missingAreasAdded.length && userRole === 'Supervisor') {
+      setValidationError(`Please add at least one Area of Exposure for: ${missingAreasAdded.map(m => m.competencyName).join(', ')}`);
       setShowValidationErrorModal(true);
       return;
     }
@@ -1238,7 +1260,21 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         });
 
         alert('IDP draft saved successfully!');
-        navigate('/supervisor');
+        // Refresh the current IDP data so the page remains editable with latest values
+        try {
+          const latest = await apiRequest(`/api/idp/${id}`);
+          if (latest) {
+            setIdpHeader(latest.header || idpHeader);
+            // transform items from backend shape to frontend shape if necessary
+            if (latest.items) setIdpData(prev => ({ ...prev, items: latest.items }));
+          }
+        } catch (e) {
+          // ignore; keep current state
+        }
+        // ensure edit mode and allow editing after draft save
+        setViewOnly(false);
+        setEditMode(true);
+        // stay on the same page so user can continue editing
         return;
       }
 
@@ -1286,8 +1322,30 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       if (!idpId) throw new Error('Failed to save draft. No ID returned.');
 
       // Save as draft without submitting
-      alert('IDP saved as draft successfully! You can continue editing later.');
-      navigate('/supervisor');
+      alert('IDP saved as draft successfully! You can continue editing now.');
+      // Navigate to the newly created IDP edit route so future saves use edit flow
+      try {
+        // Fetch full IDP and replace the page with its id route
+        const full = await apiRequest(`/api/idp/${idpId}`);
+        if (full) {
+          // update URL to the new ID so component mounts in edit mode
+          navigate(`/supervisor/idp/${idpId}`, { replace: true });
+          // set state from fetched payload (if component doesn't remount in time)
+          setIdpHeader(full.header || null);
+          if (full.items) setIdpData(prev => ({ ...prev, items: full.items }));
+          // ensure the page stays editable for drafts
+          setViewOnly(false);
+          setEditMode(true);
+        } else {
+          // still navigate and set edit mode optimistically
+          navigate(`/supervisor/idp/${idpId}`, { replace: true });
+          setViewOnly(false);
+          setEditMode(true);
+        }
+      } catch (e) {
+        // If fetch fails, still navigate so user can continue editing using the route
+        navigate(`/supervisor/idp/${idpId}`, { replace: true });
+      }
     } catch (err) {
       console.error('Failed to save draft:', err);
       alert('Failed to save draft. Please try again.');
@@ -1515,7 +1573,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 <span className="sm:hidden">Guide</span>
               </button>
 
-              {!viewOnly && !editMode && (
+              {!viewOnly && (idpHeader?.status === 'DRAFT' || !editMode) && (
                 <button
                   onClick={saveDraft}
                   disabled={saving}
@@ -1536,7 +1594,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         {/* Scoring Guide Modal */}
         {showScoringGuide && (
           <div className="fixed inset-0 z-50">
-            <div className="absolute inset-0 bg-blue-900/60" onClick={() => setShowScoringGuide(false)} aria-hidden="true" />
+            <div className="absolute inset-0 bg-black/60" onClick={() => setShowScoringGuide(false)} aria-hidden="true" />
             <div className="relative h-full w-full flex items-center justify-center p-4">
               <div className="w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl bg-white rounded-xl border border-gray-100">
                 <div className="flex justify-between items-center px-5 py-4 border-b border-gray-200">
@@ -2009,7 +2067,8 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
         </div>
 
         {/* Competency selector */}
-        {!editMode && !viewOnly && availableCompetencies?.length > 0 && (
+        {/* Show selector for new create flow (not editMode) OR when an existing IDP is a DRAFT */}
+        {!viewOnly && availableCompetencies?.length > 0 && (idpHeader?.status === 'DRAFT' || !editMode) && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
             <h3 className="text-sm font-semibold text-black">Select Competencies (min 1, max 2)</h3>
             <p className="text-sm text-gray-700 mt-2">
@@ -2074,7 +2133,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                 <p className="text-sm text-gray-600 mt-1">{viewOnly ? 'Review the submitted development activities.' : 'Update the fields inside each competency card.'}</p>
               </div>
               <div className="text-sm text-gray-700">
-                {idpData.items.length} competency{(idpData.items.length === 1) ? '' : 'ies'}
+                {idpData.items.length} {idpData.items.length === 1 ? 'competency' : 'competencies'}
               </div>
             </div>
           </div>
@@ -2393,7 +2452,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                             onChange={(e) =>
                                               updateIdpData(`items.${itemIndex}.developmentActivities.0.completionStatus`, e.target.value)
                                             }
-                                            className="w-full bg-white rounded px-2 py-1 text-sm text-gray-800 font-medium outline-none focus:ring-1 focus:ring-blue-500 border border-gray-200"
+                                            disabled={viewOnly || idpHeader?.status !== 'FOR_COMPLETION'}
+                                            title={viewOnly || idpHeader?.status !== 'FOR_COMPLETION' ? "Editable when IDP status is 'FOR_COMPLETION'" : undefined}
+                                            className="w-full bg-white rounded px-2 py-1 text-sm text-gray-800 font-medium outline-none focus:ring-1 focus:ring-blue-500 border border-gray-200 disabled:opacity-60 disabled:cursor-not-allowed"
                                           >
                                             {COMPLETION_STATUS_OPTIONS.map((status) => (
                                               <option key={status} value={status}>
@@ -2885,7 +2946,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                         <select
                                                           value={area.status || ''}
                                                           onChange={(e) => {
-                                                            if (viewOnly) return;
+                                                            if (viewOnly || idpHeader?.status !== 'FOR_COMPLETION') return;
                                                             const newValue = e.target.value;
                                                             
                                                             setIdpData((prev) => {
@@ -2901,8 +2962,9 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                                               return newData;
                                                             });
                                                           }}
-                                                          disabled={viewOnly}
-                                                          className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300"
+                                                          disabled={viewOnly || idpHeader?.status !== 'FOR_COMPLETION'}
+                                                          title={viewOnly || idpHeader?.status !== 'FOR_COMPLETION' ? "Editable when IDP status is 'FOR_COMPLETION'" : undefined}
+                                                          className="w-full bg-white rounded px-3 py-2 text-sm text-gray-800 font-medium border border-gray-300 disabled:opacity-60 disabled:cursor-not-allowed"
                                                         >
                                                           <option value="">-- Select Status --</option>
                                                           <option value="Not Started">Not Started</option>

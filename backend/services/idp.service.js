@@ -152,14 +152,10 @@ async function create(payload) {
   );
   const idpId = result.insertId;
   logInfo('Created IDP header', { idpId });
-  // Notify via centralized email service (non-blocking)
-  try {
-    const nextReviewerId = (employee.has_am && employee.am_id) ? employee.am_id : employee.manager_id;
-    sendIDPCreationEmail({ idpId, employeeId: payload.employee_id, supervisorId: payload.supervisor_id, nextReviewerId })
-      .catch((e) => console.error('[EMAIL] sendIDPCreationEmail error:', e && e.message ? e.message : e));
-  } catch (e) {
-    console.error('[EMAIL] Failed to schedule IDP creation email:', e && e.message ? e.message : e);
-  }
+  // Do NOT send creation emails automatically when an IDP is created/saved as DRAFT.
+  // Previously this sent emails on every creation which caused drafts to notify users.
+  // If a creation email is desired in the future, callers may pass a flag and the
+  // email can be scheduled explicitly (or use the debugSendIDPEmail endpoint).
 
   return { id: idpId };
 }
@@ -3237,14 +3233,8 @@ async function createWithItems(payload) {
       url: `/supervisor/idp/view/${idpId}`
     });
 
-    // Asynchronously notify via centralized email service (non-blocking)
-    try {
-      const nextReviewerId = amId || managerId || null;
-      sendIDPCreationEmail({ idpId, employeeId: payload.employeeId, supervisorId: payload.supervisorId, nextReviewerId })
-        .catch((e) => console.error('[EMAIL] sendIDPCreationEmail (createWithItems) error:', e && e.message ? e.message : e));
-    } catch (e) {
-      console.error('[EMAIL] Failed to schedule IDP creation email (createWithItems):', e && e.message ? e.message : e);
-    }
+    // Do NOT send creation emails automatically when creating/saving a DRAFT via createWithItems.
+    // Removing the automatic email prevents drafts from notifying users. Use explicit notify flow when promoting drafts.
 
     return { id: idpId };
   } catch (err) {
