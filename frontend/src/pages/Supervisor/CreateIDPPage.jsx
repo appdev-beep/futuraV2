@@ -1685,12 +1685,12 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
 
               <div className="sm:col-span-1 lg:col-span-2">
                 <Field label="Review Period" readOnly={viewOnly}>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-2">
                     <select
                       value={idpData.reviewPeriod}
                       onChange={(e) => updateIdpData('reviewPeriod', e.target.value)}
                       disabled={viewOnly}
-                      className={`flex-1 bg-gray-50 rounded-lg px-3 py-2 ${viewOnly ? 'text-base' : 'text-sm'} text-black outline-none focus:ring-2 focus:ring-black/10 ${viewOnly ? 'border-0' : 'border border-gray-100'} disabled:opacity-60 disabled:cursor-not-allowed`}
+                      className={`w-full bg-gray-50 rounded-lg px-3 py-2 ${viewOnly ? 'text-base' : 'text-sm'} text-black outline-none focus:ring-2 focus:ring-black/10 ${viewOnly ? 'border-0' : 'border border-gray-100'} disabled:opacity-60 disabled:cursor-not-allowed`}
                     >
                       {(reviewPeriods || []).map((rp) => (
                         <option key={rp} value={rp}>{rp}</option>
@@ -1698,7 +1698,7 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                     </select>
 
                     {!viewOnly && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-end">
                         {!showAddReview ? (
                           <button
                             type="button"
@@ -1708,13 +1708,13 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                             + Add
                           </button>
                         ) : (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full">
                             <input
                               type="text"
                               placeholder="New review period"
                               value={newReviewPeriod}
                               onChange={(e) => setNewReviewPeriod(e.target.value)}
-                              className="px-2 py-1 border border-gray-200 rounded text-sm"
+                              className="flex-1 px-3 py-2 border border-gray-200 rounded text-sm"
                             />
                             <button
                               type="button"
