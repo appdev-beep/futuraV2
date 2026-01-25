@@ -91,7 +91,7 @@ export default function SupervisorIDP({ idpSummary, idpByStatus, activeIDPSectio
                 {filteredIDPs.map((idp) => (
                   <tr key={idp.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idp.id}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idp.employee_id || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idp.employee_code || idp.employee_id || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idp.employee_name || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idp.department_name || idp.department || (idp.department_id ? `Dept #${idp.department_id}` : 'N/A')}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idp.position_title || idp.position || (idp.position_id ? `Position #${idp.position_id}` : 'N/A')}</td>

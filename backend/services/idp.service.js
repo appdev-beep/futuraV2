@@ -360,7 +360,7 @@ async function managerApprove(idpId, managerId, remarks = '') {
 // Get all IDPs pending manager approval
 async function getIDPsPendingManager(managerId) {
   const [headers] = await db.query(
-    `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id
+    `SELECT h.*, e.name AS employee_name, e.employee_id AS employee_code, e.position_id, e.department_id
      FROM idp_headers h
      JOIN users e ON h.employee_id = e.id
      WHERE h.status = 'PENDING_MANAGER' AND h.manager_id = ?
@@ -377,8 +377,8 @@ async function getIDPsPendingManager(managerId) {
 // Get all IDPs pending AM approval
 async function getIDPsPendingAM(amId) {
   const [headers] = await db.query(
-    `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id,
-            s.name AS supervisor_name
+        `SELECT h.*, e.name AS employee_name, e.employee_id AS employee_code, e.position_id, e.department_id,
+          s.name AS supervisor_name
      FROM idp_headers h
      JOIN users e ON h.employee_id = e.id
      LEFT JOIN users s ON h.supervisor_id = s.id
@@ -392,7 +392,7 @@ async function getIDPsPendingAM(amId) {
 // Get all IDPs for AM grouped by status (similar to manager grouped)
 async function getIDPsGroupedByAM(amId) {
   const [headers] = await db.query(
-    `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id,
+    `SELECT h.*, e.name AS employee_name, e.employee_id AS employee_code, e.position_id, e.department_id,
       COALESCE(p.title, '') AS position_title
      FROM idp_headers h
      JOIN users e ON h.employee_id = e.id
@@ -1291,7 +1291,7 @@ async function getIDPsGroupedByStatus(supervisorId) {
   // Get all IDP headers for this supervisor
 
   const [headers] = await db.query(
-        `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id,
+        `SELECT h.*, e.name AS employee_name, e.employee_id AS employee_code, e.position_id, e.department_id,
           COALESCE(p.title, '') AS position_title
      FROM idp_headers h
      JOIN users e ON h.employee_id = e.id
@@ -1318,7 +1318,7 @@ async function getIDPsGroupedByStatus(supervisorId) {
 // Get all IDPs for a manager, grouped by status
 async function getIDPsGroupedByManager(managerId) {
   const [headers] = await db.query(
-    `SELECT h.*, e.name AS employee_name, e.position_id, e.department_id,
+    `SELECT h.*, e.name AS employee_name, e.employee_id AS employee_code, e.position_id, e.department_id,
       COALESCE(p.title, '') AS position_title
      FROM idp_headers h
      JOIN users e ON h.employee_id = e.id

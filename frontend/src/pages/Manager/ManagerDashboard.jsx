@@ -1,5 +1,5 @@
 // src/pages/Manager/ManagerDashboard.jsx
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../../api/client';
 import { displayStatus } from '../../utils/statusHelper';
 import {
@@ -23,8 +23,6 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ExclamationTriangleIcon,
-  XMarkIcon,
-  CalendarIcon,
 } from '@heroicons/react/24/outline';
 import {
   COMPLETION_STATUS_OPTIONS,
@@ -32,57 +30,6 @@ import {
   CRAYON_COLORS,
   SCORING_GUIDE,
 } from '../Shared/idpConstants';
-
-// Helper functions
-function TextBox({ value }) {
-  return (
-    <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 shadow-sm">
-      {value || 'N/A'}
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <div>
-      <label className="block text-xs font-bold text-gray-600 mb-2">{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function _areaColor(area) {
-  const safe = CRAYON_COLORS && typeof CRAYON_COLORS === 'object' ? CRAYON_COLORS : {};
-  if (safe[area]) return safe[area];
-
-  const key = String(area || 'Other');
-  const palette = [
-    { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100', dot: 'bg-indigo-400' },
-    { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-100', dot: 'bg-rose-400' },
-    { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-400' },
-    { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-400' },
-    { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-100', dot: 'bg-sky-400' },
-  ];
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 100000;
-  return palette[hash % palette.length];
-}
-
-function _getCompetencyCompletionStatus(item) {
-  const mainActivities = (item.development_activity && typeof item.development_activity === 'object') 
-    ? [item.development_activity] 
-    : (item.developmentActivities || []);
-  const extraTables = item.extraTables || [];
-
-  const allActivities = [...mainActivities, ...extraTables];
-  if (allActivities.length === 0) return 'empty';
-
-  const incomplete = allActivities.some(act => !act.completion_status || act.completion_status === 'NOT_STARTED');
-  if (incomplete) return 'pending';
-
-  const allCompleted = allActivities.every(act => act.completion_status === 'COMPLETED');
-  return allCompleted ? 'completed' : 'in_progress';
-}
 
 // Only these roles can access Manager dashboard
 const MANAGER_ROLES = ['Manager', 'HR', 'Admin'];
@@ -149,31 +96,21 @@ function IDPTable({ data, openIdpView }) {
 
 
 // Dynamically build CL status sections based on department.has_am
-const getCLStatusSections = (department, isAM = false) => {
+const getCLStatusSections = (department) => {
   const sections = [
-    { key: 'pending', label: isAM ? 'For Approval by Assistant Manager' : 'For Approval by Manager', icon: ClockIcon },
+    { key: 'pending', label: 'For Approval by Manager', icon: ClockIcon },
     { key: 'returned', label: 'Returned to Supervisor', icon: PencilSquareIcon },
-    { key: 'approved', label: isAM ? 'Approved by Assistant Manager' : 'Approved by Manager', icon: CheckCircleIcon },
+    { key: 'approved', label: 'Approved by Manager', icon: CheckCircleIcon },
     { key: 'department', label: 'Department CL Tracking', icon: Squares2X2Icon },
   ];
   if (department && department.has_am) {
     // Insert AM section before Manager
-    sections.splice(1, 0, { key: 'pending_am', label: 'For Assistant Manager Review', icon: ClockIcon });
+    sections.splice(1, 0, { key: 'pending_am', label: 'For Approval by Assistant Manager', icon: ClockIcon });
   }
   return sections;
 };
 
 function ManagerDashboard({ isAMDashboard = false } = {}) {
-  const [modalState, setModalState] = useState({
-    open: false,
-    title: '',
-    message: '',
-    showCancel: false,
-    confirmText: 'OK',
-    cancelText: 'Cancel',
-    onConfirm: null,
-  });
-  
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -191,16 +128,11 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [activeSection, setActiveSection] = useState('pending'); // 'pending', 'approved', 'returned', 'all', 'department', 'employees'
   const [departmentStatusFilter, setDepartmentStatusFilter] = useState('ALL'); // Filter for department tracking
   const [employees, setEmployees] = useState([]); // All employees in department
+  const [supervisors, setSupervisors] = useState([]); // All supervisors in department
 
-  const [selectedEmployeeId, _setSelectedEmployeeId] = useState(null); // Selected employee to view
-  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+  const [expandedSupervisors, setExpandedSupervisors] = useState({}); // Track which supervisors are expanded
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState(null); // Selected supervisor to view employees
   const [searchQuery, setSearchQuery] = useState(''); // Search for employees
-  
-  // Proper employee setter function
-  const setSelectedEmployeeId = useCallback((id) => {
-    _setSelectedEmployeeId(id);
-    setEmployeeSearchTerm(''); // Clear search when selecting specific employee
-  }, []);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [hasCompetenciesOnly, setHasCompetenciesOnly] = useState(false); // Filter: only employees with competencies
   // ✅ NEW: notifications + recent actions (right sidebar)
@@ -208,38 +140,20 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [recentActions, setRecentActions] = useState([]);
   const [notificationFilter, setNotificationFilter] = useState('ALL'); // 'ALL', 'CL', 'IDP'
   const [recentFilter, setRecentFilter] = useState('ALL'); // 'ALL', 'CL', 'IDP'
-  
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [totalItems, setTotalItems] = useState(0);
-
-  // Date search state
-  const [showDateSearch, setShowDateSearch] = useState(false);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-
-  // Export modal state
-  const [exportModal, setExportModal] = useState({
-    open: false,
-    loading: false,
-    startDate: '',
-    endDate: '',
-    module: 'CL',
-    selectedStatus: 'ALL',
-    employee: 'ALL'
-  });
 
   const [notificationModalState, setNotificationModalState] = useState({
     open: false,
     notification: null,
   });
 
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
   const [showFullNotifications, setShowFullNotifications] = useState(false);
   const [showFullRecentActions, setShowFullRecentActions] = useState(false);
 
   // Supervisor sidebar state
   const [showClAction, setShowClAction] = useState(false);
+  const [showClInReview, setShowClInReview] = useState(false);
   const [showIdpAction, setShowIdpAction] = useState(false);
   const [showIdpInReview, setShowIdpInReview] = useState(false);
 
@@ -290,129 +204,188 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   }, [isAMDashboard]);
 
   // Helper: open IDP view in full page (using CreateIDPPage with viewOnly mode)
-  const openIdpView = useCallback((idp) => {
+  function openIdpView(idp) {
     const path = isAMDashboard ? `/am/idp/${idp.id}` : `/manager/idp/${idp.id}`;
     window.location.href = `${path}?viewOnly=true`;
-  }, [isAMDashboard]);
+  }
 
-  const closeNotificationModal = useCallback(() => {
-    setNotificationModalState({ open: false, notification: null });
-  }, []);
+  function closeIdpView() {
+    // No longer needed - navigation handles closing
+  }
 
-  // ==========================
-  // LOAD DASHBOARD DATA (refactored into function)
-  // ==========================
-  const loadDashboardData = useCallback(async () => {
-    try {
-      let clSummary, clPending, clAll, deptCLs;
-      if (isAMDashboard) {
-        [clSummary, clPending, clAll, deptCLs] = await Promise.all([
-          apiRequest('/api/cl/am/summary'),
-          apiRequest('/api/cl/am/pending'),
-          apiRequest('/api/cl/am/all'),
-          apiRequest('/api/cl/am/department'),
-        ]);
-      } else {
-        [clSummary, clPending, clAll, deptCLs] = await Promise.all([
-          apiRequest('/api/cl/manager/summary'),
-          apiRequest('/api/cl/manager/pending'),
-          apiRequest('/api/cl/manager/all'),
-          apiRequest('/api/cl/manager/department'),
-        ]);
-      }
+  // Helper components for IDP modal
+  function TextBox({ value }) {
+    return (
+      <div className="px-3 py-2 bg-white rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 shadow-sm">
+        {value || 'N/A'}
+      </div>
+    );
+  }
 
-      setSummary({
-        clPending: clSummary.clPending || 0,
-        clInProgress: clSummary.clInProgress || 0,
-        clApproved: clSummary.clApproved || 0,
-        clReturned: clSummary.clReturned || 0,
-      });
+  function Field({ label, children }) {
+    return (
+      <div>
+        <label className="block text-xs font-bold text-gray-600 mb-2">{label}</label>
+        {children}
+      </div>
+    );
+  }
 
-      setPendingCL(clPending || []);
-      setAllCL(clAll || []);
-      setDepartmentCLs(deptCLs || []);
+  function areaColor(area) {
+    const safe = CRAYON_COLORS && typeof CRAYON_COLORS === 'object' ? CRAYON_COLORS : {};
+    if (safe[area]) return safe[area];
 
-      // Fetch all users for mapping and filtering
-      const allUsers = await apiRequest('/api/users');
+    const key = String(area || 'Other');
+    const palette = [
+      { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100', dot: 'bg-indigo-400' },
+      { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-100', dot: 'bg-rose-400' },
+      { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-400' },
+      { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-400' },
+      { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-100', dot: 'bg-sky-400' },
+    ];
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 100000;
+    return palette[hash % palette.length];
+  }
 
-      // Get employees - only those assigned to this manager/AM
-      let assignedEmployees;
-      if (isAMDashboard) {
-        assignedEmployees = (allUsers || []).filter(
-          u => u && user && user.id && u.am_id === user.id && u.role === 'Employee'
-        );
-      } else {
-        assignedEmployees = (allUsers || []).filter(
-          u => u && user && user.id && u.manager_id === user.id && u.role === 'Employee'
-        );
-      }
-
-      // Enrich with competency data
-      const enriched = await Promise.all(
-        assignedEmployees.map(async (emp) => {
-          try {
-            const resp = await apiRequest(`/api/cl/employee/${emp.id}/competencies`);
-            const competencyCount = (resp?.competencies || []).length;
-
-            const histResp = await apiRequest(`/api/cl/employee/${emp.id}/history`);
-            const histArr = Array.isArray(histResp) ? histResp : (histResp?.history || []);
-            const historyCount = histArr.length;
-            const latestCL = histArr.length > 0 ? histArr[0] : null;
-
-            return {
-              ...emp,
-              competencyCount,
-              historyCount,
-              latestCL,
-            };
-          } catch {
-            return { ...emp, competencyCount: 0, historyCount: 0, latestCL: null };
-          }
-        })
-      );
-
-      setEmployees(enriched);
-      // Map supervisor IDs to names for CL records so UI shows names instead of raw ids
-      const userMap = {};
-      (allUsers || []).forEach(u => {
-        if (!u) return; // Skip null/undefined users
-        const display = u.name || u.full_name || ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.employee_id || u.id;
-        userMap[u.id] = display;
-      });
-
-      const mapCLsToNames = (arr) => (arr || []).map(item => ({
-        ...item,
-        supervisor_name: item.supervisor_name || item.supervisor || userMap[item.supervisor_id] || ''
-      }));
-
-      setPendingCL(mapCLsToNames(clPending || []));
-      setAllCL(mapCLsToNames(clAll || []));
-      setDepartmentCLs(mapCLsToNames(deptCLs || []));
-    } catch (err) {
-      console.error(err);
-      setError(isAMDashboard ? 'Failed to load Assistant Manager dashboard data.' : 'Failed to load Manager dashboard data.');
-    } finally {
-      setLoading(false);
+  function getCompetencyCompletionStatus(item) {
+    const mainActivities = (item.development_activity && typeof item.development_activity === 'object') 
+      ? [item.development_activity] 
+      : (item.developmentActivities || []);
+    const extraTables = item.extraTables || [];
+    const activityType = mainActivities[0]?.type?.toLowerCase();
+    
+    let totalActivities = 0;
+    let completedActivities = 0;
+    
+    if (activityType === 'education') {
+      totalActivities = mainActivities.length;
+      completedActivities = mainActivities.filter(a => 
+        a.completionStatus === 'Completed' || a.status === 'Completed'
+      ).length;
+    } else if (activityType === 'experience' || activityType === 'exposure') {
+      totalActivities = extraTables.length;
+      completedActivities = extraTables.filter(t => 
+        t.completionStatus === 'Completed' || t.status === 'Completed'
+      ).length;
+    } else {
+      totalActivities = mainActivities.length;
+      completedActivities = mainActivities.filter(a => 
+        a.completionStatus === 'Completed' || a.status === 'Completed'
+      ).length;
     }
-  }, [isAMDashboard, user]);
+    
+    return {
+      completed: completedActivities,
+      total: totalActivities,
+      percentage: totalActivities > 0 ? Math.round((completedActivities / totalActivities) * 100) : 0,
+    };
+  }
 
-  // Load dashboard on mount
+  function closeNotificationModal() {
+    setNotificationModalState({ open: false, notification: null });
+  }
+
+  // ==========================
+  // LOAD DASHBOARD DATA
+  // ==========================
   useEffect(() => {
     if (!user) return;
-    loadDashboardData();
-  }, [user, loadDashboardData]);
 
-  // Refresh data when returning to dashboard (page visibility)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        loadDashboardData();
+    async function loadDashboard() {
+      try {
+        let clSummary, clPending, clAll, deptCLs;
+        if (isAMDashboard) {
+          [clSummary, clPending, clAll, deptCLs] = await Promise.all([
+            apiRequest('/api/cl/am/summary'),
+            apiRequest('/api/cl/am/pending'),
+            apiRequest('/api/cl/am/all'),
+            apiRequest('/api/cl/am/department'),
+          ]);
+        } else {
+          [clSummary, clPending, clAll, deptCLs] = await Promise.all([
+            apiRequest('/api/cl/manager/summary'),
+            apiRequest('/api/cl/manager/pending'),
+            apiRequest('/api/cl/manager/all'),
+            apiRequest('/api/cl/manager/department'),
+          ]);
+        }
+
+        setSummary({
+          clPending: clSummary.clPending || 0,
+          clInProgress: clSummary.clInProgress || 0,
+          clApproved: clSummary.clApproved || 0,
+          clReturned: clSummary.clReturned || 0,
+        });
+
+        setPendingCL(clPending || []);
+        setAllCL(clAll || []);
+        setDepartmentCLs(deptCLs || []);
+
+        // Fetch all users and filter by department
+        const allUsers = await apiRequest('/api/users');
+
+        // Get supervisors in the department
+        const deptSupervisors = (allUsers || []).filter(
+          u => u.department_id === user.department_id && u.role === 'Supervisor'
+        );
+        setSupervisors(deptSupervisors);
+
+        // Get employees in the department
+        const deptEmployees = (allUsers || []).filter(
+          u => u.department_id === user.department_id && u.role === 'Employee'
+        );
+
+        // Enrich with competency data
+        const enriched = await Promise.all(
+          deptEmployees.map(async (emp) => {
+            try {
+              const resp = await apiRequest(`/api/cl/employee/${emp.id}/competencies`);
+              const competencyCount = (resp?.competencies || []).length;
+
+              const histResp = await apiRequest(`/api/cl/employee/${emp.id}/history`);
+              const histArr = Array.isArray(histResp) ? histResp : (histResp?.history || []);
+              const historyCount = histArr.length;
+              const latestCL = histArr.length > 0 ? histArr[0] : null;
+
+              return {
+                ...emp,
+                competencyCount,
+                historyCount,
+                latestCL,
+              };
+            } catch {
+              return { ...emp, competencyCount: 0, historyCount: 0, latestCL: null };
+            }
+          })
+        );
+
+        setEmployees(enriched);
+        // Map supervisor IDs to names for CL records so UI shows names instead of raw ids
+        const userMap = {};
+        (allUsers || []).forEach(u => {
+          const display = u.name || u.full_name || ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.employee_id || u.id;
+          userMap[u.id] = display;
+        });
+
+        const mapCLsToNames = (arr) => (arr || []).map(item => ({
+          ...item,
+          supervisor_name: item.supervisor_name || item.supervisor || userMap[item.supervisor_id] || ''
+        }));
+
+        setPendingCL(mapCLsToNames(clPending || []));
+        setAllCL(mapCLsToNames(clAll || []));
+        setDepartmentCLs(mapCLsToNames(deptCLs || []));
+      } catch (err) {
+        console.error(err);
+        setError(isAMDashboard ? 'Failed to load Assistant Manager dashboard data.' : 'Failed to load Manager dashboard data.');
+      } finally {
+        setLoading(false);
       }
-    };
+    }
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [loadDashboardData]);
+    loadDashboard();
+  }, [user, isAMDashboard]);
 
   // ==========================
   // LOAD NOTIFICATIONS (polling)
@@ -451,35 +424,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         const endpoint = recentFilter === 'ALL'
           ? '/api/recent-actions'
           : `/api/recent-actions?module=${recentFilter}`;
-        let data = await apiRequest(endpoint);
-        
-        // Filter out AM-specific actions when viewing Manager dashboard (not AM dashboard)
-        if (!isAMDashboard && data) {
-          data = data.filter(action => {
-            const actionType = action.action_type || '';
-            const description = action.description || '';
-            const title = action.title || '';
-            
-            // Exclude AM-specific action types
-            const isAMAction = (
-              actionType.includes('_AM') ||
-              actionType.includes('APPROVED_BY_AM') ||
-              actionType.includes('RETURNED_BY_AM') ||
-              actionType.includes('AM_') ||
-              title.toLowerCase().includes('am ') || // "AM approved", "AM returned", etc.
-              title.toLowerCase().startsWith('am ') || // Title starts with "AM "
-              title.toLowerCase().includes(' am ') || // " AM " anywhere in title
-              title.toLowerCase().includes('assistant manager') ||
-              description.toLowerCase().includes('am ') ||
-              description.toLowerCase().startsWith('am ') ||
-              description.toLowerCase().includes(' am ') ||
-              description.toLowerCase().includes('assistant manager')
-            );
-            
-            return !isAMAction;
-          });
-        }
-        
+        const data = await apiRequest(endpoint);
         setRecentActions(data || []);
       } catch (err) {
         console.error('Failed to load recent actions', err);
@@ -487,55 +432,17 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     }
 
     loadRecentActions();
-  }, [user, recentFilter, isAMDashboard]);
+  }, [user, recentFilter]);
 
   // ==========================
   // HELPERS
   // ==========================
-  const openModal = useCallback((options) => {
-    setModalState({
-      open: true,
-      title: options.title || '',
-      message: options.message || '',
-      showCancel: options.showCancel || false,
-      confirmText: options.confirmText || (options.showCancel ? 'Confirm' : 'OK'),
-      cancelText: options.cancelText || 'Cancel',
-      onConfirm: options.onConfirm || null,
-    });
-  }, []);
+  function logout() {
+    localStorage.clear();
+    window.location.href = '/login';
+  }
 
-  const closeModal = useCallback(() => {
-    setModalState((prev) => ({
-      ...prev,
-      open: false,
-      onConfirm: null,
-      showCancel: false,
-    }));
-  }, []);
-
-  const handleModalConfirm = useCallback(async () => {
-    const fn = modalState.onConfirm;
-    closeModal();
-    if (fn) {
-      await fn();
-    }
-  }, [modalState.onConfirm, closeModal]);
-
-  const logout = useCallback(() => {
-    openModal({
-      title: 'Confirm Logout',
-      message: 'Are you sure you want to logout? Any unsaved changes will be lost.',
-      showCancel: true,
-      confirmText: 'Logout',
-      cancelText: 'Cancel',
-      onConfirm: () => {
-        localStorage.clear();
-        window.location.href = '/login';
-      },
-    });
-  }, [openModal]);
-
-  const goTo = useCallback((url) => {
+  function goTo(url) {
     // For AM dashboard, rewrite review links to AM review page
     if (isAMDashboard && url.startsWith('/cl/submissions/')) {
       const id = url.split('/').pop();
@@ -549,9 +456,9 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       return;
     }
     window.location.href = url;
-  }, [isAMDashboard]);
+  }
 
-  const handleNotificationClick = useCallback(async (n) => {
+  async function handleNotificationClick(n) {
     // Mark notification as read
     try {
       const token = localStorage.getItem('token');
@@ -572,7 +479,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       open: true,
       notification: n,
     });
-  }, []);
+  }
 
   async function handleMarkAllAsRead() {
     try {
@@ -582,88 +489,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       setNotifications(data || []);
     } catch (err) {
       console.error('Failed to mark all notifications as read:', err);
-    }
-  }
-
-  // Export functions
-  function openExportModal() {
-    setExportModal({
-      open: true,
-      loading: false,
-      startDate: '',
-      endDate: '',
-      module: 'CL',
-      selectedStatus: 'ALL',
-      employee: 'ALL'
-    });
-  }
-
-  function closeExportModal() {
-    setExportModal({
-      open: false,
-      loading: false,
-      startDate: '',
-      endDate: '',
-      module: 'CL',
-      selectedStatus: 'ALL',
-      employee: 'ALL'
-    });
-  }
-
-  async function handleExportCSV() {
-    if (!exportModal.startDate || !exportModal.endDate) {
-      alert('Please select both start and end dates');
-      return;
-    }
-
-    setExportModal(prev => ({ ...prev, loading: true }));
-
-    try {
-      const role = isAMDashboard ? 'am' : 'manager';
-      const endpoint = exportModal.module === 'CL' 
-        ? `/api/cl/${role}/export` 
-        : `/api/idp/${role}/export`;
-      
-      const params = new URLSearchParams({
-        startDate: exportModal.startDate,
-        endDate: exportModal.endDate,
-      });
-
-      if (exportModal.selectedStatus && exportModal.selectedStatus !== 'ALL') {
-        params.append('status', exportModal.selectedStatus);
-      }
-
-      if (exportModal.employee && exportModal.employee !== 'ALL') {
-        params.append('employee', exportModal.employee);
-      }
-
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}${endpoint}?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Export failed: ${response.status} ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = `${exportModal.module}_Export_${exportModal.startDate}_${exportModal.endDate}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      closeExportModal();
-    } catch (err) {
-      console.error('Export failed:', err);
-      alert(`Export failed: ${err.message}`);
-    } finally {
-      setExportModal(prev => ({ ...prev, loading: false }));
     }
   }
 
@@ -689,7 +514,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     window.location.href = `${url}${separator}viewOnly=true`;
   }
 
-  const proceedToNotificationLink = useCallback(async (n) => {
+  async function proceedToNotificationLink(n) {
     setNotificationModalState({ open: false, notification: null });
     
     try {
@@ -715,7 +540,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     
     // Navigate to different page
     window.location.href = url;
-  }, []);
+  }
 
   const unreadCount = useMemo(() => {
     return (notifications || []).filter(
@@ -723,132 +548,34 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     ).length;
   }, [notifications]);
 
-  // Filter CLs by specific employee (if selected) or search term
-  const filterByEmployee = useCallback((items) => {
-    if (!selectedEmployeeId && !employeeSearchTerm.trim() && !startDate && !endDate) return items;
-    
+  // Filter CLs by section and supervisor (if selected)
+  const filterBySupervisor = (items) => {
+    if (!selectedSupervisorId) return items;
+    // Filter by supervisor_id field or by employee's supervisor_id
     return items.filter(item => {
-      // Check date filtering first
-      if (startDate || endDate) {
-        const itemDate = new Date(item.created_at);
-        if (isNaN(itemDate.getTime())) return false;
-        
-        if (startDate) {
-          const start = new Date(startDate);
-          start.setHours(0, 0, 0, 0);
-          if (itemDate < start) return false;
-        }
-        
-        if (endDate) {
-          const end = new Date(endDate);
-          end.setHours(23, 59, 59, 999);
-          if (itemDate > end) return false;
-        }
-      }
-      
-      // If specific employee is selected, show only that employee's data
-      if (selectedEmployeeId) {
-        // Find the selected employee by ID to get their name
-        const selectedEmp = employees.find(emp => 
-          String(emp.employee_id) === String(selectedEmployeeId) ||
-          String(emp.id) === String(selectedEmployeeId)
-        );
-        
-        if (selectedEmp) {
-          // Match by employee name (most reliable) or by ID
-          return (item.employee_name && item.employee_name === selectedEmp.name) ||
-                 String(item.employee_id) === String(selectedEmployeeId) ||
-                 String(item.id) === String(selectedEmployeeId);
-        } else {
-          // Fallback to ID matching only
-          return String(item.employee_id) === String(selectedEmployeeId) ||
-                 String(item.id) === String(selectedEmployeeId);
-        }
-      }
-      
-      // If search term is provided, filter by employee search
-      if (employeeSearchTerm.trim()) {
-        const searchTerm = employeeSearchTerm.toLowerCase().trim();
-        
-        // First try to match by employee_name directly
-        if (item.employee_name && item.employee_name.toLowerCase().includes(searchTerm)) {
-          return true;
-        }
-        
-        // Then try to find the employee in the employees list
-        const employee = employees.find(emp => 
-          String(emp.id) === String(item.employee_id) ||
-          String(emp.employee_id) === String(item.employee_id)
-        );
-        
-        if (!employee) return false;
-        
-        return (employee.name || '').toLowerCase().includes(searchTerm) ||
-               String(employee.employee_id || '').toLowerCase().includes(searchTerm);
-      }
-      
-      return true;
+      if (item.supervisor_id === selectedSupervisorId) return true;
+      // Fallback: check if the employee's supervisor matches
+      const emp = employees.find(e => e.id === item.employee_id);
+      return emp && emp.supervisor_id === selectedSupervisorId;
     });
-  }, [selectedEmployeeId, employeeSearchTerm, employees, startDate, endDate]);
+  };
 
-  const filteredPendingCL = useMemo(() => filterByEmployee(pendingCL), [filterByEmployee, pendingCL]);
-  const approvedCLs = useMemo(() => filterByEmployee(allCL.filter(item => item.manager_decision === 'APPROVED')), [filterByEmployee, allCL]);
+  const filteredPendingCL = filterBySupervisor(pendingCL);
+  const approvedCLs = filterBySupervisor(allCL.filter(item => item.manager_decision === 'APPROVED'));
   // Only show returned CLs that are still in DRAFT status (not yet resubmitted)
-  const returnedCLs = useMemo(() => filterByEmployee(allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT')), [filterByEmployee, allCL]);
+  const returnedCLs = filterBySupervisor(allCL.filter(item => item.manager_decision === 'RETURNED' && item.status === 'DRAFT'));
 
-  // Filter department CLs by status and employee (if selected) or search term
+  // Filter department CLs by status and supervisor (if selected)
   const filteredDepartmentCLs = useMemo(() => {
     let items = departmentCLs;
-    
-    // Apply date filtering first
-    if (startDate || endDate) {
-      items = items.filter(item => {
-        const itemDate = new Date(item.created_at);
-        if (isNaN(itemDate.getTime())) return false;
-        
-        if (startDate) {
-          const start = new Date(startDate);
-          start.setHours(0, 0, 0, 0);
-          if (itemDate < start) return false;
-        }
-        
-        if (endDate) {
-          const end = new Date(endDate);
-          end.setHours(23, 59, 59, 999);
-          if (itemDate > end) return false;
-        }
-        
-        return true;
-      });
+    if (selectedSupervisorId) {
+      items = items.filter(item => item.supervisor_id === selectedSupervisorId);
     }
-    
-    // Apply employee filter
-    if (selectedEmployeeId) {
-      items = items.filter(item => {
-        return String(item.employee_id) === String(selectedEmployeeId);
-      });
-    } else if (employeeSearchTerm.trim()) {
-      const searchTerm = employeeSearchTerm.toLowerCase().trim();
-      items = items.filter(item => {
-        // Find the employee for this item
-        const employee = employees.find(emp => 
-          String(emp.id) === String(item.employee_id) ||
-          String(emp.employee_id) === String(item.employee_id)
-        );
-        
-        if (!employee) return false;
-        
-        return (employee.name || '').toLowerCase().includes(searchTerm) ||
-               String(employee.employee_id || '').toLowerCase().includes(searchTerm);
-      });
-    }
-    
-    // Apply status filter
     if (departmentStatusFilter === 'ALL') {
       return items;
     }
     return items.filter(item => item.status === departmentStatusFilter);
-  }, [departmentCLs, departmentStatusFilter, selectedEmployeeId, employeeSearchTerm, employees, startDate, endDate]);
+  }, [departmentCLs, departmentStatusFilter, selectedSupervisorId]);
 
   const sectionCounts = useMemo(() => {
     return {
@@ -863,79 +590,28 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
   // Dynamically build CL status sections based on department
   const CL_STATUS_SECTIONS = useMemo(() => {
-    return getCLStatusSections(department, isAMDashboard);
-  }, [department, isAMDashboard]);
-
-  // IDP status sections for export modal
-  const IDP_STATUS_SECTIONS = useMemo(() => [
-    { key: 'DRAFT', label: 'Draft' },
-    { key: 'FOR_COMPLETION', label: 'For Completion' },
-    { key: 'PENDING_EMPLOYEE', label: 'Pending Employee' },
-    { key: 'PENDING_SUPERVISOR', label: 'Pending Supervisor' },
-    { key: 'PENDING_AM', label: 'Pending Assistant Manager' },
-    { key: 'PENDING_MANAGER', label: 'Pending Manager' },
-    { key: 'PENDING_HR', label: 'Pending HR' },
-    { key: 'CYCLE_COMPLETED', label: 'Cycle Completed' },
-    { key: 'RETURNED', label: 'Returned' }
-  ], []);
+    return getCLStatusSections(department);
+  }, [department]);
 
   const activeSectionLabel = useMemo(() => {
-    const employee = employees.find(emp => String(emp.id) === String(selectedEmployeeId) || String(emp.employee_id) === String(selectedEmployeeId));
-    const employeeSuffix = employee ? ` (${employee.name})` : '';
-    if (activeSection === 'all') return `All Competency Levelings${employeeSuffix}`;
-    if (activeSection === 'idp_all') return `All IDPs${employeeSuffix}`;
-    if (activeSection === 'idp_pending_manager') return `${isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}${employeeSuffix}`;
-    if (activeSection === 'idp_pending_hr') return `For Approval by HR${employeeSuffix}`;
-    if (activeSection === 'idp_for_completion') return `For Completion${employeeSuffix}`;
-    if (activeSection === 'idp_approved') return `Manager Approved IDPs${employeeSuffix}`;
-    if (activeSection === 'idp_returned') return `Returned to Supervisor${employeeSuffix}`;
-    if (activeSection === 'idp_cycle_completed') return `Cycle Completed IDPs${employeeSuffix}`;
+    const supervisor = supervisors.find(s => s.id === selectedSupervisorId);
+    const supervisorSuffix = supervisor ? ` (${supervisor.name})` : '';
+    if (activeSection === 'all') return `All Competency Levelings${supervisorSuffix}`;
+    if (activeSection === 'idp_all') return `All IDPs${supervisorSuffix}`;
+    if (activeSection === 'idp_pending_manager') return `${isAMDashboard ? 'For Approval by AM' : 'For Approval by Manager'}${supervisorSuffix}`;
+    if (activeSection === 'idp_pending_hr') return `For Approval by HR${supervisorSuffix}`;
+    if (activeSection === 'idp_for_completion') return `For Completion${supervisorSuffix}`;
+    if (activeSection === 'idp_approved') return `Manager Approved IDPs${supervisorSuffix}`;
+    if (activeSection === 'idp_cycle_completed') return `Cycle Completed IDPs${supervisorSuffix}`;
     const section = CL_STATUS_SECTIONS.find(s => s.key === activeSection);
-    if (section) return `${section.label}${employeeSuffix}`;
+    if (section) return `${section.label}${supervisorSuffix}`;
     // Fallback for AM dashboard
     if (isAMDashboard) {
-      if (activeSection === 'pending') return `For Approval by Assistant Manager${employeeSuffix}`;
-      if (activeSection === 'approved') return `Approved by Assistant Manager${employeeSuffix}`;
+      if (activeSection === 'pending') return `For Approval by Assistant Manager${supervisorSuffix}`;
+      if (activeSection === 'approved') return `Approved by Assistant Manager${supervisorSuffix}`;
     }
-    return `Competency Levelings${employeeSuffix}`;
-  }, [activeSection, CL_STATUS_SECTIONS, isAMDashboard, selectedEmployeeId, employees]);
-
-  // Reset pagination when section or filter changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [activeSection, selectedEmployeeId, employeeSearchTerm, startDate, endDate]);
-
-  // Helper functions for date search
-  const clearDateSearch = useCallback(() => {
-    setStartDate('');
-    setEndDate('');
-  }, []);
-
-  const hasDateFilters = useMemo(() => {
-    return !!(startDate || endDate);
-  }, [startDate, endDate]);
-
-  // Paginated data for current section
-  const paginatedData = useMemo(() => {
-    let dataToPage = [];
-    
-    if (activeSection === 'pending') {
-      dataToPage = filteredPendingCL;
-    } else if (activeSection === 'approved') {
-      dataToPage = approvedCLs;
-    } else if (activeSection === 'returned') {
-      dataToPage = returnedCLs;
-    } else if (activeSection === 'all') {
-      // Combine all data for "all" section
-      dataToPage = [...filteredPendingCL, ...returnedCLs, ...approvedCLs];
-    }
-    
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    setTotalItems(dataToPage.length);
-    
-    return dataToPage.slice(startIndex, endIndex);
-  }, [filteredPendingCL, approvedCLs, returnedCLs, activeSection, currentPage, itemsPerPage]);
+    return `Competency Levelings${supervisorSuffix}`;
+  }, [activeSection, CL_STATUS_SECTIONS, isAMDashboard, selectedSupervisorId, supervisors]);
 
   // Fetch pending IDPs for manager
   const [pendingIDPs, setPendingIDPs] = useState([]);
@@ -944,7 +620,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     async function fetchPendingIDPs() {
       try {
         // Fetch grouped IDPs for the manager so we can display approved/completed items
-        const endpoint = isAMDashboard ? '/api/idp/am/grouped' : '/api/idp/manager/grouped';
+        const endpoint = isAMDashboard ? '/api/idp/am/pending' : '/api/idp/manager/grouped';
         const grouped = await apiRequest(endpoint);
         // Flatten grouped object into an array for existing UI consumers
         const all = grouped ? Object.values(grouped).flat() : [];
@@ -959,208 +635,49 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   // IDP status mapping - use pending IDPs as source
   const idpByStatus = useMemo(() => {
     return {
-      pending_manager: (pendingIDPs || []).filter(i => {
-        if (isAMDashboard) {
-          // AM dashboard shows only PENDING_AM
-          return i.status === 'PENDING_AM';
-        } else {
-          // Manager dashboard shows only PENDING_MANAGER (exclude AM items)
-          return i.status === 'PENDING_MANAGER';
-        }
-      }),
+      pending_manager: (pendingIDPs || []).filter(i => i.status === 'PENDING_MANAGER' || i.status === 'PENDING_AM'),
       pending_hr: (pendingIDPs || []).filter(i => i.status === 'PENDING_HR'),
       for_completion: (pendingIDPs || []).filter(i => i.status === 'FOR_COMPLETION'),
       // manager-approved (employee pending acknowledgement)
       approved: (pendingIDPs || []).filter(i => i.status === 'PENDING_EMPLOYEE'),
-      // returned to supervisor
-      returned: (pendingIDPs || []).filter(i => i.status === 'RETURNED'),
       // final cycle completed
       cycle_completed: (pendingIDPs || []).filter(i => i.status === 'CYCLE_COMPLETED'),
     };
-  }, [pendingIDPs, isAMDashboard]);
+  }, [pendingIDPs]);
 
-  // Filter IDPs by selected employee or search term
+  // Filter IDPs by selected supervisor
   const filteredIDPsByStatus = useMemo(() => {
-    if (!selectedEmployeeId && !employeeSearchTerm.trim() && !startDate && !endDate) {
+    if (!selectedSupervisorId) {
       return idpByStatus;
     }
-    
-    const filtered = {};
-    Object.keys(idpByStatus).forEach(status => {
-      filtered[status] = idpByStatus[status].filter(idp => {
-        // Check date filtering first
-        if (startDate || endDate) {
-          const itemDate = new Date(idp.created_at);
-          if (isNaN(itemDate.getTime())) return false;
-          
-          if (startDate) {
-            const start = new Date(startDate);
-            start.setHours(0, 0, 0, 0);
-            if (itemDate < start) return false;
-          }
-          
-          if (endDate) {
-            const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999);
-            if (itemDate > end) return false;
-          }
-        }
-        
-        // If specific employee is selected, show only that employee's data
-        if (selectedEmployeeId) {
-          // Debug logging
-          console.log('IDP Filtering - Selected Employee ID:', selectedEmployeeId);
-          console.log('IDP Data:', idp);
-          
-          // Find the selected employee by ID to get their name
-          const selectedEmp = employees.find(emp => 
-            String(emp.employee_id) === String(selectedEmployeeId) ||
-            String(emp.id) === String(selectedEmployeeId)
-          );
-          
-          console.log('Selected Employee Found:', selectedEmp);
-          
-          if (selectedEmp) {
-            // Match by employee name (most reliable) or by ID
-            const nameMatch = idp.employee_name && idp.employee_name === selectedEmp.name;
-            const idMatch1 = String(idp.employee_id) === String(selectedEmployeeId);
-            const idMatch2 = String(idp.id) === String(selectedEmployeeId);
-            
-            console.log('Name Match:', nameMatch, 'ID Match 1:', idMatch1, 'ID Match 2:', idMatch2);
-            
-            return nameMatch || idMatch1 || idMatch2;
-          } else {
-            // Fallback to ID matching only
-            const idMatch1 = String(idp.employee_id) === String(selectedEmployeeId);
-            const idMatch2 = String(idp.id) === String(selectedEmployeeId);
-            
-            console.log('Fallback ID Match 1:', idMatch1, 'ID Match 2:', idMatch2);
-            
-            return idMatch1 || idMatch2;
-          }
-        }
-        
-        // If search term is provided, filter by employee search
-        if (employeeSearchTerm.trim()) {
-          const searchTerm = employeeSearchTerm.toLowerCase().trim();
-          
-          // First try to match by employee_name directly
-          if (idp.employee_name && idp.employee_name.toLowerCase().includes(searchTerm)) {
-            return true;
-          }
-          
-          // Then try to find the employee in the employees list
-          const employee = employees.find(emp => 
-            String(emp.id) === String(idp.employee_id) ||
-            String(emp.employee_id) === String(idp.employee_id)
-          );
-          
-          if (!employee) return false;
-          
-          return (employee.name || '').toLowerCase().includes(searchTerm) ||
-                 String(employee.employee_id || '').toLowerCase().includes(searchTerm);
-        }
-        
-        return true;
-      });
-    });
-    
-    return filtered;
-  }, [idpByStatus, selectedEmployeeId, employeeSearchTerm, employees, startDate, endDate]);
+    return {
+      pending_manager: idpByStatus.pending_manager.filter(i => i.supervisor_id === selectedSupervisorId),
+      pending_hr: idpByStatus.pending_hr.filter(i => i.supervisor_id === selectedSupervisorId),
+      for_completion: idpByStatus.for_completion.filter(i => i.supervisor_id === selectedSupervisorId),
+      approved: idpByStatus.approved.filter(i => i.supervisor_id === selectedSupervisorId),
+      cycle_completed: idpByStatus.cycle_completed.filter(i => i.supervisor_id === selectedSupervisorId),
+    };
+  }, [idpByStatus, selectedSupervisorId]);
 
   const idpSectionCounts = useMemo(() => {
     return {
       pending_manager: filteredIDPsByStatus.pending_manager.length,
-      pending_employee: filteredIDPsByStatus.approved.length, // Maps to PENDING_EMPLOYEE status
       pending_hr: filteredIDPsByStatus.pending_hr.length,
       for_completion: filteredIDPsByStatus.for_completion.length,
       approved: filteredIDPsByStatus.approved.length,
-      returned: filteredIDPsByStatus.returned.length,
       cycle_completed: filteredIDPsByStatus.cycle_completed.length,
       all: Object.values(filteredIDPsByStatus).reduce((sum, arr) => sum + arr.length, 0),
     };
   }, [filteredIDPsByStatus]);
 
   const filteredPendingIDPs = useMemo(() => {
-    if (!selectedEmployeeId && !employeeSearchTerm.trim() && !startDate && !endDate) return pendingIDPs;
-    
-    console.log('Filtering Pending IDPs - Selected Employee ID:', selectedEmployeeId);
-    console.log('Pending IDPs Data:', pendingIDPs);
-    
-    return pendingIDPs.filter(idp => {
-      // Check date filtering first
-      if (startDate || endDate) {
-        const itemDate = new Date(idp.created_at);
-        if (isNaN(itemDate.getTime())) return false;
-        
-        if (startDate) {
-          const start = new Date(startDate);
-          start.setHours(0, 0, 0, 0);
-          if (itemDate < start) return false;
-        }
-        
-        if (endDate) {
-          const end = new Date(endDate);
-          end.setHours(23, 59, 59, 999);
-          if (itemDate > end) return false;
-        }
-      }
-      
-      // If specific employee is selected, show only that employee's data
-      if (selectedEmployeeId) {
-        // Find the selected employee by ID to get their name
-        const selectedEmp = employees.find(emp => 
-          String(emp.employee_id) === String(selectedEmployeeId) ||
-          String(emp.id) === String(selectedEmployeeId)
-        );
-        
-        console.log('Pending IDPs - Selected Employee Found:', selectedEmp);
-        console.log('Current IDP:', idp);
-        
-        if (selectedEmp) {
-          // Match by employee name (most reliable) or by ID
-          const nameMatch = idp.employee_name && idp.employee_name === selectedEmp.name;
-          const idMatch1 = String(idp.employee_id) === String(selectedEmployeeId);
-          const idMatch2 = String(idp.id) === String(selectedEmployeeId);
-          
-          console.log('Pending IDPs - Name Match:', nameMatch, 'ID Match 1:', idMatch1, 'ID Match 2:', idMatch2);
-          
-          return nameMatch || idMatch1 || idMatch2;
-        } else {
-          // Fallback to ID matching only
-          return String(idp.employee_id) === String(selectedEmployeeId) ||
-                 String(idp.id) === String(selectedEmployeeId);
-        }
-      }
-      
-      // If search term is provided, filter by employee search
-      if (employeeSearchTerm.trim()) {
-        const searchTerm = employeeSearchTerm.toLowerCase().trim();
-        
-        // First try to match by employee_name directly
-        if (idp.employee_name && idp.employee_name.toLowerCase().includes(searchTerm)) {
-          return true;
-        }
-        
-        // Then try to find the employee in the employees list
-        const employee = employees.find(emp => 
-          String(emp.id) === String(idp.employee_id) ||
-          String(emp.employee_id) === String(idp.employee_id)
-        );
-        
-        if (!employee) return false;
-        
-        return (employee.name || '').toLowerCase().includes(searchTerm) ||
-               String(employee.employee_id || '').toLowerCase().includes(searchTerm);
-      }
-      
-      return true;
-    });
-  }, [pendingIDPs, selectedEmployeeId, employeeSearchTerm, employees, startDate, endDate]);
+    if (!selectedSupervisorId) return pendingIDPs;
+    return pendingIDPs.filter(idp => idp.supervisor_id === selectedSupervisorId);
+  }, [pendingIDPs, selectedSupervisorId]);
 
-  const selectedEmployee = useMemo(() => {
-    return employees.find(emp => String(emp.id) === String(selectedEmployeeId) || String(emp.employee_id) === String(selectedEmployeeId));
-  }, [employees, selectedEmployeeId]);
+  const selectedSupervisor = useMemo(() => {
+    return supervisors.find(s => s.id === selectedSupervisorId);
+  }, [supervisors, selectedSupervisorId]);
 
   if (!user) return null;
 
@@ -1226,7 +743,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                     >
                       <span className="flex items-center gap-2">
                         <ClockIcon className="w-4 h-4" />
-                        {isAMDashboard ? 'For Approval by Assistant Manager' : 'For Approval by Manager'}
+                        For Approval by Manager
                       </span>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{sectionCounts.pending || 0}</span>
                     </button>
@@ -1334,16 +851,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                 </button>
                 {showIdpInReview && (
                   <div className="ml-6 space-y-1">
-                    {isAMDashboard && (
-                      <button
-                        type="button"
-                        onClick={() => setActiveSection('idp_pending_manager')}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_pending_manager' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
-                      >
-                        <span className="flex items-center gap-2"><ClockIcon className="w-4 h-4" />For Approval by Manager</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.pending_manager || 0}</span>
-                      </button>
-                    )}
                     <button
                       type="button"
                       onClick={() => setActiveSection('idp_pending_employee')}
@@ -1381,16 +888,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.approved || 0}</span>
                 </button>
 
-                {/* Returned to Supervisor */}
-                <button
-                  type="button"
-                  onClick={() => setActiveSection('idp_returned')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs transition ${activeSection === 'idp_returned' ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-800'}`}
-                >
-                  <span className="flex items-center gap-2"><XCircleIcon className="w-4 h-4" />Returned to Supervisor</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-700 text-white">{idpSectionCounts.returned || 0}</span>
-                </button>
-
                 {/* Cycle Completed */}
                 <button
                   type="button"
@@ -1408,128 +905,28 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-y-auto p-8">
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+        <header className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">{isAMDashboard ? 'Assistant Manager Dashboard' : 'Manager Dashboard'}</h1>
             <p className="text-gray-600">
               Welcome, {user.name} ({user.employee_id})
             </p>
           </div>
-          
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-            {/* Employee Filter */}
-            <div className="relative">
-              <input
-                type="text"
-                placeholder={selectedEmployeeId 
-                  ? `Filtered: ${selectedEmployee?.name || 'Selected Employee'}`
-                  : "Search employee..."
-                }
-                value={employeeSearchTerm}
-                onChange={(e) => {
-                  setEmployeeSearchTerm(e.target.value);
-                  if (selectedEmployeeId) {
-                    setSelectedEmployeeId(null);
-                  }
-                }}
-                className="w-full sm:w-64 px-3 py-2 pl-9 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-              />
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              {(employeeSearchTerm || selectedEmployeeId) && (
-                <button
-                  onClick={() => {
-                    setEmployeeSearchTerm('');
-                    setSelectedEmployeeId(null);
-                  }}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
-                >
-                  <XMarkIcon className="h-4 w-4 text-gray-400" />
-                </button>
-              )}
-              
-              {/* Search suggestions dropdown */}
-              {employeeSearchTerm && !selectedEmployeeId && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                  {employees
-                    .filter(emp => {
-                      const searchTerm = employeeSearchTerm.toLowerCase().trim();
-                      return (emp.name || '').toLowerCase().includes(searchTerm) ||
-                             String(emp.employee_id || '').toLowerCase().includes(searchTerm);
-                    })
-                    .slice(0, 10)
-                    .map((emp) => (
-                      <button
-                        key={emp.id}
-                        onClick={() => {
-                          // Use the ID that will match with the competency level data
-                          const employeeId = emp.employee_id || emp.id;
-                          console.log('Selecting employee:', emp.name, 'with ID:', employeeId);
-                          setSelectedEmployeeId(employeeId);
-                          setEmployeeSearchTerm('');
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{emp.name}</div>
-                            <div className="text-xs text-gray-500">
-                              ID: {emp.employee_id}
-                            </div>
-                          </div>
-                          <ChevronRightIcon className="h-4 w-4 text-gray-400" />
-                        </div>
-                      </button>
-                    ))}
-                  {employees.filter(emp => {
-                    const searchTerm = employeeSearchTerm.toLowerCase().trim();
-                    return (emp.name || '').toLowerCase().includes(searchTerm) ||
-                           String(emp.employee_id || '').toLowerCase().includes(searchTerm);
-                  }).length === 0 && (
-                    <div className="px-3 py-2 text-sm text-gray-500">No employees found</div>
-                  )}
-                </div>
-              )}
-            </div>
-            
-            {/* Date Search Controls */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowDateSearch(!showDateSearch)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                  showDateSearch || hasDateFilters
-                    ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                    : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
-                }`}
-                title="Filter by date range"
-              >
-                <CalendarIcon className="w-4 h-4" />
-                Date Filter
-                {hasDateFilters && <span className="w-2 h-2 bg-blue-500 rounded-full"></span>}
-              </button>
-              
-              {hasDateFilters && (
-                <button
-                  onClick={clearDateSearch}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
-                  title="Clear date filters"
-                >
-                  <XMarkIcon className="w-3 h-3" />
-                  Clear
-                </button>
-              )}
-            </div>
-            
+          <div className="flex items-center gap-4">
             <button
-              onClick={openExportModal}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold transition"
-              title="Export Data"
+              onClick={() => setProfileModalOpen(true)}
+              className="flex items-center gap-3 p-1 rounded hover:bg-gray-50 focus:outline-none"
+              title="View profile"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Export CSV
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700">
+                <UserIcon className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <div className="text-sm font-semibold text-gray-800 hover:underline">{user.name}</div>
+                <div className="text-xs text-gray-500">{user.role}</div>
+              </div>
             </button>
-            
+
             <button
               onClick={logout}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition"
@@ -1540,63 +937,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             </button>
           </div>
         </header>
-
-        {/* Date Search Panel */}
-        {showDateSearch && (
-          <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <div className="flex flex-col sm:flex-row gap-4 items-end">
-              <div className="flex-1">
-                <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
-                  From Date
-                </label>
-                <input
-                  type="date"
-                  id="startDate"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              
-              <div className="flex-1">
-                <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
-                  To Date
-                </label>
-                <input
-                  type="date"
-                  id="endDate"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              
-              <div className="flex gap-2">
-                <button
-                  onClick={clearDateSearch}
-                  className="px-4 py-2 text-sm text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                >
-                  Clear
-                </button>
-                
-                <button
-                  onClick={() => setShowDateSearch(false)}
-                  className="px-4 py-2 text-sm text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  Apply
-                </button>
-              </div>
-            </div>
-            
-            {hasDateFilters && (
-              <div className="mt-3 text-sm text-gray-600">
-                <span className="font-medium">Active filters:</span>
-                {startDate && <span className="ml-2">From: {new Date(startDate).toLocaleDateString()}</span>}
-                {endDate && <span className="ml-2">To: {new Date(endDate).toLocaleDateString()}</span>}
-              </div>
-            )}
-          </div>
-        )}
 
         {error && (
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -1630,65 +970,52 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
           {activeSection === 'all' ? (
             <>
-              {paginatedData.length === 0 ? (
+              {/* Pending Section */}
+
+              {filteredPendingCL.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{isAMDashboard ? 'For Approval by Assistant Manager' : 'For Approval by Manager'}</h3>
+                  <PendingTable data={filteredPendingCL} goTo={goTo} isAMDashboard={isAMDashboard} />
+                </div>
+              )}
+
+              {/* Returned Section */}
+              {returnedCLs.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Returned to Supervisor</h3>
+                  <HistoryTable data={returnedCLs} goTo={goTo} isAMDashboard={isAMDashboard} />
+                </div>
+              )}
+
+              {/* Approved Section */}
+              {approvedCLs.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{isAMDashboard ? 'Approved by Assistant Manager' : 'Approved by Manager'}</h3>
+                  <HistoryTable data={approvedCLs} goTo={goTo} isAMDashboard={isAMDashboard} />
+                </div>
+              )}
+
+              {pendingCL.length === 0 && returnedCLs.length === 0 && approvedCLs.length === 0 && (
                 <p className="text-gray-400 text-sm italic">No competency levelings found.</p>
-              ) : (
-                <>
-                  <PendingTable data={paginatedData} goTo={goTo} isAMDashboard={isAMDashboard} showSection={true} />
-                  <Pagination 
-                    currentPage={currentPage}
-                    setCurrentPage={setCurrentPage}
-                    totalItems={totalItems}
-                    itemsPerPage={itemsPerPage}
-                    setItemsPerPage={setItemsPerPage}
-                  />
-                </>
               )}
             </>
           ) : activeSection === 'pending' ? (
             filteredPendingCL.length === 0 ? (
               <p className="text-gray-400 text-sm italic">No pending CLs for manager approval.</p>
             ) : (
-              <>
-                <PendingTable data={paginatedData} goTo={goTo} isAMDashboard={isAMDashboard} />
-                <Pagination 
-                  currentPage={currentPage}
-                  setCurrentPage={setCurrentPage}
-                  totalItems={totalItems}
-                  itemsPerPage={itemsPerPage}
-                  setItemsPerPage={setItemsPerPage}
-                />
-              </>
+              <PendingTable data={filteredPendingCL} goTo={goTo} />
             )
           ) : activeSection === 'returned' ? (
             returnedCLs.length === 0 ? (
               <p className="text-gray-400 text-sm italic">No CLs returned to supervisor.</p>
             ) : (
-              <>
-                <HistoryTable data={paginatedData} goTo={goTo} isAMDashboard={isAMDashboard} />
-                <Pagination 
-                  currentPage={currentPage}
-                  setCurrentPage={setCurrentPage}
-                  totalItems={totalItems}
-                  itemsPerPage={itemsPerPage}
-                  setItemsPerPage={setItemsPerPage}
-                />
-              </>
+              <HistoryTable data={returnedCLs} goTo={goTo} />
             )
           ) : activeSection === 'approved' ? (
             approvedCLs.length === 0 ? (
-              <p className="text-gray-400 text-sm italic">No CLs approved by {isAMDashboard ? 'assistant manager' : 'manager'}.</p>
+              <p className="text-gray-400 text-sm italic">No CLs approved by manager.</p>
             ) : (
-              <>
-                <HistoryTable data={paginatedData} goTo={goTo} isAMDashboard={isAMDashboard} />
-                <Pagination 
-                  currentPage={currentPage}
-                  setCurrentPage={setCurrentPage}
-                  totalItems={totalItems}
-                  itemsPerPage={itemsPerPage}
-                  setItemsPerPage={setItemsPerPage}
-                />
-              </>
+              <HistoryTable data={approvedCLs} goTo={goTo} />
             )
           ) : activeSection === 'department' ? (
             <>
@@ -1719,7 +1046,8 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
           ) : activeSection === 'employees' ? (
             <EmployeeCompetenciesView 
               employees={employees}
-              selectedEmployeeId={selectedEmployeeId}
+              supervisors={supervisors}
+              selectedSupervisorId={selectedSupervisorId}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               viewMode={viewMode}
@@ -1730,7 +1058,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             />
           ) : activeSection === 'idp_pending' ? (
             <div className="mb-6">
-              <h2 className="text-xl font-semibold mb-3">IDPs For Your Approval{selectedEmployee ? ` (${selectedEmployee.name})` : ''}</h2>
+              <h2 className="text-xl font-semibold mb-3">IDPs For Your Approval{selectedSupervisor ? ` (${selectedSupervisor.name})` : ''}</h2>
               {filteredPendingIDPs.length === 0 ? (
                 <p className="text-gray-400 text-sm italic">No IDPs pending your approval.</p>
               ) : (
@@ -1822,12 +1150,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             ) : (
               <IDPTable data={filteredIDPsByStatus.approved} openIdpView={openIdpView} />
             )
-          ) : activeSection === 'idp_returned' ? (
-            filteredIDPsByStatus.returned.length === 0 ? (
-              <p className="text-gray-400 text-sm italic">No IDPs returned to supervisor.</p>
-            ) : (
-              <IDPTable data={filteredIDPsByStatus.returned} openIdpView={openIdpView} />
-            )
           ) : activeSection === 'idp_cycle_completed' ? (
             filteredIDPsByStatus.cycle_completed.length === 0 ? (
               <p className="text-gray-400 text-sm italic">No cycle-completed IDPs.</p>
@@ -1837,6 +1159,9 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
           ) : null}
         </section>
       </main>
+
+      {/* Profile Modal */}
+      <ProfileModal open={profileModalOpen} user={user} onClose={() => setProfileModalOpen(false)} />
 
       {/* RIGHT SIDEBAR – NOTIFICATIONS + RECENT ACTIONS */}
       <aside className="w-72 bg-white border-l border-gray-200 flex flex-col">
@@ -1993,9 +1318,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                           {a.description && (
                             <p className="text-gray-600 truncate text-[11px]">{a.description}</p>
                           )}
-                          {a.actor_name && (
-                            <p className="text-gray-500 text-[10px]">by {a.actor_name} ({a.actor_role})</p>
-                          )}
                         </td>
                         <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
                           {a.created_at ? new Date(a.created_at).toLocaleDateString() : '-'}
@@ -2031,158 +1353,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         onMarkAllRead={handleMarkAllAsRead}
         onClose={() => setShowFullNotifications(false)}
       />
-
-      <Modal
-        open={modalState.open}
-        title={modalState.title}
-        message={modalState.message}
-        showCancel={modalState.showCancel}
-        confirmText={modalState.confirmText}
-        cancelText={modalState.cancelText}
-        onConfirm={handleModalConfirm}
-        onClose={closeModal}
-      />
-
-      {/* Export Modal */}
-      {exportModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-200 bg-opacity-50 backdrop-blur-sm">
-          <div
-            className="absolute inset-0"
-            onClick={closeExportModal}
-          />
-
-          <div className="relative z-50 bg-white rounded-lg shadow-xl border border-gray-300 max-w-lg w-full">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-800">Export Data</h3>
-              <button
-                onClick={closeExportModal}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="p-6 space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Module</label>
-                <select
-                  value={exportModal.module}
-                  onChange={(e) => setExportModal(prev => ({ ...prev, module: e.target.value, selectedStatus: 'ALL' }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
-                >
-                  <option value="CL">Competency Leveling (CL)</option>
-                  <option value="IDP">Individual Development Plan (IDP)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Employee
-                  <span className="text-xs text-gray-500 ml-2">(Filter by specific employee or all)</span>
-                </label>
-                <select
-                  value={exportModal.employee}
-                  onChange={(e) => setExportModal(prev => ({ ...prev, employee: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
-                >
-                  <option value="ALL">All Employees</option>
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.employee_id || emp.id}>
-                      {emp.name} ({emp.employee_id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
-                  <input
-                    type="date"
-                    value={exportModal.startDate}
-                    onChange={(e) => setExportModal(prev => ({ ...prev, startDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                    max={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
-                  <input
-                    type="date"
-                    value={exportModal.endDate}
-                    onChange={(e) => setExportModal(prev => ({ ...prev, endDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                    min={exportModal.startDate}
-                    max={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Status Filter</label>
-                <select
-                  value={exportModal.selectedStatus}
-                  onChange={(e) => setExportModal(prev => ({ ...prev, selectedStatus: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
-                >
-                  <option value="ALL">All Statuses</option>
-                  {exportModal.module === 'CL' ? (
-                    CL_STATUS_SECTIONS.map(section => (
-                      <option key={section.key} value={section.key}>{section.label}</option>
-                    ))
-                  ) : (
-                    IDP_STATUS_SECTIONS.map(section => (
-                      <option key={section.key} value={section.key}>{section.label}</option>
-                    ))
-                  )}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
-              <button
-                onClick={closeExportModal}
-                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
-                disabled={exportModal.loading}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleExportCSV}
-                className={`px-6 py-2 text-sm text-white rounded-md transition-all flex items-center gap-2 ${
-                  exportModal.loading 
-                    ? 'bg-gray-400 cursor-not-allowed' 
-                    : !exportModal.startDate || !exportModal.endDate
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
-                }`}
-                disabled={exportModal.loading || !exportModal.startDate || !exportModal.endDate}
-                title={!exportModal.startDate || !exportModal.endDate ? 'Please select both start and end dates' : ''}
-              >
-                {exportModal.loading ? (
-                  <>
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Exporting...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Export CSV
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2209,7 +1379,6 @@ function PendingTable({ data, goTo, isAMDashboard }) {
             <Th>Employee ID</Th>
             <Th>Department</Th>
             <Th>Position</Th>
-            <Th>Competency Score</Th>
             <Th>{isAMDashboard ? 'For AM Approval' : 'Status'}</Th>
             <Th>Submitted At</Th>
             <Th>Actions</Th>
@@ -2223,10 +1392,9 @@ function PendingTable({ data, goTo, isAMDashboard }) {
               <Td>{item.employee_name}</Td>
               <Td>{item.employee_code || item.employee_id}</Td>
               <Td>{item.department_name}</Td>
-              <Td>{item.position_title || '-'}</Td>
-              <Td>{item.competency_score ? parseFloat(item.competency_score).toFixed(2) : '-'}</Td>
+              <Td>{item.position_title}</Td>
               <Td>{isAMDashboard ? 'For AM Approval' : displayStatus(item.status)}</Td>
-              <Td>{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '-'}</Td>
+              <Td>{new Date(item.submitted_at).toLocaleString()}</Td>
 
               <Td>
                 <button
@@ -2259,7 +1427,6 @@ function HistoryTable({ data, goTo, isAMDashboard }) {
             <Th>Department</Th>
             <Th>Position</Th>
             <Th>{isAMDashboard ? 'AM Decision' : 'Manager Decision'}</Th>
-            <Th>By</Th>
             <Th>{isAMDashboard ? 'AM Decided At' : 'Manager Decided At'}</Th>
             <Th>Actions</Th>
           </tr>
@@ -2274,14 +1441,6 @@ function HistoryTable({ data, goTo, isAMDashboard }) {
               <Td>{item.department_name}</Td>
               <Td>{item.position_title}</Td>
               <Td>{isAMDashboard ? (item.am_decision || '-') : (item.manager_decision || '-')}</Td>
-              <Td className="text-xs">
-                {item.returned_by_name ? (
-                  <div>
-                    <div className="font-semibold">{item.returned_by_name}</div>
-                    <div className="text-gray-500">{item.returned_by_role}</div>
-                  </div>
-                ) : '-'}
-              </Td>
               <Td>
                 {isAMDashboard
                   ? (item.am_decided_at ? new Date(item.am_decided_at).toLocaleString() : '-')
@@ -2447,18 +1606,14 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
 function FullRecentActionsModal({ open, recentActions, onActionClick, onClose }) {
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
 
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const filterKey = `${dateFilter.startDate}-${dateFilter.endDate}-${searchTerm}`;
-  const [lastFilterKey, setLastFilterKey] = useState(filterKey);
-  
-  // Reset page when filters change
-  if (lastFilterKey !== filterKey) {
-    setLastFilterKey(filterKey);
+  // Reset pagination when filters change
+  useEffect(() => {
     setCurrentPage(1);
-  }
+  }, [dateFilter, searchTerm]);
 
   // Filter actions by date range and search term
   const filteredActions = recentActions.filter(a => {
@@ -2563,7 +1718,6 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">Action</th>
-                    <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">By</th>
                     <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">Description</th>
                     <th className="px-4 py-2 text-left text-xs font-bold uppercase text-gray-700">Date</th>
                   </tr>
@@ -2581,9 +1735,6 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
                       className="hover:bg-gray-50 cursor-pointer"
                     >
                       <td className="px-4 py-3 text-gray-900 font-bold">{a.title || 'Action'}</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs font-medium">
-                        {a.actor_name ? `${a.actor_name}` : '-'}
-                      </td>
                       <td className="px-4 py-3 text-gray-700 font-medium">{a.description || '-'}</td>
                       <td className="px-4 py-3 text-gray-600 font-medium">
                         {a.created_at ? new Date(a.created_at).toLocaleString() : '-'}
@@ -2714,20 +1865,20 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
 }
 
 // Employee Competencies View Component
-function EmployeeCompetenciesView({ employees, selectedEmployeeId, searchQuery, setSearchQuery, viewMode, setViewMode, hasCompetenciesOnly, setHasCompetenciesOnly, goTo }) {
-  // Filter employees by selected employee
-  const employeesForDisplay = useMemo(() => {
-    if (!selectedEmployeeId) return employees;
-    return employees.filter(emp => String(emp.id) === String(selectedEmployeeId) || String(emp.employee_id) === String(selectedEmployeeId));
-  }, [employees, selectedEmployeeId]);
+function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId, searchQuery, setSearchQuery, viewMode, setViewMode, hasCompetenciesOnly, setHasCompetenciesOnly, goTo }) {
+  // Filter employees by selected supervisor
+  const employeesForSupervisor = useMemo(() => {
+    if (!selectedSupervisorId) return [];
+    return employees.filter(emp => emp.supervisor_id === selectedSupervisorId);
+  }, [employees, selectedSupervisorId]);
 
-  // Find the selected employee's info
-  const selectedEmployee = useMemo(() => {
-    return employees.find(emp => String(emp.id) === String(selectedEmployeeId) || String(emp.employee_id) === String(selectedEmployeeId));
-  }, [employees, selectedEmployeeId]);
+  // Find the selected supervisor's name    
+  const selectedSupervisor = useMemo(() => {
+    return supervisors.find(s => s.id === selectedSupervisorId);
+  }, [supervisors, selectedSupervisorId]);
 
   const filteredEmployees = useMemo(() => {
-    let list = employeesForDisplay;
+    let list = employeesForSupervisor;
     if (hasCompetenciesOnly) {
       list = list.filter(emp => (emp.competencyCount || 0) > 0);
     }
@@ -2738,7 +1889,7 @@ function EmployeeCompetenciesView({ employees, selectedEmployeeId, searchQuery, 
       emp.employee_id?.toLowerCase().includes(query) ||
       emp.position_title?.toLowerCase().includes(query)
     );
-  }, [employeesForDisplay, hasCompetenciesOnly, searchQuery]);
+  }, [employeesForSupervisor, hasCompetenciesOnly, searchQuery]);
 
   return (
     <div>
@@ -2746,11 +1897,11 @@ function EmployeeCompetenciesView({ employees, selectedEmployeeId, searchQuery, 
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-lg font-bold text-gray-800">
-            {selectedEmployee ? `Employee: ${selectedEmployee.name}` : 'All Employees'}
+            {selectedSupervisor ? `Employees under ${selectedSupervisor.name}` : 'Select a Supervisor'}
           </h2>
-          {selectedEmployee && (
+          {selectedSupervisor && (
             <p className="text-sm text-gray-600 font-medium">
-              Employee ID: {selectedEmployee.employee_id}
+              Supervisor ID: {selectedSupervisor.employee_id}
             </p>
           )}
         </div>
@@ -2805,9 +1956,13 @@ function EmployeeCompetenciesView({ employees, selectedEmployeeId, searchQuery, 
         </label>
       </div>
 
-      {filteredEmployees.length === 0 ? (
+      {!selectedSupervisorId ? (
         <p className="text-sm text-gray-400 text-center py-8">
-          {searchQuery ? 'No employees found matching your search.' : selectedEmployee ? 'Employee details loaded.' : 'No employees found.'}
+          Please select a supervisor from the sidebar to view their employees.
+        </p>
+      ) : filteredEmployees.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-8">
+          {searchQuery ? 'No employees found matching your search.' : 'No employees found.'}
         </p>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -3481,147 +2636,152 @@ function IDPFullPageView({ open, idp, employee, supervisor, loading, items, head
   );
 }
 
-function Modal({
-  open,
-  title,
-  message,
-  showCancel,
-  confirmText = 'OK',
-  cancelText = 'Cancel',
-  onConfirm,
-  onClose,
-}) {
-  if (!open) return null;
+export default ManagerDashboard;
+
+function ProfileModal({ open, user, onClose }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [departmentLocal, setDepartmentLocal] = useState(null);
+  const [positionLocal, setPositionLocal] = useState(null);
+  useEffect(() => {
+    let mounted = true;
+    async function fetchLookups() {
+      try {
+        // Fetch departments if department not provided
+        if (!user?.department_name && user?.department_id) {
+          const depts = await apiRequest('/api/lookup/departments');
+          if (!mounted) return;
+          const found = Array.isArray(depts) && depts.find(d => String(d.id) === String(user.department_id));
+          if (found) setDepartmentLocal(found);
+        }
+
+        // Fetch positions if position not provided
+        if (!user?.position_title && user?.position_id) {
+          const positions = await apiRequest('/api/lookup/positions');
+          if (!mounted) return;
+          const foundPos = Array.isArray(positions) && positions.find(p => String(p.id) === String(user.position_id));
+          if (foundPos) setPositionLocal(foundPos);
+        }
+      } catch (e) {
+        // ignore lookup errors; modal will fallback to user fields
+      }
+    }
+    fetchLookups();
+    return () => { mounted = false; };
+  }, [user]);
+
+  if (!open || !user) return null;
+
+  async function handleChangePassword(e) {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setError('Please fill all fields');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('New password and confirmation do not match');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await apiRequest('/api/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      setSuccess('Password changed successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err.message || 'Failed to change password');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800">Profile</h3>
+            <p className="text-sm text-gray-500">{user.role} information</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
-        <div className="px-6 py-4">
-          <p className="text-sm text-gray-700 whitespace-pre-line">{message}</p>
-        </div>
-        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
-          {showCancel && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
-            >
-              {cancelText}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {confirmText}
-          </button>
+
+        <div className="px-6 py-4 space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Name</p>
+            <p className="text-sm text-gray-800">{user.name}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Employee ID</p>
+            <p className="text-sm text-gray-800">{user.employee_id || user.employee_code || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Email</p>
+            <p className="text-sm text-gray-800">{user.email || user.username || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Department</p>
+            <p className="text-sm text-gray-800">{departmentLocal?.name || user.department_name || user.department || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Position</p>
+            <p className="text-sm text-gray-800">{positionLocal?.title || user.position_title || user.position || '-'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Role</p>
+            <p className="text-sm text-gray-800">{user.role}</p>
+          </div>
+
+          <form onSubmit={handleChangePassword} className="mt-2">
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">Change Password</h4>
+            {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
+            {success && <div className="text-sm text-green-600 mb-2">{success}</div>}
+
+            <div className="space-y-2">
+              <input
+                type="password"
+                placeholder="Current password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+              <input
+                type="password"
+                placeholder="New password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+              <input
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-100">Close</button>
+              <button type="submit" disabled={loading} className={`px-4 py-2 text-sm rounded text-white ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                {loading ? 'Saving...' : 'Change Password'}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
   );
 }
-
-function Pagination({ 
-  currentPage, 
-  setCurrentPage, 
-  totalItems, 
-  itemsPerPage, 
-  setItemsPerPage 
-}) {
-  const totalPages = Math.ceil(totalItems / itemsPerPage);
-  
-  const getPageNumbers = () => {
-    const pages = [];
-    const showEllipsis = totalPages > 7;
-    
-    if (!showEllipsis) {
-      for (let i = 1; i <= totalPages; i++) {
-        pages.push(i);
-      }
-    } else {
-      if (currentPage <= 4) {
-        for (let i = 1; i <= 5; i++) pages.push(i);
-        pages.push('...');
-        pages.push(totalPages);
-      } else if (currentPage >= totalPages - 3) {
-        pages.push(1);
-        pages.push('...');
-        for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
-      } else {
-        pages.push(1);
-        pages.push('...');
-        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
-        pages.push('...');
-        pages.push(totalPages);
-      }
-    }
-    return pages;
-  };
-  
-  if (totalPages <= 1) return null;
-  
-  return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 px-4 py-3 bg-white border border-gray-200 rounded-lg">
-      <div className="flex items-center gap-2 text-sm text-gray-700">
-        <span>Show</span>
-        <select 
-          value={itemsPerPage} 
-          onChange={(e) => {
-            setItemsPerPage(Number(e.target.value));
-            setCurrentPage(1);
-          }}
-          className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value={5}>5</option>
-          <option value={10}>10</option>
-          <option value={20}>20</option>
-          <option value={50}>50</option>
-        </select>
-        <span>entries</span>
-        <span className="ml-4">Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} entries</span>
-      </div>
-      
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => setCurrentPage(currentPage - 1)}
-          disabled={currentPage === 1}
-          className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Previous
-        </button>
-        
-        {getPageNumbers().map((page, index) => (
-          page === '...' ? (
-            <span key={index} className="px-2 py-1 text-gray-500">...</span>
-          ) : (
-            <button
-              key={page}
-              onClick={() => setCurrentPage(page)}
-              className={`px-3 py-1 text-sm border rounded ${
-                currentPage === page
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {page}
-            </button>
-          )
-        ))}
-        
-        <button
-          onClick={() => setCurrentPage(currentPage + 1)}
-          disabled={currentPage === totalPages}
-          className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  );
-}
-
-export default ManagerDashboard;

@@ -34,7 +34,7 @@ function CLTable({ data, goTo, onDelete }) {
             <tr key={`${item.id}-${idx}`} className="hover:bg-gray-50">
               <Td>{item.id}</Td>
               <Td>{item.employee_name}</Td>
-              <Td>{item.employee_code || item.employee_id}</Td>
+              <Td>{item.employee_id || item.employee_code}</Td>
               <Td>{item.department_name}</Td>
               <Td>{item.position_title}</Td>
               <Td>{(() => {
