@@ -184,7 +184,7 @@ function HRReviewCLPage() {
     csvRows.push(['Previous HR Remarks', (header.hr_remarks || '').replace(/\n/g, ' ')]);
     csvRows.push(['HR Remarks (Current)', (remarks || '').replace(/\n/g, ' ')]);
 
-    const csvContent = csvRows.map(r => r.map(v => `\"${String(v).replace(/\"/g, '\"\"')}\"`).join(',')).join('\n');
+    const csvContent = csvRows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const employee = header.employee_name || 'employee';

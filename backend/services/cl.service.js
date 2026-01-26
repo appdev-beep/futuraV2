@@ -2940,7 +2940,9 @@ async function exportCLForManager({ startDate, endDate, department, status, mana
   // Filter by Manager: include CLs where the CL was assigned to this manager,
   // or the employee's manager is this manager, or the department's manager is this manager.
   if (managerId) {
-    sql += ` AND (ch.manager_id = ? OR e.manager_id = ? OR d.manager_id = ?)`;
+    // Some schemas may not have a manager_id on departments; fall back to
+    // checking the header manager or the employee's assigned manager.
+    sql += ` AND (ch.manager_id = ? OR e.manager_id = ? OR e.manager_id = ?)`;
     params.push(managerId, managerId, managerId);
   }
 

@@ -800,28 +800,19 @@ function HRDashboard() {
           </div>
         </div>
 
-        <nav className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-8rem)]" style={{scrollbarWidth: 'none', msOverflowStyle: 'none'}}>
-          {/* Employee Management */}
-          <div className="space-y-1">
-            <button
-              onClick={() => navigate('/hr/employees')}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded
-                         text-blue-100 hover:bg-blue-800 transition"
-            >
-              <UsersIcon className="w-5 h-5 text-green-400" />
-              <span>Employee Management</span>
-            </button>
-          </div>
+        <nav className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-8rem)] list-none" style={{scrollbarWidth: 'none', msOverflowStyle: 'none', listStyle: 'none', paddingLeft: 0}}>
+          {/* Employee Management (moved to header) */}
 
           {/* Competency Leveling */}
           <div className="space-y-1">
             <button
+              id="hr-comp-btn"
               onClick={() => { setActiveModule('CL'); setActiveSection('ALL'); }}
               className="w-full flex items-center gap-3 px-3 py-2 rounded
                          text-blue-100 hover:bg-blue-800 transition"
             >
-              <ClipboardDocumentCheckIcon className="w-5 h-5 text-blue-400" />
-              <span>Competency Leveling</span>
+              <ClipboardDocumentCheckIcon className="w-5 h-5 text-white" />
+              <span className="whitespace-nowrap">Competency Leveling</span>
             </button>
 
             {/* CL Sections */}
@@ -1080,6 +1071,14 @@ function HRDashboard() {
       </aside>
 
       {/* MAIN CONTENT */}
+      {/* Ensure any decorative pseudo-element dot is hidden for the HR sidebar buttons so the explicit SVG icon shows */}
+      <style>{`
+        /* Hide any decorative markers or pseudo-elements inside the HR sidebar nav */
+        nav.p-4, nav.p-4 * { list-style: none !important; }
+        nav.p-4::before, nav.p-4 *::before, nav.p-4::marker, nav.p-4 *::marker { display: none !important; content: none !important; }
+        /* Keep the specific button safe as well */
+        #hr-comp-btn::before, #hr-comp-btn::marker { display: none !important; content: none !important; }
+      `}</style>
       <main className="flex-1 overflow-y-auto p-8">
         <header className="flex items-center justify-between mb-6">
           <div>
@@ -1101,6 +1100,17 @@ function HRDashboard() {
               </svg>
               {dateSearch.enabled ? 'Date Filter Active' : 'Search by Date'}
             </button>
+              <button
+                onClick={() => navigate('/hr/employees')}
+                className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-4-4h-1" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20H4v-2a4 4 0 014-4h1" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11a4 4 0 100-8 4 4 0 000 8z" />
+                </svg>
+                Employee Management
+              </button>
             
             <button
               onClick={openExportModal}
@@ -2398,7 +2408,7 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
   );
 }
 
-function FullRecentActionsModal({ open, recentActions, onActionClick, onClose }) {
+function FullRecentActionsModal({ open, recentActions, onClose }) {
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);

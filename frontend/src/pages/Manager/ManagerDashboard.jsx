@@ -138,9 +138,9 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   const [dateSearch, setDateSearch] = useState({ startDate: '', endDate: '', enabled: false });
   const [showDateSearch, setShowDateSearch] = useState(false);
 
-  const [expandedSupervisors, setExpandedSupervisors] = useState({}); // Track which supervisors are expanded
-  const [selectedSupervisorId, setSelectedSupervisorId] = useState(null); // Selected supervisor to view employees
-  const [searchQuery, setSearchQuery] = useState(''); // Search for employees
+  const [_expandedSupervisors, _setExpandedSupervisors] = useState({}); // Track which supervisors are expanded
+  const [selectedSupervisorId, _setSelectedSupervisorId] = useState(null); // Selected supervisor to view employees
+  const [_searchQuery, _setSearchQuery] = useState(''); // Search for employees
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [hasCompetenciesOnly, setHasCompetenciesOnly] = useState(false); // Filter: only employees with competencies
   // ✅ NEW: notifications + recent actions (right sidebar)
@@ -167,7 +167,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
   // Supervisor sidebar state
   const [showClAction, setShowClAction] = useState(false);
-  const [showClInReview, setShowClInReview] = useState(false);
+  const [_showClInReview, _setShowClInReview] = useState(false);
   const [showIdpAction, setShowIdpAction] = useState(false);
   const [showIdpInReview, setShowIdpInReview] = useState(false);
 
@@ -223,7 +223,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     window.location.href = `${path}?viewOnly=true`;
   }
 
-  function closeIdpView() {
+  function _closeIdpView() {
     // No longer needed - navigation handles closing
   }
 
@@ -245,7 +245,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     );
   }
 
-  function areaColor(area) {
+  function _areaColor(area) {
     const safe = CRAYON_COLORS && typeof CRAYON_COLORS === 'object' ? CRAYON_COLORS : {};
     if (safe[area]) return safe[area];
 
@@ -262,7 +262,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     return palette[hash % palette.length];
   }
 
-  function getCompetencyCompletionStatus(item) {
+  function _getCompetencyCompletionStatus(item) {
     const mainActivities = (item.development_activity && typeof item.development_activity === 'object') 
       ? [item.development_activity] 
       : (item.developmentActivities || []);
@@ -362,7 +362,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               );
             }
           }
-        } catch (err) {
+        } catch {
           deptEmployees = [];
         }
 
@@ -402,7 +402,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         let allUsers = [];
         try {
           allUsers = await apiRequest('/api/users');
-        } catch (err) {
+        } catch {
           // ignore - mapping will fallback to ids
           allUsers = [];
         }
@@ -598,7 +598,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
       if (employee !== 'ALL') queryParams.set('employee_id', employee);
 
       // Choose endpoint depending on AM vs Manager
-      const endpointBase = isAMDashboard ? '/api' : '/api';
+      const _endpointBase = isAMDashboard ? '/api' : '/api';
       const endpoint = module === 'CL'
         ? (isAMDashboard ? '/api/cl/am/export' : '/api/cl/manager/export')
         : (isAMDashboard ? '/api/idp/am/export' : '/api/idp/manager/export');
@@ -609,7 +609,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
 
       if (!response.ok) {
         let errorMessage = 'Export failed';
-        try { const error = await response.json(); errorMessage = error.message || errorMessage; } catch {}
+        try { const error = await response.json(); errorMessage = error.message || errorMessage; } catch { /* ignore */ }
         throw new Error(errorMessage);
       }
 
@@ -731,7 +731,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     let items = applyCLFilters(departmentCLs || []);
     if (departmentStatusFilter === 'ALL') return items;
     return items.filter(item => item.status === departmentStatusFilter);
-  }, [departmentCLs, departmentStatusFilter, selectedSupervisorId, selectedEmployee, employeeSearchTerm, employees, dateSearch]);
+  }, [departmentCLs, departmentStatusFilter, selectedSupervisorId, selectedEmployee, employeeSearchTerm, employees, dateSearch, applyCLFilters]);
 
   const sectionCounts = useMemo(() => {
     return {
@@ -951,6 +951,17 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         <div className="p-4 border-b border-blue-800">
           <h2 className="text-xl font-semibold text-white">FUTURA</h2>
           <p className="text-sm text-blue-100">{user.role}</p>
+          {(isAMDashboard || user.role === 'Manager') && (
+            <div className="mt-3">
+              <button
+                onClick={() => setActiveSection('employees')}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded text-blue-100 hover:bg-blue-800 transition"
+              >
+                <UsersIcon className="w-5 h-5 text-white" />
+                <span>My Employees</span>
+              </button>
+            </div>
+          )}
         </div>
 
         <nav className="p-4 space-y-4 overflow-y-auto">
@@ -1189,16 +1200,6 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         </nav>
 
         <div className="mt-auto p-4 border-t border-blue-800">
-          {isAMDashboard && (
-            <button
-              onClick={() => setActiveSection('employees')}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded text-blue-100 hover:bg-blue-800 transition mb-2"
-            >
-              <UsersIcon className="w-5 h-5 text-white" />
-              <span>My Employees</span>
-            </button>
-          )}
-
           <button
             onClick={logout}
             className="w-full flex items-center gap-3 px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition"
@@ -1365,6 +1366,8 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
           </div>
         )}
         {loading && <p>Loading...</p>}
+
+        
 
         {/* SUMMARY CARDS (hidden when viewing My Employees) */}
         {activeSection !== 'employees' && (
@@ -2167,7 +2170,7 @@ function NotificationModal({ open, notification, onProceed, onClose }) {
   );
 }
 
-function FullRecentActionsModal({ open, recentActions, onActionClick, onClose }) {
+function FullRecentActionsModal({ open, recentActions, onClose }) {
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -2176,6 +2179,7 @@ function FullRecentActionsModal({ open, recentActions, onActionClick, onClose })
 
   // Reset pagination when filters change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentPage(1);
   }, [dateFilter, searchTerm]);
 
@@ -2423,7 +2427,7 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
 }
 
 // Employee Competencies View Component
-function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId, searchQuery, setSearchQuery, viewMode, setViewMode, hasCompetenciesOnly, setHasCompetenciesOnly, goTo }) {
+function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId, searchQuery, viewMode, setViewMode, hasCompetenciesOnly, setHasCompetenciesOnly, goTo }) {
   // Filter employees by selected supervisor. If no supervisor selected, show all provided employees.
   const employeesForSupervisor = useMemo(() => {
     if (!selectedSupervisorId) return employees || [];
@@ -3210,9 +3214,9 @@ function ProfileModal({ open, user, onClose }) {
           const foundPos = Array.isArray(positions) && positions.find(p => String(p.id) === String(user.position_id));
           if (foundPos) setPositionLocal(foundPos);
         }
-      } catch (e) {
-        // ignore lookup errors; modal will fallback to user fields
-      }
+        } catch {
+          // ignore lookup errors; modal will fallback to user fields
+        }
     }
     fetchLookups();
     return () => { mounted = false; };

@@ -2355,6 +2355,9 @@ async function exportIDPForAM({ startDate, endDate, department, status, amId }) 
   
   sql += ` ORDER BY ih.created_at DESC`;
   
+  console.log('IDP Export for AM SQL:', sql);
+  console.log('IDP Export for AM params:', params);
+
   const [rows] = await db.query(sql, params);
   console.log(`Found ${rows.length} IDP records for AM export`);
   
@@ -2369,6 +2372,19 @@ async function exportIDPForAM({ startDate, endDate, department, status, amId }) 
       const [diagRows] = await db.query(diagSql, diagParams);
       const diagCount = (diagRows && diagRows[0] && diagRows[0].cnt) || 0;
       console.log(`AM export diagnostic count (ignoring dates): ${diagCount}`);
+
+      // Additional detailed diagnostic: list matching idp headers (created_at/updated_at)
+      try {
+        const detailParams = [];
+        let detailSql = `SELECT id, created_at, updated_at, status, am_id, manager_id, employee_id FROM idp_headers WHERE 1=1`;
+        if (amId) { detailSql += ` AND am_id = ?`; detailParams.push(amId); }
+        if (status && status !== 'ALL') { detailSql += ` AND status = ?`; detailParams.push(status); }
+        detailSql += ` ORDER BY created_at DESC LIMIT 50`;
+        const [detailRows] = await db.query(detailSql, detailParams);
+        console.log('AM export diagnostic details (recent matching idp_headers):', detailRows);
+      } catch (detailErr) {
+        console.error('AM export diagnostic detail failed:', detailErr && detailErr.message ? detailErr.message : detailErr);
+      }
       return generateEmptyIDPCSV(`No data found for the specified criteria. Diagnostic: ${diagCount} matching idp_headers for this AM (ignoring date filters).`);
     } catch (diagErr) {
       console.error('AM export diagnostic failed:', diagErr && diagErr.message ? diagErr.message : diagErr);
@@ -2453,7 +2469,9 @@ async function exportIDPForManager({ startDate, endDate, department, status, man
   
   // Filter by Manager's department employees
   if (managerId) {
-    sql += ` AND (ih.manager_id = ? OR d.manager_id = ?)`;
+    // Some schemas don't have a manager_id on departments; fall back to
+    // checking the header manager or the employee's assigned manager.
+    sql += ` AND (ih.manager_id = ? OR e.manager_id = ?)`;
     params.push(managerId, managerId);
   }
   
