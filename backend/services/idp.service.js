@@ -2308,13 +2308,13 @@ async function exportIDPForAM({ startDate, endDate, department, status, amId }) 
       s.name as supervisor_name,
       am.name as am_name,
       m.name as manager_name,
-      ih.submitted_at,
-      ih.am_decision,
-      ih.am_remarks,
-      ih.manager_decision,
+      COALESCE(ih.updated_at, ih.created_at) AS submitted_at,
+      '' AS am_decision,
+      '' AS am_remarks,
+      '' AS manager_decision,
       ih.manager_remarks,
-      ih.hr_decision,
-      ih.hr_remarks
+      '' AS hr_decision,
+      '' AS hr_remarks
     FROM idp_headers ih
     JOIN users e ON ih.employee_id = e.id
     LEFT JOIN departments d ON e.department_id = d.id
@@ -2334,12 +2334,12 @@ async function exportIDPForAM({ startDate, endDate, department, status, amId }) 
   }
   
   if (startDate) {
-    sql += ` AND ih.created_at >= ?`;
+    sql += ` AND DATE(COALESCE(ih.updated_at, ih.created_at)) >= DATE(?)`;
     params.push(startDate);
   }
-  
+
   if (endDate) {
-    sql += ` AND ih.created_at <= ?`;
+    sql += ` AND DATE(COALESCE(ih.updated_at, ih.created_at)) <= DATE(?)`;
     params.push(endDate);
   }
   
@@ -2359,7 +2359,21 @@ async function exportIDPForAM({ startDate, endDate, department, status, amId }) 
   console.log(`Found ${rows.length} IDP records for AM export`);
   
   if (rows.length === 0) {
-    return generateEmptyIDPCSV('No data found for the specified criteria');
+    try {
+      // Diagnostic: check how many IDPs exist for this AM ignoring date filters
+      const diagParams = [];
+      let diagSql = `SELECT COUNT(*) as cnt FROM idp_headers ih WHERE 1=1`;
+      if (amId) { diagSql += ` AND ih.am_id = ?`; diagParams.push(amId); }
+      if (department) { diagSql += ` AND ih.department_id IS NOT NULL`; }
+      if (status && status !== 'ALL') { diagSql += ` AND ih.status = ?`; diagParams.push(status); }
+      const [diagRows] = await db.query(diagSql, diagParams);
+      const diagCount = (diagRows && diagRows[0] && diagRows[0].cnt) || 0;
+      console.log(`AM export diagnostic count (ignoring dates): ${diagCount}`);
+      return generateEmptyIDPCSV(`No data found for the specified criteria. Diagnostic: ${diagCount} matching idp_headers for this AM (ignoring date filters).`);
+    } catch (diagErr) {
+      console.error('AM export diagnostic failed:', diagErr && diagErr.message ? diagErr.message : diagErr);
+      return generateEmptyIDPCSV('No data found for the specified criteria');
+    }
   }
   
   // Generate CSV
@@ -2418,13 +2432,13 @@ async function exportIDPForManager({ startDate, endDate, department, status, man
       s.name as supervisor_name,
       am.name as am_name,
       m.name as manager_name,
-      ih.submitted_at,
-      ih.am_decision,
-      ih.am_remarks,
-      ih.manager_decision,
+      COALESCE(ih.updated_at, ih.created_at) AS submitted_at,
+      '' AS am_decision,
+      '' AS am_remarks,
+      '' AS manager_decision,
       ih.manager_remarks,
-      ih.hr_decision,
-      ih.hr_remarks
+      '' AS hr_decision,
+      '' AS hr_remarks
     FROM idp_headers ih
     JOIN users e ON ih.employee_id = e.id
     LEFT JOIN departments d ON e.department_id = d.id

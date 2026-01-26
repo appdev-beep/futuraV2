@@ -96,6 +96,8 @@ function IDPTable({ data, openIdpView }) {
 }
 
 
+
+
 // Dynamically build CL status sections based on department.has_am
 const getCLStatusSections = (department) => {
   const sections = [
@@ -153,6 +155,9 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
   });
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [employeeInputFocused, setEmployeeInputFocused] = useState(false);
+  const [showEmployeeSuggestions, setShowEmployeeSuggestions] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
 
   // Export modal/state for CSV export (used by header Export CSV)
   const [exportModal, setExportModal] = useState({ open: false, loading: false, startDate: '', endDate: '', module: 'CL', selectedStatus: 'ALL', employee: 'ALL' });
@@ -925,6 +930,18 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
     return supervisors.find(s => s.id === selectedSupervisorId);
   }, [supervisors, selectedSupervisorId]);
 
+  // Compute employee suggestions for autocomplete (max 8)
+  const employeeSuggestions = useMemo(() => {
+    if (!employeeSearchTerm || !employeeInputFocused) return [];
+    const q = employeeSearchTerm.toLowerCase().trim();
+    if (!q) return [];
+    return (employees || []).filter(emp => (
+      (emp.name || emp.full_name || '').toLowerCase().includes(q) ||
+      String(emp.employee_id || '').toLowerCase().includes(q) ||
+      String(emp.employee_code || '').toLowerCase().includes(q)
+    )).slice(0, 8);
+  }, [employeeSearchTerm, employees, employeeInputFocused]);
+
   if (!user) return null;
 
   return (
@@ -1170,6 +1187,26 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
             </div>
           </div>
         </nav>
+
+        <div className="mt-auto p-4 border-t border-blue-800">
+          {isAMDashboard && (
+            <button
+              onClick={() => setActiveSection('employees')}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded text-blue-100 hover:bg-blue-800 transition mb-2"
+            >
+              <UsersIcon className="w-5 h-5 text-white" />
+              <span>My Employees</span>
+            </button>
+          )}
+
+          <button
+            onClick={logout}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition"
+          >
+            <ArrowRightOnRectangleIcon className="w-5 h-5" />
+            <span>Logout</span>
+          </button>
+        </div>
       </aside>
 
       {/* MAIN CONTENT */}
@@ -1198,17 +1235,65 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
                     placeholder={selectedEmployee !== 'ALL' ? `Filtered: ${employees.find(emp => String(emp.employee_id) === String(selectedEmployee) || String(emp.employee_code) === String(selectedEmployee) || String(emp.id) === String(selectedEmployee))?.name || selectedEmployee}` : 'Search employee...'}
                     value={employeeSearchTerm}
                     onChange={(e) => { setEmployeeSearchTerm(e.target.value); if (selectedEmployee !== 'ALL') setSelectedEmployee('ALL'); }}
+                    onFocus={() => { setEmployeeInputFocused(true); setShowEmployeeSuggestions(true); }}
+                    onBlur={() => { setTimeout(() => { setEmployeeInputFocused(false); setShowEmployeeSuggestions(false); setActiveSuggestionIndex(-1); }, 150); }}
+                    onKeyDown={(e) => {
+                      // Arrow navigation and enter to select
+                      if (!showEmployeeSuggestions) return;
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setActiveSuggestionIndex((i) => Math.min(i + 1, (employeeSuggestions.length || 0) - 1));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setActiveSuggestionIndex((i) => Math.max(i - 1, 0));
+                      } else if (e.key === 'Enter') {
+                        if (activeSuggestionIndex >= 0 && employeeSuggestions[activeSuggestionIndex]) {
+                          const emp = employeeSuggestions[activeSuggestionIndex];
+                          setEmployeeSearchTerm(emp.name || emp.full_name || '');
+                          setSelectedEmployee(emp.id || emp.employee_id || emp.employee_code || 'ALL');
+                          setShowEmployeeSuggestions(false);
+                          setActiveSuggestionIndex(-1);
+                          e.preventDefault();
+                        }
+                      } else if (e.key === 'Escape') {
+                        setShowEmployeeSuggestions(false);
+                        setActiveSuggestionIndex(-1);
+                      }
+                    }}
                     className="w-64 px-3 py-2 pl-9 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   {(employeeSearchTerm || selectedEmployee !== 'ALL') && (
                     <button
-                      onClick={() => { setEmployeeSearchTerm(''); setSelectedEmployee('ALL'); }}
+                      onClick={() => { setEmployeeSearchTerm(''); setSelectedEmployee('ALL'); setShowEmployeeSuggestions(false); }}
                       className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
                       title="Clear"
                     >
                       <XMarkIcon className="h-4 w-4 text-gray-400" />
                     </button>
+                  )}
+
+                  {/* Autocomplete suggestions */}
+                  {showEmployeeSuggestions && employeeSuggestions.length > 0 && (
+                    <div className="absolute z-50 mt-1 w-64 bg-white border border-gray-200 rounded shadow-lg max-h-56 overflow-auto">
+                      {employeeSuggestions.map((emp, idx) => (
+                        <button
+                          key={emp.id || emp.employee_id || idx}
+                          type="button"
+                          onMouseDown={(e) => { /* use onMouseDown to avoid blur before click */
+                            e.preventDefault();
+                            setEmployeeSearchTerm(emp.name || emp.full_name || '');
+                            setSelectedEmployee(emp.id || emp.employee_id || emp.employee_code || 'ALL');
+                            setShowEmployeeSuggestions(false);
+                            setActiveSuggestionIndex(-1);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 ${idx === activeSuggestionIndex ? 'bg-blue-50' : ''}`}
+                        >
+                          <div className="font-medium text-gray-800">{emp.name || emp.full_name || emp.employee_id || emp.employee_code}</div>
+                          <div className="text-xs text-gray-500">{emp.employee_id ? `ID: ${emp.employee_id}` : ''} {emp.employee_code ? ` • Code: ${emp.employee_code}` : ''}</div>
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
 
@@ -1237,14 +1322,7 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               </div>
             </button>
 
-            <button
-              onClick={logout}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition"
-              title="Logout"
-            >
-              <ArrowRightOnRectangleIcon className="w-5 h-5" />
-              Logout
-            </button>
+            {/* Logout moved to sidebar footer for clearer placement */}
           </div>
         </header>
 
@@ -1288,24 +1366,26 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
         )}
         {loading && <p>Loading...</p>}
 
-        {/* SUMMARY CARDS */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          <SummaryCard
-            label={isAMDashboard ? "For Approval by Assistant Manager" : "For Approval by Manager"}
-            value={summary.clPending}
-            gradientClass="from-yellow-400 to-orange-500"
-          />
-          <SummaryCard
-            label="Returned to Supervisor"
-            value={summary.clReturned}
-            gradientClass="from-red-400 to-red-600"
-          />
-          <SummaryCard
-            label={isAMDashboard ? "Approved by Assistant Manager" : "Approved by Manager"}
-            value={summary.clApproved}
-            gradientClass="from-emerald-400 to-emerald-700"
-          />
-        </section>
+        {/* SUMMARY CARDS (hidden when viewing My Employees) */}
+        {activeSection !== 'employees' && (
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            <SummaryCard
+              label={isAMDashboard ? "For Approval by Assistant Manager" : "For Approval by Manager"}
+              value={summary.clPending}
+              gradientClass="from-yellow-400 to-orange-500"
+            />
+            <SummaryCard
+              label="Returned to Supervisor"
+              value={summary.clReturned}
+              gradientClass="from-red-400 to-red-600"
+            />
+            <SummaryCard
+              label={isAMDashboard ? "Approved by Assistant Manager" : "Approved by Manager"}
+              value={summary.clApproved}
+              gradientClass="from-emerald-400 to-emerald-700"
+            />
+          </section>
+        )}
 
         {/* CONDITIONAL CONTENT BASED ON SECTION */}
         <section>
@@ -1396,8 +1476,8 @@ function ManagerDashboard({ isAMDashboard = false } = {}) {
               employees={employees}
               supervisors={supervisors}
               selectedSupervisorId={selectedSupervisorId}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
+              searchQuery={employeeSearchTerm}
+              setSearchQuery={setEmployeeSearchTerm}
               viewMode={viewMode}
               setViewMode={setViewMode}
               hasCompetenciesOnly={hasCompetenciesOnly}
@@ -2344,10 +2424,10 @@ function FullNotificationsModal({ open, notifications, onNotificationClick, onCl
 
 // Employee Competencies View Component
 function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId, searchQuery, setSearchQuery, viewMode, setViewMode, hasCompetenciesOnly, setHasCompetenciesOnly, goTo }) {
-  // Filter employees by selected supervisor
+  // Filter employees by selected supervisor. If no supervisor selected, show all provided employees.
   const employeesForSupervisor = useMemo(() => {
-    if (!selectedSupervisorId) return [];
-    return employees.filter(emp => emp.supervisor_id === selectedSupervisorId);
+    if (!selectedSupervisorId) return employees || [];
+    return (employees || []).filter(emp => String(emp.supervisor_id) === String(selectedSupervisorId));
   }, [employees, selectedSupervisorId]);
 
   // Find the selected supervisor's name    
@@ -2375,7 +2455,7 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-lg font-bold text-gray-800">
-            {selectedSupervisor ? `Employees under ${selectedSupervisor.name}` : 'Select a Supervisor'}
+            {selectedSupervisor ? `Employees under ${selectedSupervisor.name}` : 'My Employees'}
           </h2>
           {selectedSupervisor && (
             <p className="text-sm text-gray-600 font-medium">
@@ -2411,18 +2491,8 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
         </div>
       </div>
 
-      {/* Search + Filters */}
-      <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
-        <div className="relative md:col-span-2">
-          <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by name, employee ID, or position..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-          />
-        </div>
+      {/* Filters: show-only checkbox (search is handled by header input) */}
+      <div className="mb-4 flex items-center justify-between">
         <label className="inline-flex items-center gap-2 text-sm text-gray-600">
           <input
             type="checkbox"
@@ -2434,11 +2504,7 @@ function EmployeeCompetenciesView({ employees, supervisors, selectedSupervisorId
         </label>
       </div>
 
-      {!selectedSupervisorId ? (
-        <p className="text-sm text-gray-400 text-center py-8">
-          Please select a supervisor from the sidebar to view their employees.
-        </p>
-      ) : filteredEmployees.length === 0 ? (
+      {filteredEmployees.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-8">
           {searchQuery ? 'No employees found matching your search.' : 'No employees found.'}
         </p>
