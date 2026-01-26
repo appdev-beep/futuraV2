@@ -692,6 +692,12 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
             department_name: employeeData.department_name || '',
           });
 
+          // Ensure the review period defaults to the one assigned to the employee (set by HR)
+          setIdpData((prev) => ({
+            ...prev,
+            reviewPeriod: employeeData.review_period_name || employeeData.review_period || employeeData.reviewPeriod || prev.reviewPeriod,
+          }));
+
           // Load competencies from latest APPROVED CL if possible
           let comps = [];
           try {
@@ -901,45 +907,11 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
       } else if (['exposure', 'experience'].includes(actType)) {
         // For Exposure/Experience type, check extra tables development activity
         const extraTables = it.extraTables || [];
-        if (extraTables.length === 0) {
-          missingActivityNames.push({ itemIndex: idx, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
-        } else {
-          extraTables.forEach((et) => {
-            if (!et.developmentActivity || !et.developmentActivity.trim()) {
-              missingActivityNames.push({ itemIndex: idx, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
-            }
-          });
+          if (extraTables.length === 0) {
+            missingActivityNames.push({ itemIndex: idx, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
+          }
         }
-      }
-    });
-    if (missingActivityNames.length) {
-      setValidationError(`The "Activity" field (in the development plan table) is required for: ${missingActivityNames.map(m => m.competencyName).join(', ')}. Please fill in the Activity name before submitting.`);
-      setShowValidationErrorModal(true);
-      return;
-    }
-
-    // Validate: Area of exposure names are mandatory (for Exposure/Experience activities)
-    const missingAreaNames = [];
-    (idpData.items || []).forEach((it, idx) => {
-      const act = (it.developmentActivities || [])[0] || {};
-      const actType = (act.type || '').toLowerCase();
-      if (['exposure', 'experience'].includes(actType)) {
-        const extraTables = it.extraTables || [];
-        extraTables.forEach((et, ti) => {
-          const areas = et.areasOfExposure || [];
-          areas.forEach((area, ai) => {
-            if (!area.area || !area.area.trim()) {
-              missingAreaNames.push({ itemIndex: idx, tableIndex: ti, areaIndex: ai, competencyName: it.competencyName || '#' + (it.competencyId || idx) });
-            }
-          });
-        });
-      }
-    });
-    if (missingAreaNames.length) {
-      setValidationError(`Area of exposure names are required. Please fill in all area names before submitting.`);
-      setShowValidationErrorModal(true);
-      return;
-    }
+      });
 
     // Validate: For Experience/Exposure types, ensure at least one Area of Exposure is added
     const missingAreasAdded = [];
@@ -1768,51 +1740,18 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                     <select
                       value={idpData.reviewPeriod}
                       onChange={(e) => updateIdpData('reviewPeriod', e.target.value)}
-                      disabled={viewOnly}
-                      className={`w-full bg-gray-50 rounded-lg px-3 py-2 ${viewOnly ? 'text-base' : 'text-sm'} text-black outline-none focus:ring-2 focus:ring-black/10 ${viewOnly ? 'border-0' : 'border border-gray-100'} disabled:opacity-60 disabled:cursor-not-allowed`}
+                      disabled={viewOnly || userRole === 'Supervisor'}
+                      style={{ WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none' }}
+                      className={`w-full appearance-none bg-gray-50 rounded-lg px-3 py-2 pr-3 text-black outline-none focus:ring-2 focus:ring-black/10 border border-gray-100 disabled:opacity-100 disabled:cursor-not-allowed ${viewOnly || userRole === 'Supervisor' ? 'text-base' : 'text-sm'}`}
                     >
-                      {(reviewPeriods || []).map((rp) => (
-                        <option key={rp} value={rp}>{rp}</option>
-                      ))}
+                      {(reviewPeriods || []).map((rp) => {
+                        const name = typeof rp === 'string' ? rp : (rp && (rp.name || rp.label || rp.value)) || String(rp);
+                        const key = typeof rp === 'string' ? name : (rp && (rp.id || name)) || name;
+                        return (
+                          <option key={key} value={name}>{name}</option>
+                        );
+                      })}
                     </select>
-
-                    {!viewOnly && (
-                      <div className="flex items-center justify-end">
-                        {!showAddReview ? (
-                          <button
-                            type="button"
-                            onClick={() => setShowAddReview(true)}
-                            className="text-sm px-3 py-2 border border-gray-200 rounded bg-white hover:bg-gray-50"
-                          >
-                            + Add
-                          </button>
-                        ) : (
-                          <div className="flex items-center gap-2 w-full">
-                            <input
-                              type="text"
-                              placeholder="New review period"
-                              value={newReviewPeriod}
-                              onChange={(e) => setNewReviewPeriod(e.target.value)}
-                              className="flex-1 px-3 py-2 border border-gray-200 rounded text-sm"
-                            />
-                            <button
-                              type="button"
-                              onClick={addNewReviewPeriod}
-                              className="text-sm px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                            >
-                              Add
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { setShowAddReview(false); setNewReviewPeriod(''); }}
-                              className="text-sm px-3 py-2 border border-gray-200 rounded bg-white hover:bg-gray-50"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </Field>
               </div>
@@ -2321,9 +2260,11 @@ function CreateIDPPage({ routeId, routeEmployeeId } = {}) {
                                   </span>
                                 </div>
                               </div>
-                              <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full text-sm font-bold bg-white/10 border border-white/20 text-white">
-                                {competencyStatus}
-                              </span>
+                              {competencyStatus && competencyStatus !== 'Not Started' && (
+                                <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full text-sm font-bold bg-white/10 border border-white/20 text-white">
+                                  {competencyStatus}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>

@@ -28,6 +28,8 @@ async function create(req, res, next) {
       am_id
     } = req.body;
 
+    const { review_period_id } = req.body;
+
     if (!employee_id || !email || !position_id || !department_id || !role || !password) {
       return res.status(400).json({
         message:
@@ -52,7 +54,8 @@ async function create(req, res, next) {
       password,
       supervisor_id: supervisor_id || null,
       manager_id: manager_id || null,
-      am_id: am_id || null
+      am_id: am_id || null,
+      review_period_id: review_period_id || null
     });
 
     // Send welcome email to the new employee with login credentials
@@ -169,6 +172,8 @@ async function getPublicById(req, res, next) {
       department_name: user.department_name,
       position_id: user.position_id,
       position_title: user.position_title,
+      review_period_id: user.review_period_id || null,
+      review_period_name: user.review_period_name || null,
     };
 
     res.json(publicData);
@@ -190,7 +195,8 @@ async function update(req, res, next) {
       role,
       password,
       supervisor_id
-    } = req.body;
+      , review_period_id
+      } = req.body;
 
     if (!employee_id || !email || !position_id || !department_id || !role) {
       return res.status(400).json({
@@ -213,7 +219,8 @@ async function update(req, res, next) {
       department_id,
       role,
       password: password || undefined,
-      supervisor_id: supervisor_id || null
+      supervisor_id: supervisor_id || null,
+      review_period_id: review_period_id || null
     });
 
     res.json(user);

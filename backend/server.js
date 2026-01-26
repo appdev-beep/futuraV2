@@ -24,7 +24,7 @@ app.use('/api', routes);
 // ✅ error handler LAST
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 2000;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`FUTURA backend listening:`);

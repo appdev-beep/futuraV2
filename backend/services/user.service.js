@@ -13,7 +13,8 @@ async function createUser({
   password,
   supervisor_id,
   manager_id,
-  am_id
+  am_id,
+  review_period_id
 }) {
   if (!ALLOWED_ROLES.includes(role)) {
     const err = new Error('Invalid role');
@@ -42,11 +43,11 @@ async function createUser({
         `
         UPDATE users
         SET employee_id = ?, name = ?, position_id = ?, department_id = ?, 
-            role = ?, password = ?, supervisor_id = ?, manager_id = ?, am_id = ?, 
+            role = ?, password = ?, supervisor_id = ?, manager_id = ?, am_id = ?, review_period_id = ?,
             is_active = 1, updated_at = NOW()
         WHERE id = ?
         `,
-        [employee_id, name, position_id, department_id, role, passwordHash, supervisor_id || null, manager_id || null, am_id || null, existingUser.id]
+        [employee_id, name, position_id, department_id, role, passwordHash, supervisor_id || null, manager_id || null, am_id || null, review_period_id || null, existingUser.id]
       );
 
       const userId = existingUser.id;
@@ -85,10 +86,10 @@ async function createUser({
   const [result] = await db.query(
     `
     INSERT INTO users
-      (employee_id, name, email, position_id, department_id, role, password, supervisor_id, manager_id, am_id, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
+      (employee_id, name, email, position_id, department_id, role, password, supervisor_id, manager_id, am_id, review_period_id, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
     `,
-    [employee_id, name, email, position_id, department_id, role, passwordHash, supervisor_id || null, manager_id || null, am_id || null]
+    [employee_id, name, email, position_id, department_id, role, passwordHash, supervisor_id || null, manager_id || null, am_id || null, review_period_id || null]
   );
 
   const userId = result.insertId;
@@ -105,13 +106,16 @@ async function createUser({
       u.department_id,
       u.role,
       u.is_active,
+      u.review_period_id,
       d.name  AS department_name,
       p.title AS position_title,
+      rp.name AS review_period_name,
       u.created_at,
       u.updated_at
     FROM users u
     LEFT JOIN departments d ON u.department_id = d.id
     LEFT JOIN positions   p ON u.position_id = p.id
+    LEFT JOIN cycles rp ON u.review_period_id = rp.id
     WHERE u.id = ?
     `,
     [userId]
@@ -133,8 +137,10 @@ async function listUsers() {
       u.role,
       u.is_active,
       u.supervisor_id,
+      u.review_period_id,
       u.manager_id,
       u.am_id,
+      rp.name AS review_period_name,
       d.name  AS department_name,
       p.title AS position_title,
       s.name  AS supervisor_name,
@@ -148,6 +154,7 @@ async function listUsers() {
     LEFT JOIN users       s ON u.supervisor_id = s.id
     LEFT JOIN users       m ON u.manager_id = m.id
     LEFT JOIN users       am ON u.am_id = am.id
+    LEFT JOIN cycles rp ON u.review_period_id = rp.id
     WHERE u.is_active = 1
     ORDER BY u.created_at DESC
     `
@@ -169,8 +176,10 @@ async function getUserById(userId) {
       u.role,
       u.is_active,
       u.supervisor_id,
+      u.review_period_id,
       u.manager_id,
       u.am_id,
+      rp.name AS review_period_name,
       d.name  AS department_name,
       p.title AS position_title,
       s.name  AS supervisor_name,
@@ -184,6 +193,7 @@ async function getUserById(userId) {
     LEFT JOIN users       s ON u.supervisor_id = s.id
     LEFT JOIN users       m ON u.manager_id = m.id
     LEFT JOIN users       am ON u.am_id = am.id
+    LEFT JOIN cycles rp ON u.review_period_id = rp.id
     WHERE u.id = ?
     `,
     [userId]
@@ -269,6 +279,7 @@ async function updateUser(userId, {
   role,
   password,
   supervisor_id
+  , review_period_id
 }) {
   if (!ALLOWED_ROLES.includes(role)) {
     const err = new Error('Invalid role');
@@ -291,9 +302,9 @@ async function updateUser(userId, {
   let updateQuery = `
     UPDATE users
     SET employee_id = ?, name = ?, email = ?, position_id = ?, 
-        department_id = ?, role = ?, supervisor_id = ?, updated_at = NOW()
+        department_id = ?, role = ?, supervisor_id = ?, review_period_id = ?, updated_at = NOW()
   `;
-  let params = [employee_id, name, email, position_id, department_id, role, supervisor_id || null];
+  let params = [employee_id, name, email, position_id, department_id, role, supervisor_id || null, review_period_id || null];
 
   // Only update password if provided
   if (password) {
@@ -320,8 +331,10 @@ async function updateUser(userId, {
       u.role,
       u.is_active,
       u.supervisor_id,
+      u.review_period_id,
       d.name  AS department_name,
       p.title AS position_title,
+      rp.name AS review_period_name,
       s.name  AS supervisor_name,
       u.created_at,
       u.updated_at
@@ -329,6 +342,7 @@ async function updateUser(userId, {
     LEFT JOIN departments d ON u.department_id = d.id
     LEFT JOIN positions   p ON u.position_id = p.id
     LEFT JOIN users       s ON u.supervisor_id = s.id
+    LEFT JOIN cycles rp ON u.review_period_id = rp.id
     WHERE u.id = ?
     `,
     [userId]

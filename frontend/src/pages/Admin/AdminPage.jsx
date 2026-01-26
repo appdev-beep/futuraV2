@@ -133,7 +133,7 @@ function AdminPage() {
         if (password) {
           body.password = password;
         }
-        
+        if (reviewPeriodSelected) body.review_period = reviewPeriodSelected;
         await apiRequest(`/api/users/${editingUser.id}`, {
           method: 'PUT',
           body: JSON.stringify(body)

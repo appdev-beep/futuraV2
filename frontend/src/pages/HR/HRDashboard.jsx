@@ -1,7 +1,7 @@
 // src/pages/HR/HRDashboard.jsx
 import { useEffect, useState, useMemo } from 'react';
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { apiRequest } from '../../api/client';
 import {
   BellIcon,
@@ -32,6 +32,7 @@ function HRDashboard() {
   const initialUser = storedUser ? JSON.parse(storedUser) : null;
   const [user] = useState(initialUser);
   const navigate = useNavigate();
+  const location = useLocation();
   
   useEffect(() => {
     if (!user) {
@@ -579,7 +580,7 @@ function HRDashboard() {
       }
     }
     if (user) loadSummary();
-  }, [user, selectedDepartment]);
+  }, [user, selectedDepartment, location.search]);
 
   // Load incoming IDPs for HR (load all once so dropdown can show counts for both CL and IDP)
   useEffect(() => {

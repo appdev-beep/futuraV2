@@ -180,13 +180,13 @@ async function getReviewPeriods() {
     const [rows] = await db.query(
       `
       SELECT id, name
-      FROM review_periods
+      FROM cycles
       WHERE is_active = 1
       ORDER BY id ASC
       `
     );
-    // Return array of names for backward compatibility with frontend
-    return rows.map(r => r.name);
+    // Return rows as array of objects {id, name}
+    return rows;
   } catch (err) {
     console.warn('Warning: getReviewPeriods failed, returning empty list', err.message || err);
     return [];
@@ -198,7 +198,7 @@ async function getReviewPeriods() {
  */
 async function addReviewPeriod(name) {
   const [result] = await db.query(
-    `INSERT INTO review_periods (name, is_active, created_at) VALUES (?, 1, NOW())`,
+    `INSERT INTO cycles (name, is_active, start_date, end_date) VALUES (?, 1, NOW(), NULL)`,
     [name]
   );
   return { id: result.insertId, name };

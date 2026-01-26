@@ -85,7 +85,8 @@ function HRReviewCLPage() {
   }, [user, id]);
 
   function goBack() {
-    window.location.href = '/hr';
+    // Force a fresh load of the HR dashboard to ensure summaries refresh
+    window.location.href = '/hr?reload=' + Date.now();
   }
 
   // ==========================
@@ -446,6 +447,19 @@ function HRReviewCLPage() {
                 <div>
                   <p className="text-slate-500">Department</p>
                   <p className="font-medium text-slate-800">{header.department_name || 'N/A'}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-500">Position</p>
+                  <p className="font-medium text-slate-800">{header.position_title || header.position || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Manager</p>
+                  <p className="font-medium text-slate-800">{header.manager_name || header.manager || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Assistant Manager</p>
+                  <p className="font-medium text-slate-800">{header.am_name || header.assistant_manager_name || 'N/A'}</p>
                 </div>
               </div>
             </div>

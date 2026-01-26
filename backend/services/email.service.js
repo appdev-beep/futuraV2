@@ -5,6 +5,9 @@ const { db } = require('../config/db');
 // Use a real mailbox as sender (Gmail requires authenticated "from" to be valid)
 const notifier = process.env.NOTIFIER_EMAIL || process.env.SMTP_USER || 'notification.alert@equicomservices.com';
 
+// Public app URL used in outbound emails (frontend URL)
+const appUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3000';
+
 
 
 // Helper
@@ -569,6 +572,10 @@ async function sendWelcomeEmail({
   managerName,
   amName,
   role,
+  // Optional review period fields (accept multiple common names)
+  reviewPeriodName,
+  review_period_name,
+  review_period,
 }) {
   try {
     console.log(`[EMAIL] Sending welcome email: ${name} (${email})`);
@@ -579,6 +586,10 @@ async function sendWelcomeEmail({
     });
 
     const subject = `Welcome to Futura - Your Account Has Been Created`;
+    // prefer any provided review period value
+    const reviewPeriod = reviewPeriodName || review_period_name || review_period || null;
+    // Explicit login URL for welcome email (user-provided IP/port). Can be overridden with APP_LOGIN_URL env var.
+    const loginUrl = process.env.APP_LOGIN_URL || 'http://10.10.1.243:6970/login';
 
     const htmlContent = `
       <h2 style="color: #0b61ff; text-align: center;">Welcome to Futura!</h2>
@@ -597,6 +608,7 @@ async function sendWelcomeEmail({
           ${supervisorName ? `<tr><td style="padding: 8px 0; font-weight: bold; color: #0b2b5f;">Supervisor:</td><td style="padding: 8px 0;">${supervisorName}</td></tr>` : ''}
           ${managerName ? `<tr><td style="padding: 8px 0; font-weight: bold; color: #0b2b5f;">Manager:</td><td style="padding: 8px 0;">${managerName}</td></tr>` : ''}
           ${amName ? `<tr><td style="padding: 8px 0; font-weight: bold; color: #0b2b5f;">Assistant Manager:</td><td style="padding: 8px 0;">${amName}</td></tr>` : ''}
+          ${reviewPeriod ? `<tr><td style="padding: 8px 0; font-weight: bold; color: #0b2b5f;">Review Period:</td><td style="padding: 8px 0;">${reviewPeriod}</td></tr>` : ''}
           <tr><td style="padding: 8px 0; font-weight: bold; color: #0b2b5f;">Account Created:</td><td style="padding: 8px 0;">${currentDateTime}</td></tr>
         </table>
       </div>
@@ -616,6 +628,11 @@ async function sendWelcomeEmail({
           <li>Familiarize yourself with the Competency Leveling (CL) and Individual Development Plan (IDP) systems</li>
           <li>Contact your supervisor or HR if you need assistance</li>
         </ol>
+      </div>
+
+      <div style="text-align:center; margin-top:16px;">
+        <a href="${loginUrl}" target="_blank" rel="noopener noreferrer" style="background-color:#0b61ff;color:#ffffff;padding:12px 20px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;">Open Futura App</a>
+        <p style="margin-top:8px;color:#0b2b5f;">Or use this link: <a href="${loginUrl}" target="_blank" rel="noopener noreferrer">${loginUrl}</a></p>
       </div>
 
       <p style="color: #0b2b5f;">If you have any questions or need assistance, please contact the HR department or your supervisor.</p>
@@ -639,6 +656,7 @@ async function sendWelcomeEmail({
       (supervisorName ? `- Supervisor: ${supervisorName}\n` : '') +
       (managerName ? `- Manager: ${managerName}\n` : '') +
       (amName ? `- Assistant Manager: ${amName}\n` : '') +
+      (reviewPeriod ? `- Review Period: ${reviewPeriod}\n` : '') +
       `- Account Created: ${currentDateTime}\n\n` +
       `Login Credentials:\n` +
       `- Username: ${email}\n` +
@@ -650,11 +668,13 @@ async function sendWelcomeEmail({
       `3. Familiarize yourself with the Competency Leveling (CL) and Individual Development Plan (IDP) systems\n` +
       `4. Contact your supervisor or HR if you need assistance\n\n` +
       `Welcome to the team!\n\nRegards,\nFutura HR`;
+    // Append plain-text link to frontend (use `loginUrl` defined earlier, possibly overridden by APP_LOGIN_URL)
+    const textContentWithLink = textContent + `\n\nAccess the Futura application: ${appUrl}\nLogin: ${loginUrl}`;
 
     const result = await sendEmail({
       to: email,
       subject,
-      text: textContent,
+      text: textContentWithLink,
       html: htmlContent,
     });
 

@@ -14,12 +14,14 @@ function HREmployeeManagement() {
   const [supervisorId, setSupervisorId] = useState('');
   const [managerId, setManagerId] = useState('');
   const [amId, setAmId] = useState('');
+  const [reviewPeriodId, setReviewPeriodId] = useState('');
 
   const [departments, setDepartments] = useState([]);
   const [positions, setPositions] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
   const [managers, setManagers] = useState([]);
   const [ams, setAms] = useState([]);
+  const [reviewPeriods, setReviewPeriods] = useState([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -86,6 +88,13 @@ function HREmployeeManagement() {
         ]);
         setDepartments(deps);
         setPositions(pos);
+        // Load review periods for cycle selection
+        try {
+          const rp = await apiRequest('/api/lookup/review-periods', { method: 'GET' });
+          setReviewPeriods(rp || []);
+        } catch (err) {
+          console.warn('Failed to load review periods', err);
+        }
       } catch (err) {
         console.error(err);
         setError('Failed to load lookups. Check your backend /lookup routes.');
@@ -148,6 +157,8 @@ function HREmployeeManagement() {
         supervisor_id: supervisorId ? Number(supervisorId) : null,
         manager_id: managerId ? Number(managerId) : null,
         am_id: amId ? Number(amId) : null
+        ,
+        review_period_id: reviewPeriodId ? Number(reviewPeriodId) : null
       };
 
       if (editingUser) {
@@ -193,6 +204,7 @@ function HREmployeeManagement() {
       setSupervisorId('');
       setManagerId('');
       setAmId('');
+      setReviewPeriodId('');
       setActiveView('table'); // Return to table view
 
       // Refresh users list
@@ -215,6 +227,7 @@ function HREmployeeManagement() {
     setSupervisorId(user.supervisor_id ? String(user.supervisor_id) : '');
     setManagerId(user.manager_id ? String(user.manager_id) : '');
     setAmId(user.am_id ? String(user.am_id) : '');
+    setReviewPeriodId(user.review_period_id ? String(user.review_period_id) : '');
     setPassword('');
     
     // Load department users when editing
@@ -238,6 +251,7 @@ function HREmployeeManagement() {
     setSupervisorId('');
     setManagerId('');
     setAmId('');
+    setReviewPeriodId('');
     setActiveView('table'); // Return to table view
   }
 
@@ -808,6 +822,24 @@ function HREmployeeManagement() {
                     {ams.map((am) => (
                       <option key={am.id} value={am.id}>
                         {am.name} ({am.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Review Period / Cycle
+                  </label>
+                  <select
+                    value={reviewPeriodId}
+                    onChange={(e) => setReviewPeriodId(e.target.value)}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                  >
+                    <option value="">-- Select Review Period --</option>
+                    {reviewPeriods.map((rp) => (
+                      <option key={rp.id} value={rp.id}>
+                        {rp.name}
                       </option>
                     ))}
                   </select>
